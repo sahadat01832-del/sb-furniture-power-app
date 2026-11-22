@@ -3,7 +3,7 @@
 // ============================================================
 
 let deferredInstallPrompt = null;
-let currentDownloadTarget = 'reseller';
+let currentDownloadTarget = 'admin';
 
 // Detect standalone display mode (already installed as PWA or native webview)
 function isRunningStandalone() {
@@ -146,23 +146,27 @@ function closeApkDownloadModal() {
 }
 
 // 9. Start Download & Provide Feedback
-function startApkDownload(target) {
+function startApkDownload(e, target) {
+  if (e && typeof e.preventDefault === 'function') {
+    e.preventDefault();
+  }
   const app = target || currentDownloadTarget;
   const url = app === 'admin' ? '/download/admin-apk' : '/download/reseller-apk';
+  const filename = app === 'admin' ? 'sb-power-admin.apk' : 'sb-power-reseller.apk';
   
   if (typeof showToast === 'function') {
-    showToast('📥 অফিসিয়াল APK ফাইল ডাউনলোড শুরু হয়েছে... ডাউনলোড শেষে ইনস্টল করুন।');
+    showToast('📥 অফিসিয়াল এডমিন APK ফাইল ডাউনলোড শুরু হয়েছে... ডাউনলোড শেষে ইনস্টল করুন।');
   }
 
-  // Trigger download
+  // Trigger download cleanly once
   const a = document.createElement('a');
   a.href = url;
-  a.download = app === 'admin' ? 'sb-power-admin.apk' : 'sb-power-reseller.apk';
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
 
   setTimeout(() => {
     closeApkDownloadModal();
-  }, 1000);
+  }, 1200);
 }

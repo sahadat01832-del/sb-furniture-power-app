@@ -73,7 +73,7 @@ test('APK & PWA 2: PWA 1-Click Banner & APK Guidance Modal Assets', async () => 
   assert.ok(jsRes.text.includes('triggerPwaInstall'));
 });
 
-test('APK & PWA 3: HTML Landing Page Integrates Zero-Friction PWA & Modal Guidance', async () => {
+test('APK & PWA 3: HTML Landing Page & Admin Portal Integrate Zero-Friction PWA & Modal Guidance', async () => {
   const indexRes = await request('/');
   assert.equal(indexRes.status, 200);
   assert.ok(indexRes.text.includes('id="pwaInstallBanner"'));
@@ -83,39 +83,55 @@ test('APK & PWA 3: HTML Landing Page Integrates Zero-Friction PWA & Modal Guidan
   // Verify Bangla guidance text for conflict-free installation
   assert.ok(indexRes.text.includes('পুরনো অ্যাপ থাকলে আনইনস্টল করুন'));
   assert.ok(indexRes.text.includes('প্লে প্রোটেক্টে "Install anyway" চাপুন'));
+
+  // Also verify Admin Portal has PWA capabilities
+  const adminRes = await request('/admin');
+  assert.equal(adminRes.status, 200);
+  assert.ok(adminRes.text.includes('manifest-admin.json'));
+  assert.ok(adminRes.text.includes('id="pwaInstallBanner"'));
+  assert.ok(adminRes.text.includes('id="apkDownloadModal"'));
+  assert.ok(adminRes.text.includes('id="btnNavInstall"'));
 });
 
-test('APK & PWA 4: Production Keystore & Release APK Verification', () => {
+test('APK & PWA 4: Production Keystore & Release APK Verification (v1 + v2 + v3 Schemes)', () => {
   const rootDir = path.join(__dirname, '..');
   const keystorePath = path.join(rootDir, 'config', 'sb-release.keystore');
   assert.ok(fs.existsSync(keystorePath), 'Permanent release keystore must exist in config/');
 
-  const resellerApk = path.join(rootDir, 'dist-apk', 'sb-power-reseller.apk');
-  const adminApk = path.join(rootDir, 'dist-apk', 'sb-power-admin.apk');
-  assert.ok(fs.existsSync(resellerApk), 'Reseller APK must exist');
-  assert.ok(fs.existsSync(adminApk), 'Admin APK must exist');
+  const apks = [
+    { name: 'reseller', path: path.join(rootDir, 'dist-apk', 'sb-power-reseller.apk'), appId: 'com.sbfurniture.powerapp' },
+    { name: 'admin', path: path.join(rootDir, 'dist-apk', 'sb-power-admin.apk'), appId: 'com.sbfurniture.admin' }
+  ];
 
-  const resellerStat = fs.statSync(resellerApk);
-  const adminStat = fs.statSync(adminApk);
-  assert.ok(resellerStat.size > 1024 * 1024, 'Reseller APK size must be > 1MB');
-  assert.ok(adminStat.size > 1024 * 1024, 'Admin APK size must be > 1MB');
+  for (const apkInfo of apks) {
+    assert.ok(fs.existsSync(apkInfo.path), `${apkInfo.name} APK must exist`);
+    const stat = fs.statSync(apkInfo.path);
+    assert.ok(stat.size > 1024 * 1024, `${apkInfo.name} APK size must be > 1MB`);
+  }
 
   // Verify signature and debuggable state with Android SDK tools if present
   const apksigner = '/home/don/whynet ecosystem/NEWTUBE/NewTube_Android/.android-sdk/build-tools/35.0.0/apksigner';
   const aapt = '/home/don/whynet ecosystem/NEWTUBE/NewTube_Android/.android-sdk/build-tools/35.0.0/aapt';
 
   if (fs.existsSync(apksigner)) {
-    const verifyOut = spawnSync(apksigner, ['verify', '-v', '--print-certs', resellerApk], { encoding: 'utf-8' });
-    assert.equal(verifyOut.status, 0, 'apksigner verify must pass on reseller APK');
-    assert.ok(verifyOut.stdout.includes('Verified using v2 scheme (APK Signature Scheme v2): true'));
-    assert.ok(verifyOut.stdout.includes('Verified using v3 scheme (APK Signature Scheme v3): true'));
-    assert.ok(verifyOut.stdout.includes('CN=SB Furniture & SB POWER'));
+    for (const apkInfo of apks) {
+      const verifyOut = spawnSync(apksigner, ['verify', '-v', '--min-sdk-version', '23', '--print-certs', apkInfo.path], { encoding: 'utf-8' });
+      assert.equal(verifyOut.status, 0, `apksigner verify must pass on ${apkInfo.name} APK`);
+      assert.ok(verifyOut.stdout.includes('Verified using v1 scheme (JAR signing): true'), `v1 signing must be true for ${apkInfo.name}`);
+      assert.ok(verifyOut.stdout.includes('Verified using v2 scheme (APK Signature Scheme v2): true'), `v2 signing must be true for ${apkInfo.name}`);
+      assert.ok(verifyOut.stdout.includes('Verified using v3 scheme (APK Signature Scheme v3): true'), `v3 signing must be true for ${apkInfo.name}`);
+      assert.ok(verifyOut.stdout.includes('CN=SB Furniture & SB POWER'), `Certificate DN must match for ${apkInfo.name}`);
+    }
   }
 
   if (fs.existsSync(aapt)) {
-    const badgingOut = spawnSync(aapt, ['dump', 'badging', resellerApk], { encoding: 'utf-8' });
-    assert.equal(badgingOut.status, 0);
-    assert.ok(!badgingOut.stdout.includes('application-debuggable'), 'Release APK must NOT have application-debuggable');
-    assert.ok(badgingOut.stdout.includes("versionCode='2'"), 'Release APK must have bumped versionCode=2');
+    for (const apkInfo of apks) {
+      const badgingOut = spawnSync(aapt, ['dump', 'badging', apkInfo.path], { encoding: 'utf-8' });
+      assert.equal(badgingOut.status, 0, `aapt dump badging must succeed on ${apkInfo.name}`);
+      assert.ok(!badgingOut.stdout.includes('application-debuggable'), `${apkInfo.name} APK must NOT have application-debuggable`);
+      assert.ok(badgingOut.stdout.includes("versionCode='2'"), `${apkInfo.name} APK must have bumped versionCode=2`);
+      assert.ok(badgingOut.stdout.includes("versionName='1.0.1'"), `${apkInfo.name} APK must have versionName=1.0.1`);
+      assert.ok(badgingOut.stdout.includes(`package: name='${apkInfo.appId}'`), `${apkInfo.name} package name must match`);
+    }
   }
 });
