@@ -25,13 +25,11 @@ if ! command -v npm &> /dev/null; then
     exit 1
 fi
 
-# Auto-detect JAVA_HOME if not set
-if [ -z "$JAVA_HOME" ]; then
-    if [ -d "/home/don/.local/share/jvm/temurin-17" ]; then
-        export JAVA_HOME="/home/don/.local/share/jvm/temurin-17"
-        export PATH="$JAVA_HOME/bin:$PATH"
-        echo "☕ Detected JDK 17 at: $JAVA_HOME"
-    fi
+# Always use Temurin JDK 17 for compilation
+if [ -d "/home/don/.local/share/jvm/temurin-17" ]; then
+    export JAVA_HOME="/home/don/.local/share/jvm/temurin-17"
+    export PATH="$JAVA_HOME/bin:$PATH"
+    echo "☕ Using JDK 17 at: $JAVA_HOME"
 fi
 
 # Auto-detect ANDROID_HOME if not set
@@ -141,7 +139,7 @@ build_client() {
 
     if [ -f "android/gradlew" ] && { [ -n "$ANDROID_HOME" ] || [ -n "$ANDROID_SDK_ROOT" ]; }; then
         echo "🔨 Compiling Client APK..."
-        (cd android && ./gradlew assembleDebug)
+        (cd android && ./gradlew clean assembleDebug)
         if [ -f "android/app/build/outputs/apk/debug/app-debug.apk" ]; then
             cp android/app/build/outputs/apk/debug/app-debug.apk dist-apk/sb-power-reseller.apk
             echo "🎉 Client APK compiled: dist-apk/sb-power-reseller.apk"
@@ -181,7 +179,7 @@ build_admin() {
 
     if [ -f "android/gradlew" ] && { [ -n "$ANDROID_HOME" ] || [ -n "$ANDROID_SDK_ROOT" ]; }; then
         echo "🔨 Compiling Admin APK..."
-        (cd android && ./gradlew assembleDebug)
+        (cd android && ./gradlew clean assembleDebug)
         if [ -f "android/app/build/outputs/apk/debug/app-debug.apk" ]; then
             cp android/app/build/outputs/apk/debug/app-debug.apk dist-apk/sb-power-admin.apk
             echo "🎉 Admin APK compiled: dist-apk/sb-power-admin.apk"
@@ -213,6 +211,11 @@ case "$TARGET" in
         exit 1
         ;;
 esac
+
+if [ -f "scripts/generate_app_icons.py" ]; then
+    echo "🎨 Injecting custom brand icons and signing APKs..."
+    python3 scripts/generate_app_icons.py || true
+fi
 
 echo ""
 echo "=========================================================="
