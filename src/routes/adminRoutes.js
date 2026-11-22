@@ -7,6 +7,10 @@ const config = require('../config');
 // Require Admin Role for all routes in this router
 router.use(verifyToken, requireRole('admin'));
 
+// Admin User Management Sub-routes
+const adminUserRoutes = require('./adminUserRoutes');
+router.use('/', adminUserRoutes);
+
 // Admin Dashboard Stats
 router.get('/stats', async (req, res) => {
   try {

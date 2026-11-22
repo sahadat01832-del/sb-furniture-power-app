@@ -87,10 +87,10 @@ function adminLogout() {
   showToast('লগআউট করা হয়েছে');
 }
 
-// Switch Sections (Orders, Payouts, Products, Analytics, Announcements, Backups)
+// Switch Sections (Orders, Payouts, Products, Analytics, Announcements, Backups, Users, Guide)
 function switchAdminSection(section) {
   currentAdminSection = section;
-  const sections = ['orders', 'payouts', 'products', 'analytics', 'announcements', 'backups'];
+  const sections = ['orders', 'payouts', 'products', 'analytics', 'announcements', 'backups', 'users', 'guide'];
   sections.forEach((s) => {
     const capitalized = s.charAt(0).toUpperCase() + s.slice(1);
     const secEl = document.getElementById(`admin${capitalized}Section`);
@@ -98,7 +98,12 @@ function switchAdminSection(section) {
     const tabEl = document.getElementById(`tabBtn${capitalized}`);
     if (tabEl) tabEl.classList.toggle('active', section === s);
   });
-  const loaders = { orders: loadAdminOrders, payouts: loadAdminPayouts, products: loadAdminProducts, analytics: loadAdminAnalytics, announcements: loadAdminAnnouncements, backups: loadAdminBackupsList };
+  const loaders = {
+    orders: loadAdminOrders, payouts: loadAdminPayouts, products: loadAdminProducts,
+    analytics: loadAdminAnalytics, announcements: loadAdminAnnouncements, backups: loadAdminBackupsList,
+    users: () => window.loadAdminUsers && window.loadAdminUsers(),
+    guide: () => window.loadAdminContentGuide && window.loadAdminContentGuide()
+  };
   if (loaders[section]) loaders[section]();
 }
 

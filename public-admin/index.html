@@ -105,7 +105,8 @@
         <span style="font-size: 1.2rem; font-weight: 700; color: var(--sbp-yellow);">👑 SB কন্ট্রোল প্যানেল</span>
         <a href="/" target="_blank" style="color: #a8a29e; font-size: 0.8rem; text-decoration: underline;">ওয়েবসাইট ভিজিট করুন ↗</a>
       </div>
-      <div>
+      <div style="display: flex; gap: 8px;">
+        <button class="btn-nav" style="color: var(--sbp-yellow); padding: 6px 12px; border: 1px solid var(--sbf-border); border-radius: 4px;" onclick="openAdminPasswordModal()">🔑 পাসওয়ার্ড পরিবর্তন</button>
         <button class="btn-nav" style="color: var(--sbp-red); padding: 6px 12px;" onclick="adminLogout()">লগআউট</button>
       </div>
     </div>
@@ -144,6 +145,8 @@
         <button class="tab-btn active" id="tabBtnOrders" onclick="switchAdminSection('orders')">📦 অর্ডার ম্যানেজমেন্ট</button>
         <button class="tab-btn" id="tabBtnPayouts" onclick="switchAdminSection('payouts')">💸 ক্যাশআউট অনুমোদন</button>
         <button class="tab-btn" id="tabBtnProducts" onclick="switchAdminSection('products')">🪑 ক্লাউড ক্যাটালগ (CRUD)</button>
+        <button class="tab-btn" id="tabBtnUsers" onclick="switchAdminSection('users')">👥 ইউজার ও অ্যাডমিন</button>
+        <button class="tab-btn" id="tabBtnGuide" onclick="switchAdminSection('guide')">📋 কন্টেন্ট গাইড ও সেটিংস</button>
         <button class="tab-btn" id="tabBtnAnalytics" onclick="switchAdminSection('analytics')">📊 এনালিটিক্স</button>
         <button class="tab-btn" id="tabBtnAnnouncements" onclick="switchAdminSection('announcements')">📢 অফার ও নোটিশ</button>
         <button class="tab-btn" id="tabBtnBackups" onclick="switchAdminSection('backups')">💾 ডাটাবেজ ব্যাকআপ</button>
@@ -318,6 +321,136 @@
         </div>
         <div id="adminBackupsList" style="margin-top: 14px;"></div>
       </div>
+
+      <!-- Section 7: Users & Admins Management -->
+      <div id="adminUsersSection" style="display: none;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 10px;">
+          <div>
+            <h3 style="font-size: 1.15rem; color: var(--sbp-yellow); margin: 0;">👥 ইউজার ও অ্যাডমিন ব্যবস্থাপনা</h3>
+            <p style="font-size: 0.8rem; color: var(--sbf-text-muted); margin: 2px 0 0;">নিবন্ধিত রিসেলার ও এডমিনদের তালিকা, পদবি পরিবর্তন ও নতুন এডমিন তৈরি</p>
+          </div>
+          <button class="btn-submit" style="width: auto; margin-top: 0; padding: 8px 16px; background: #059669; font-weight: 600;" onclick="openAddUserModal()">
+            ➕ নতুন অ্যাডমিন / ইউজার তৈরি করুন
+          </button>
+        </div>
+
+        <!-- Filter & Search Bar -->
+        <div style="display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; align-items: center;">
+          <div style="flex: 1; min-width: 220px;">
+            <input type="text" id="userSearchInput" class="form-control" placeholder="🔍 নাম, ফোন নম্বর বা রেফারেল কোড দিয়ে খুঁজুন...">
+          </div>
+          <div style="min-width: 140px;">
+            <select id="userRoleFilter" class="form-control">
+              <option value="all">সকল পদবি (All Roles)</option>
+              <option value="admin">👑 শুধু এডমিন (Admin)</option>
+              <option value="reseller">💼 রিসেলার (Reseller)</option>
+              <option value="customer">🛍️ কাস্টমার (Customer)</option>
+            </select>
+          </div>
+          <button class="action-btn-sm" style="background: #3b82f6; color: #fff; padding: 8px 14px;" onclick="loadAdminUsers(1)">🔄 রিফ্রেশ</button>
+        </div>
+
+        <div class="table-responsive">
+          <table>
+            <thead>
+              <tr>
+                <th>ইউজার ও মোবাইল</th>
+                <th>পদবি (রোল)</th>
+                <th>রেফারেল কোড</th>
+                <th>অর্ডার ও সেলস</th>
+                <th>ওয়ালেট ব্যালেন্স</th>
+                <th>যুক্ত হওয়ার তারিখ</th>
+                <th>পদবি পরিবর্তন / অ্যাকশন</th>
+              </tr>
+            </thead>
+            <tbody id="adminUsersTableBody">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+        </div>
+        <div id="adminUsersPagination" style="margin-top: 12px; padding: 8px 0;"></div>
+      </div>
+
+      <!-- Section 8: Content Guide & Settings -->
+      <div id="adminGuideSection" style="display: none;">
+        <div style="margin-bottom: 16px;">
+          <h3 style="font-size: 1.15rem; color: var(--sbp-yellow); margin: 0;">📋 কন্টেন্ট গাইড ও সেটিংস ওভারভিউ</h3>
+          <p style="font-size: 0.82rem; color: var(--sbf-text-muted); margin: 3px 0 0;">অ্যাপের কোথায় কি আছে এবং কীভাবে খুব সহজে ১ ক্লিকে পরিবর্তন করবেন তার সহজ নির্দেশিকা</p>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; margin-bottom: 20px;">
+          <!-- Guide Card 1: Products & Catalog -->
+          <div style="background: #292524; border: 1px solid var(--sbf-border); border-radius: var(--radius-sm); padding: 16px;">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+              <span style="font-size: 1.4rem;">🪑</span>
+              <div>
+                <h4 style="margin: 0; color: #fde68a; font-size: 0.95rem;">প্রোডাক্ট, ছবি ও মূল্য ব্যবস্থাপনা</h4>
+                <span style="font-size: 0.72rem; color: #34d399;">ডাটাবেজ: products টেবিল</span>
+              </div>
+            </div>
+            <p style="font-size: 0.8rem; color: #d6d3d1; line-height: 1.5; margin-bottom: 12px;">
+              নতুন ফার্নিচার বা পাওয়ার গ্যাজেট যোগ করতে, ছবি ও মূল্য বদলাতে এবং স্টক আপডেট করতে ক্লাউড ক্যাটালগ ব্যবহার করুন।
+            </p>
+            <button class="action-btn-sm btn-confirm" style="width: 100%; padding: 8px;" onclick="switchAdminSection('products')">
+              👉 ক্যাটালগ ও পণ্য তালিকায় যান
+            </button>
+          </div>
+
+          <!-- Guide Card 2: Commission Tabs -->
+          <div style="background: #292524; border: 1px solid var(--sbf-border); border-radius: var(--radius-sm); padding: 16px;">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+              <span style="font-size: 1.4rem;">💰</span>
+              <div>
+                <h4 style="margin: 0; color: #fde68a; font-size: 0.95rem;">কমিশন ট্যাব (50, 100, 500, 1000৳)</h4>
+                <span style="font-size: 0.72rem; color: #60a5fa;">ফিল্টার: commission_tab</span>
+              </div>
+            </div>
+            <p style="font-size: 0.8rem; color: #d6d3d1; line-height: 1.5; margin-bottom: 12px;">
+              রিসেলার অ্যাপের ৫০৳, ১০০৳, ৫০০৳ ও ১০০০৳ লাভ ট্যাবে পণ্য দেখাতে প্রোডাক্ট এডিট করার সময় পছন্দের কমিশন ট্যাব সিলেক্ট করুন।
+            </p>
+            <button class="action-btn-sm btn-ship" style="width: 100%; padding: 8px;" onclick="switchAdminSection('products')">
+              👉 প্রোডাক্ট কমিশন ট্যাব সেট করুন
+            </button>
+          </div>
+
+          <!-- Guide Card 3: Announcements & Banners -->
+          <div style="background: #292524; border: 1px solid var(--sbf-border); border-radius: var(--radius-sm); padding: 16px;">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+              <span style="font-size: 1.4rem;">📢</span>
+              <div>
+                <h4 style="margin: 0; color: #fde68a; font-size: 0.95rem;">ব্যানার, অফার ও স্ক্রলিং নোটিশ</h4>
+                <span style="font-size: 0.72rem; color: #f59e0b;">ডাটাবেজ: announcements</span>
+              </div>
+            </div>
+            <p style="font-size: 0.8rem; color: #d6d3d1; line-height: 1.5; margin-bottom: 12px;">
+              লাইভ অ্যাপের উপরে চলমান মেগা অফার ও ফ্ল্যাশ ডিল নোটিশ সরাসরি এখান থেকে পরিবর্তন বা নতুন অফার চালু করুন।
+            </p>
+            <button class="action-btn-sm" style="background: #f59e0b; color: #1c1917; width: 100%; padding: 8px; font-weight: 600;" onclick="switchAdminSection('announcements')">
+              👉 অফার ও নোটিশ এডিট করুন
+            </button>
+          </div>
+
+          <!-- Guide Card 4: Shop Info & Hotlines -->
+          <div style="background: #292524; border: 1px solid var(--sbf-border); border-radius: var(--radius-sm); padding: 16px;">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+              <span style="font-size: 1.4rem;">🏪</span>
+              <div>
+                <h4 style="margin: 0; color: #fde68a; font-size: 0.95rem;">দোকান তথ্য ও হটলাইন</h4>
+                <span style="font-size: 0.72rem; color: #ec4899;">কনফিগ: /api/config</span>
+              </div>
+            </div>
+            <div style="font-size: 0.78rem; color: #d6d3d1; line-height: 1.6; margin-bottom: 12px;">
+              <div>• <strong>SB Furniture:</strong> 01929621855 (WhatsApp)</div>
+              <div>• <strong>SB POWER:</strong> 01634664224 (TikTok @sb.power.official)</div>
+              <div>• <strong>ডেলিভারি:</strong> ঢাকা ৫০০৳ / বাইরে ১০০০৳ (আসবাবপত্র), গ্যাজেট ৮০/১৫০৳</div>
+              <div>• <strong>রেফারেল বোনাস:</strong> ১ম সেলে ৫০৳ + আজীবন ৩% টিম কমিশন</div>
+            </div>
+            <button class="action-btn-sm" style="background: #10b981; color: #fff; width: 100%; padding: 8px; font-weight: 600;" onclick="copyToClipboard('01929621855', 'হটলাইন নম্বর কপি হয়েছে!')">
+              📋 হটলাইন নম্বর কপি করুন
+            </button>
+          </div>
+        </div>
+      </div>
     </main>
   </div>
 
@@ -476,11 +609,64 @@
         <button class="btn-submit" onclick="submitAnnouncementForm()">সংরক্ষণ করুন</button>
       </div>
     </div>
+  <!-- Add Admin / User Modal -->
+  <div class="modal-overlay" id="adminUserModal" role="dialog" aria-modal="true" aria-labelledby="userModalTitle">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 id="userModalTitle">➕ নতুন অ্যাডমিন / ইউজার তৈরি করুন</h3>
+        <button class="btn-close" onclick="closeAddUserModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">পূর্ণ নাম *</label>
+          <input type="text" id="newUserName" class="form-control" placeholder="যেমন: মো: আরিফুল ইসলাম">
+        </div>
+        <div class="form-group">
+          <label class="form-label">মোবাইল নম্বর (১১ ডিজিট) *</label>
+          <input type="tel" id="newUserPhone" class="form-control" placeholder="01XXXXXXXXX">
+        </div>
+        <div class="form-group">
+          <label class="form-label">লগইন পাসওয়ার্ড (ন্যূনতম ৬ অক্ষর) *</label>
+          <input type="password" id="newUserPassword" class="form-control" placeholder="শক্তিশালী পাসওয়ার্ড দিন">
+        </div>
+        <div class="form-group">
+          <label class="form-label">পদবি / রোল (Role) *</label>
+          <select id="newUserRole" class="form-control">
+            <option value="admin">👑 এডমিন (Admin) — পূর্ণ নিয়ন্ত্রণ সুবিধা</option>
+            <option value="reseller">💼 রিসেলার (Reseller) — পণ্য বিক্রি ও কমিশন</option>
+            <option value="customer">🛍️ কাস্টমার (Customer) — সাধারণ ক্রেতা</option>
+          </select>
+        </div>
+        <button class="btn-submit" onclick="submitAddUserForm()">নিশ্চিত ও সংরক্ষণ করুন</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Admin Password Update Modal -->
+  <div class="modal-overlay" id="adminPasswordModal" role="dialog" aria-modal="true" aria-labelledby="pwdModalTitle">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 id="pwdModalTitle">🔑 এডমিন পাসওয়ার্ড পরিবর্তন</h3>
+        <button class="btn-close" onclick="closeAdminPasswordModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">বর্তমান পাসওয়ার্ড (যাচাইয়ের জন্য)</label>
+          <input type="password" id="adminOldPass" class="form-control" placeholder="বর্তমান পাসওয়ার্ড দিন">
+        </div>
+        <div class="form-group">
+          <label class="form-label">নতুন পাসওয়ার্ড (ন্যূনতম ৬ অক্ষর) *</label>
+          <input type="password" id="adminNewPass" class="form-control" placeholder="নতুন পাসওয়ার্ড লিখুন">
+        </div>
+        <button class="btn-submit" onclick="submitAdminPasswordChange()">পাসওয়ার্ড আপডেট করুন</button>
+      </div>
+    </div>
   </div>
 
   <div id="toast" class="toast-msg"></div>
 
   <script src="/js/api.js"></script>
   <script src="/js/admin.js"></script>
+  <script src="/js/admin-users.js"></script>
 </body>
 </html>
