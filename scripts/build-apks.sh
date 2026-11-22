@@ -138,17 +138,23 @@ build_client() {
     patch_java_version
 
     if [ -f "android/gradlew" ] && { [ -n "$ANDROID_HOME" ] || [ -n "$ANDROID_SDK_ROOT" ]; }; then
-        echo "🔨 Compiling Client APK..."
-        (cd android && ./gradlew clean assembleDebug)
-        if [ -f "android/app/build/outputs/apk/debug/app-debug.apk" ]; then
+        echo "🔨 Compiling Client Release APK..."
+        (cd android && ./gradlew clean assembleRelease)
+        if [ -f "android/app/build/outputs/apk/release/app-release.apk" ]; then
+            cp android/app/build/outputs/apk/release/app-release.apk dist-apk/sb-power-reseller.apk
+            echo "🎉 Client Release APK compiled: dist-apk/sb-power-reseller.apk"
+        elif [ -f "android/app/build/outputs/apk/release/app-release-unsigned.apk" ]; then
+            cp android/app/build/outputs/apk/release/app-release-unsigned.apk dist-apk/sb-power-reseller.apk
+            echo "🎉 Client Release APK copied: dist-apk/sb-power-reseller.apk"
+        elif [ -f "android/app/build/outputs/apk/debug/app-debug.apk" ]; then
             cp android/app/build/outputs/apk/debug/app-debug.apk dist-apk/sb-power-reseller.apk
-            echo "🎉 Client APK compiled: dist-apk/sb-power-reseller.apk"
+            echo "⚠️ Fallback: Client Debug APK copied: dist-apk/sb-power-reseller.apk"
         fi
     else
         echo "ℹ️ Android SDK not configured in this terminal. Client Android project is generated & synced!"
         echo "   To build APK on a system with Android SDK:"
-        echo "   cd android && ./gradlew assembleDebug"
-        echo "   Output: android/app/build/outputs/apk/debug/app-debug.apk"
+        echo "   cd android && ./gradlew assembleRelease"
+        echo "   Output: android/app/build/outputs/apk/release/app-release.apk"
     fi
 }
 
@@ -178,17 +184,23 @@ build_admin() {
     patch_java_version
 
     if [ -f "android/gradlew" ] && { [ -n "$ANDROID_HOME" ] || [ -n "$ANDROID_SDK_ROOT" ]; }; then
-        echo "🔨 Compiling Admin APK..."
-        (cd android && ./gradlew clean assembleDebug)
-        if [ -f "android/app/build/outputs/apk/debug/app-debug.apk" ]; then
+        echo "🔨 Compiling Admin Release APK..."
+        (cd android && ./gradlew clean assembleRelease)
+        if [ -f "android/app/build/outputs/apk/release/app-release.apk" ]; then
+            cp android/app/build/outputs/apk/release/app-release.apk dist-apk/sb-power-admin.apk
+            echo "🎉 Admin Release APK compiled: dist-apk/sb-power-admin.apk"
+        elif [ -f "android/app/build/outputs/apk/release/app-release-unsigned.apk" ]; then
+            cp android/app/build/outputs/apk/release/app-release-unsigned.apk dist-apk/sb-power-admin.apk
+            echo "🎉 Admin Release APK copied: dist-apk/sb-power-admin.apk"
+        elif [ -f "android/app/build/outputs/apk/debug/app-debug.apk" ]; then
             cp android/app/build/outputs/apk/debug/app-debug.apk dist-apk/sb-power-admin.apk
-            echo "🎉 Admin APK compiled: dist-apk/sb-power-admin.apk"
+            echo "⚠️ Fallback: Admin Debug APK copied: dist-apk/sb-power-admin.apk"
         fi
     else
         echo "ℹ️ Android SDK not configured in this terminal. Admin Android project is generated & synced!"
         echo "   To build APK on a system with Android SDK:"
-        echo "   cd android && ./gradlew assembleDebug"
-        echo "   Output: android/app/build/outputs/apk/debug/app-debug.apk"
+        echo "   cd android && ./gradlew assembleRelease"
+        echo "   Output: android/app/build/outputs/apk/release/app-release.apk"
     fi
 }
 

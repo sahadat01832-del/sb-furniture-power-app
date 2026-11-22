@@ -12,6 +12,7 @@
   <link rel="icon" type="image/svg+xml" href="/icons/icon.svg">
   <link rel="apple-touch-icon" href="/icons/icon.svg">
   <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/pwa-install.css">
 </head>
 <body>
 
@@ -36,6 +37,9 @@
       </a>
 
       <div class="nav-actions">
+        <button class="btn-nav" id="btnNavInstall" onclick="handlePwaInstallClick()" title="১-ক্লিকে অ্যাপ ইনস্টল করুন" style="display: none; background: rgba(245, 158, 11, 0.15); border: 1px solid var(--sbf-amber); color: var(--sbp-yellow); font-weight: 600;">
+          <span>📲</span> <span>ইনস্টল</span>
+        </button>
         <button class="btn-nav" id="btnLeaderboardModal" onclick="openLeaderboardModal()" title="শীর্ষ রিসেলার লিডারবোর্ড ও প্রাইজ">
           <span>🏆</span> <span class="hide-mobile">লিডারবোর্ড</span>
         </button>
@@ -180,10 +184,10 @@
           সরাসরি অ্যান্ড্রয়েড ফোনে অ্যাপ ইনস্টল করে দ্রুত অর্ডার ও রিসেলিং করুন:
         </p>
         <div style="display: flex; flex-direction: column; gap: 8px;">
-          <a href="/download/reseller-apk" class="btn-nav" style="background: var(--sbf-amber); color: #fff; text-decoration: none; justify-content: center; padding: 8px 12px; font-size: 0.82rem;">
-            📱 রিসেলার অ্যাপ ডাউনলোড করুন (APK)
+          <a href="/download/reseller-apk" onclick="event.preventDefault(); openApkDownloadModal('reseller');" class="btn-nav" style="background: var(--sbf-amber); color: #fff; text-decoration: none; justify-content: center; padding: 8px 12px; font-size: 0.82rem; cursor: pointer;">
+            📱 রিসেলার অ্যাপ ইনস্টল ও ডাউনলোড (APK)
           </a>
-          <a href="/download/admin-apk" class="btn-nav" style="background: #292524; color: #d6d3d1; border: 1px solid var(--sbf-border); text-decoration: none; justify-content: center; padding: 6px 12px; font-size: 0.78rem;">
+          <a href="/download/admin-apk" onclick="event.preventDefault(); openApkDownloadModal('admin');" class="btn-nav" style="background: #292524; color: #d6d3d1; border: 1px solid var(--sbf-border); text-decoration: none; justify-content: center; padding: 6px 12px; font-size: 0.78rem; cursor: pointer;">
             🛡️ এডমিন প্যানেল অ্যাপ (APK)
           </a>
         </div>
@@ -398,6 +402,93 @@
     </div>
   </div>
 
+  <!-- 7. APK Download & 1-Click Install Helper Modal -->
+  <div id="apkDownloadModal" class="modal">
+    <div class="modal-overlay" onclick="closeApkDownloadModal()"></div>
+    <div class="modal-card" style="max-width: 500px;">
+      <div class="modal-header">
+        <div>
+          <h3 style="margin: 0; font-size: 1.05rem;" id="apkModalTitle">📱 SB Furniture & SB POWER রিসেলার অ্যাপ</h3>
+          <span class="badge" id="apkModalBadge" style="background: rgba(245, 158, 11, 0.2); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.4); margin-top: 4px; display: inline-block;">
+            অফিসিয়াল প্রোডাকশন রিলিজ • v1.0.1
+          </span>
+        </div>
+        <button class="btn-close" onclick="closeApkDownloadModal()">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <!-- 1-Click PWA Zero Friction Option -->
+        <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 12px; padding: 14px; margin-bottom: 16px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+            <div style="font-weight: 700; color: #34d399; font-size: 0.92rem;">
+              ⚡ দ্রুততম: ১-ক্লিকে অ্যাপ ইনস্টল (Zero Friction)
+            </div>
+            <span style="background: #059669; color: #fff; font-size: 0.68rem; padding: 2px 6px; border-radius: 6px; font-weight: 700;">প্রস্তাবিত</span>
+          </div>
+          <p style="font-size: 0.8rem; color: #d1fae5; margin: 0 0 10px; line-height: 1.45;">
+            কোনো ফাইল ডাউনলোড, মেমোরি নষ্ট বা আননোন সোর্স অনুমতি ছাড়াই সরাসরি ক্রোম ব্রাউজার থেকে ফোনের হোম স্ক্রিনে অ্যাপ যুক্ত করুন।
+          </p>
+          <button type="button" class="btn-pwa-primary" style="width: 100%;" onclick="triggerPwaInstall()">
+            📲 সরাসরি ১-ক্লিকে ইনস্টল করুন (WebAPK)
+          </button>
+        </div>
+
+        <!-- Android APK Direct Download Guide -->
+        <div class="apk-guide-box">
+          <div class="apk-guide-title">
+            <span>📦</span> <span>অ্যান্ড্রয়েড APK অফলাইন ইনস্টলেশন নির্দেশিকা</span>
+          </div>
+          <ul class="apk-step-list">
+            <li class="apk-step-item">
+              <span class="apk-step-num">১</span>
+              <div>
+                <strong>পুরনো অ্যাপ থাকলে আনইনস্টল করুন:</strong> আপনার ফোনে আগে থেকে কোনো পুরনো টেস্ট বিল্ড ইনস্টল থাকলে সেটি আনইনস্টল করে নিন, যাতে নতুন অফিশিয়াল সার্টিফিকেটের সাথে "App not installed" কনফ্লিক্ট না হয়।
+              </div>
+            </li>
+            <li class="apk-step-item">
+              <span class="apk-step-num">২</span>
+              <div>
+                <strong>অফিসিয়াল APK ডাউনলোড করুন:</strong> নিচের বাটনে চেপে লেটেস্ট রিলিজ প্যাকেজ ডাউনলোড সম্পন্ন করুন।
+              </div>
+            </li>
+            <li class="apk-step-item">
+              <span class="apk-step-num">৩</span>
+              <div>
+                <strong>প্লে প্রোটেক্টে "Install anyway" চাপুন:</strong> ডাউনলোড শেষে ওপেন করে "Install" চাপুন। যদি গুগল প্লে প্রোটেক্ট পপ-আপ আসে, তবে <em>"More details"</em> চেপে <em>"Install anyway"</em> দিন।
+              </div>
+            </li>
+          </ul>
+
+          <div class="apk-warning-callout">
+            🛡️ <strong>১০০% নিরাপদ বিল্ড:</strong> এই APK টি SB Furniture Ltd-এর নিজস্ব স্থায়ী প্রোডাকশন কি (RSA 4096-bit, SHA-256) দ্বারা সাইন করা এবং এতে কোনো ডিবাগ কোড নেই।
+          </div>
+
+          <div style="margin-top: 14px;">
+            <a id="btnStartDirectApk" href="/download/reseller-apk" class="btn-apk-direct" onclick="startApkDownload()">
+              <span>📥</span> <span>সরাসরি APK ফাইল ডাউনলোড শুরু করুন</span>
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PWA 1-Click Install Fixed Bottom Banner -->
+  <div id="pwaInstallBanner" class="pwa-install-banner" style="display: none;">
+    <div class="pwa-banner-icon">📱</div>
+    <div class="pwa-banner-info">
+      <div class="pwa-banner-title">
+        <span>📲 ১-ক্লিকে অ্যাপ ইনস্টল</span>
+        <span class="pwa-banner-badge">দ্রুত ও নিরাপদ</span>
+      </div>
+      <div class="pwa-banner-desc">কোনো ফাইল ডাউনলোড ছাড়াই ফোনের স্ক্রিনে যুক্ত করুন</div>
+    </div>
+    <div class="pwa-banner-actions">
+      <button class="btn-pwa-install" onclick="triggerPwaInstall()">ইনস্টল করুন</button>
+      <button class="btn-pwa-dismiss" onclick="dismissPwaBanner()" aria-label="বন্ধ করুন">✕</button>
+    </div>
+  </div>
+
   <!-- Toast Notification -->
   <div id="toast" class="toast-msg"></div>
 
@@ -406,6 +497,7 @@
   <script src="/js/catalog.js"></script>
   <script src="/js/leaderboard.js"></script>
   <script src="/js/app.js"></script>
+  <script src="/js/pwa-install.js" defer></script>
   <script>
     // Register PWA Service Worker
     if ('serviceWorker' in navigator) {

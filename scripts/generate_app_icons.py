@@ -281,21 +281,70 @@ def update_apk_icons(apk_path, icon_type='client'):
                 rel_path = os.path.relpath(full_path, unpack_dir)
                 zout.write(full_path, rel_path)
                 
-    # Sign with uber-apk-signer
+    # Sign with release keystore using uber-apk-signer and apksigner
     signer_jar = os.path.join(ROOT_DIR, 'scripts', 'uber-apk-signer.jar')
-    java_bin = '/home/don/.local/bin/java'
+    java_bin = '/home/don/.local/share/jvm/temurin-17/bin/java'
+    if not os.path.exists(java_bin):
+        java_bin = '/home/don/.local/bin/java'
     
+    keystore_path = os.path.join(ROOT_DIR, 'config', 'sb-release.keystore')
     signed_dir = os.path.join(ROOT_DIR, 'tmp_signed')
     if os.path.exists(signed_dir):
         shutil.rmtree(signed_dir)
     os.makedirs(signed_dir)
     
-    print("Signing APK with debug key...")
-    cmd = [java_bin, '-jar', signer_jar, '-a', temp_apk, '--overwrite', '--allowResign']
+    if os.path.exists(keystore_path):
+        print(f"🔐 Signing APK with SB Furniture & SB POWER Production Keystore: {keystore_path}")
+        cmd = [
+            java_bin, '-jar', signer_jar,
+            '-a', temp_apk,
+            '--ks', keystore_path,
+            '--ksAlias', 'sbpower',
+            '--ksPass', 'sbfurniture2026',
+            '--ksKeyPass', 'sbfurniture2026',
+            '--overwrite',
+            '--allowResign'
+        ]
+    else:
+        print("⚠️ Warning: Release keystore not found, falling back to default signer...")
+        cmd = [java_bin, '-jar', signer_jar, '-a', temp_apk, '--overwrite', '--allowResign']
+
     subprocess.check_call(cmd)
     
-    # temp_apk is now signed in-place, move it to apk_path
+    # Move signed temp_apk to target destination
     shutil.move(temp_apk, apk_path)
+
+    # Secondary enforcement using Android SDK apksigner (v1 + v2 + v3)
+    apksigner_candidates = [
+        "/home/don/whynet ecosystem/NEWTUBE/NewTube_Android/.android-sdk/build-tools/35.0.0/apksigner",
+        "/home/don/whynet ecosystem/NEWTUBE/NewTube_Android/.android-sdk/build-tools/34.0.0/apksigner",
+        os.path.join(os.environ.get('ANDROID_HOME', ''), 'build-tools', '35.0.0', 'apksigner'),
+    ]
+    apksigner_bin = None
+    for c in apksigner_candidates:
+        if os.path.exists(c):
+            apksigner_bin = c
+            break
+
+    if apksigner_bin and os.path.exists(keystore_path):
+        try:
+            print(f"🛡️ Enforcing full v1+v2+v3 signature scheme via apksigner ({apksigner_bin})...")
+            apksign_cmd = [
+                apksigner_bin, 'sign',
+                '--ks', keystore_path,
+                '--ks-key-alias', 'sbpower',
+                '--ks-pass', 'pass:sbfurniture2026',
+                '--key-pass', 'pass:sbfurniture2026',
+                '--v1-signing-enabled', 'true',
+                '--v2-signing-enabled', 'true',
+                '--v3-signing-enabled', 'true',
+                apk_path
+            ]
+            subprocess.check_call(apksign_cmd)
+            print("✅ apksigner v1+v2+v3 signing applied cleanly.")
+        except Exception as e:
+            print(f"⚠️ apksigner signing warning: {e}")
+
     print(f"✅ Successfully updated & signed: {apk_path}")
         
     # Clean up

@@ -1,17 +1,21 @@
-const CACHE_NAME = 'sb-furniture-v3';
+const CACHE_NAME = 'sb-furniture-v4';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
   '/admin.html',
   '/css/style.css',
+  '/css/pwa-install.css',
   '/js/api.js',
   '/js/catalog.js',
   '/js/leaderboard.js',
   '/js/app.js',
+  '/js/pwa-install.js',
   '/js/admin.js',
   '/manifest.json',
   '/manifest-admin.json',
-  '/icons/icon.svg'
+  '/icons/icon.svg',
+  '/icons/icon-192.png',
+  '/icons/icon-512.png'
 ];
 
 self.addEventListener('install', (event) => {
