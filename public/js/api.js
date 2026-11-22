@@ -8,7 +8,7 @@
   // Configurable Cloud Backend Default
   // When running inside Android Capacitor APK (localhost/file) or Firebase Hosting Spark plan,
   // this is the production server URL.
-  const DEFAULT_CLOUD_API_URL = 'https://sb-power-app.onrender.com';
+  const DEFAULT_CLOUD_API_URL = 'https://sb-furniture-power-app.onrender.com';
 
   function getApiBaseUrl() {
     // 1. Manually overridden in localStorage (e.g. via Server Settings)
