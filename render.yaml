@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: sb-power-app
+    env: node
+    plan: free
+    region: singapore # Closest region to Bangladesh for ultra-low latency (<50ms)
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CORS_ORIGINS
+        value: "https://sb-power-app.web.app,https://sb-power-app.firebaseapp.com"

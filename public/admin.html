@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>এডমিন কন্ট্রোল প্যানেল — SB Furniture & SB POWER</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    .admin-nav {
+      background: #1c1917;
+      border-bottom: 2px solid var(--sbf-amber);
+      padding: 12px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .admin-stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 14px;
+      margin: 20px 0;
+    }
+    .admin-stat-card {
+      background: #292524;
+      border: 1px solid var(--sbf-border);
+      border-radius: var(--radius-sm);
+      padding: 16px;
+      text-align: center;
+    }
+    .admin-stat-num {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: var(--sbp-yellow);
+      margin-top: 4px;
+    }
+    .admin-tabs {
+      display: flex;
+      gap: 10px;
+      border-bottom: 1px solid var(--sbf-border);
+      margin-bottom: 20px;
+      padding-bottom: 8px;
+      overflow-x: auto;
+    }
+    .table-responsive {
+      width: 100%;
+      overflow-x: auto;
+      background: #292524;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--sbf-border);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 0.85rem;
+    }
+    th, td {
+      padding: 12px 14px;
+      border-bottom: 1px solid #38332f;
+    }
+    th {
+      background: #1c1917;
+      color: #d6d3d1;
+      font-weight: 600;
+    }
+    .action-btn-sm {
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      border: none;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .btn-deliver { background: #10b981; color: #fff; }
+    .btn-ship { background: #8b5cf6; color: #fff; }
+    .btn-confirm { background: #2563eb; color: #fff; }
+    .btn-cancel { background: #ef4444; color: #fff; }
+  </style>
+</head>
+<body>
+
+  <!-- Admin Login Screen (Shown when not authenticated) -->
+  <div id="adminLoginSection" style="max-width: 400px; margin: 80px auto; padding: 24px; background: #292524; border-radius: var(--radius-md); border: 1px solid var(--sbf-border);">
+    <div style="text-align: center; margin-bottom: 20px;">
+      <div class="logo-icon" style="margin: 0 auto 10px;">SB</div>
+      <h2 style="font-size: 1.3rem;">এডমিন প্যানেল লগইন</h2>
+      <p style="font-size: 0.85rem; color: var(--sbf-text-muted);">SB Furniture & SB POWER কন্ট্রোল রুম</p>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">এডমিন ফোন নম্বর</label>
+      <input type="tel" id="adminPhoneInput" class="form-control" value="01929621855">
+    </div>
+    <div class="form-group">
+      <label class="form-label">পাসওয়ার্ড</label>
+      <input type="password" id="adminPassInput" class="form-control" placeholder="এডমিন পাসওয়ার্ড">
+    </div>
+    <button class="btn-submit" onclick="submitAdminLogin()">লগইন করুন</button>
+  </div>
+
+  <!-- Admin Dashboard Container (Shown when authenticated) -->
+  <div id="adminDashboardSection" style="display: none;">
+    <div class="admin-nav">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <span style="font-size: 1.2rem; font-weight: 700; color: var(--sbp-yellow);">👑 SB কন্ট্রোল প্যানেল</span>
+        <a href="/" target="_blank" style="color: #a8a29e; font-size: 0.8rem; text-decoration: underline;">ওয়েবসাইট ভিজিট করুন ↗</a>
+      </div>
+      <div>
+        <button class="btn-nav" style="color: var(--sbp-red); padding: 6px 12px;" onclick="adminLogout()">লগআউট</button>
+      </div>
+    </div>
+
+    <main class="container" style="padding-top: 10px;">
+      <!-- Real-time Stats Cards -->
+      <div class="admin-stats-grid" id="adminStatsGrid">
+        <div class="admin-stat-card">
+          <div style="font-size: 0.8rem; color: var(--sbf-text-muted);">মোট অর্ডার</div>
+          <div class="admin-stat-num" id="statTotalOrders">-</div>
+        </div>
+        <div class="admin-stat-card">
+          <div style="font-size: 0.8rem; color: var(--sbf-text-muted);">মোট সেলস আয়</div>
+          <div class="admin-stat-num" id="statTotalRevenue">-</div>
+        </div>
+        <div class="admin-stat-card">
+          <div style="font-size: 0.8rem; color: #f59e0b;">পেন্ডিং অর্ডার</div>
+          <div class="admin-stat-num" style="color: #f59e0b;" id="statPendingOrders">-</div>
+        </div>
+        <div class="admin-stat-card">
+          <div style="font-size: 0.8rem; color: #10b981;">ডেলিভার্ড অর্ডার</div>
+          <div class="admin-stat-num" style="color: #10b981;" id="statDeliveredOrders">-</div>
+        </div>
+        <div class="admin-stat-card">
+          <div style="font-size: 0.8rem; color: var(--sbf-text-muted);">রিসেলার সদস্য</div>
+          <div class="admin-stat-num" id="statTotalResellers">-</div>
+        </div>
+        <div class="admin-stat-card">
+          <div style="font-size: 0.8rem; color: #ec4899;">পেন্ডিং ক্যাশআউট</div>
+          <div class="admin-stat-num" style="color: #ec4899;" id="statPendingPayouts">-</div>
+        </div>
+      </div>
+
+      <!-- Navigation Tabs -->
+      <div class="admin-tabs">
+        <button class="tab-btn active" id="tabBtnOrders" onclick="switchAdminSection('orders')">📦 অর্ডার ম্যানেজমেন্ট</button>
+        <button class="tab-btn" id="tabBtnPayouts" onclick="switchAdminSection('payouts')">💸 ক্যাশআউট অনুমোদন</button>
+        <button class="tab-btn" id="tabBtnProducts" onclick="switchAdminSection('products')">🪑 ক্লাউড ক্যাটালগ (CRUD)</button>
+        <button class="tab-btn" id="tabBtnAnalytics" onclick="switchAdminSection('analytics')">📊 এনালিটিক্স</button>
+        <button class="tab-btn" id="tabBtnAnnouncements" onclick="switchAdminSection('announcements')">📢 অফার ও নোটিশ</button>
+        <button class="tab-btn" id="tabBtnBackups" onclick="switchAdminSection('backups')">💾 ডাটাবেজ ব্যাকআপ</button>
+      </div>
+
+      <!-- Section 1: Orders -->
+      <div id="adminOrdersSection">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <h3 style="font-size: 1.1rem;">অর্ডার তালিকা</h3>
+          <div>
+            <select id="orderStatusFilter" class="form-control" style="width: auto; display: inline-block;" onchange="loadAdminOrders()">
+              <option value="all">সকল অর্ডার</option>
+              <option value="pending">পেন্ডিং (Pending)</option>
+              <option value="confirmed">নিশ্চিত (Confirmed)</option>
+              <option value="shipped">শিপড (Shipped)</option>
+              <option value="delivered">ডেলিভার্ড (Delivered)</option>
+              <option value="cancelled">বাতিল (Cancelled)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="table-responsive">
+          <table>
+            <thead>
+              <tr>
+                <th>অর্ডার নং</th>
+                <th>গ্রাহক ও ফোন</th>
+                <th>ঠিকানা ও এরিয়া</th>
+                <th>সর্বমোট</th>
+                <th>অগ্রিম TrxID</th>
+                <th>রিসেলার ও কমিশন</th>
+                <th>স্ট্যাটাস</th>
+                <th>অ্যাকশন</th>
+              </tr>
+            </thead>
+            <tbody id="adminOrdersTableBody">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Section 2: Payouts -->
+      <div id="adminPayoutsSection" style="display: none;">
+        <h3 style="font-size: 1.1rem; margin-bottom: 12px;">💸 রিসেলার ক্যাশআউট রিকোয়েস্ট</h3>
+        <div class="table-responsive">
+          <table>
+            <thead>
+              <tr>
+                <th>আইডি</th>
+                <th>রিসেলার নাম</th>
+                <th>ফোন নম্বর</th>
+                <th>পরিমাণ</th>
+                <th>মেথড</th>
+                <th>অ্যাকাউন্ট নং</th>
+                <th>স্ট্যাটাস</th>
+                <th>TrxID / তারিখ</th>
+                <th>অ্যাকশন</th>
+              </tr>
+            </thead>
+            <tbody id="adminPayoutsTableBody">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Section 3: Products (Dynamic Cloud Catalog CRUD) -->
+      <div id="adminProductsSection" style="display: none;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <h3 style="font-size: 1.1rem;">🪑 ক্যাটালগ ও পণ্য ব্যবস্থাপনা</h3>
+          <button class="btn-submit" style="width: auto; margin-top: 0; padding: 8px 16px;" onclick="openAddProductModal()">
+            + নতুন পণ্য যুক্ত করুন
+          </button>
+        </div>
+
+        <div class="table-responsive">
+          <table>
+            <thead>
+              <tr>
+                <th>ছবি</th>
+                <th>SKU</th>
+                <th>শিরোনাম</th>
+                <th>ব্র্যান্ড ও ক্যাটাগরি</th>
+                <th>মূল্য</th>
+                <th>কমিশন ট্যাব</th>
+                <th>স্টক</th>
+                <th>অ্যাকশন</th>
+              </tr>
+            </thead>
+            <tbody id="adminProductsTableBody">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <!-- Section 4: Analytics -->
+      <div id="adminAnalyticsSection" style="display: none;">
+        <div style="margin-bottom: 20px;">
+          <h3 style="font-size: 1.1rem; margin-bottom: 12px; color: var(--sbp-yellow);">📊 শীর্ষ বিক্রিত পণ্য (Top Products)</h3>
+          <div class="table-responsive">
+            <table>
+              <thead>
+                <tr>
+                  <th>SKU</th>
+                  <th>পণ্যের শিরোনাম</th>
+                  <th>বিক্রিত পরিমাণ (Units)</th>
+                  <th>মোট বিক্রয় ভলিউম</th>
+                </tr>
+              </thead>
+              <tbody id="analyticsTopProductsBody">
+                <!-- Dynamically loaded -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div>
+          <h3 style="font-size: 1.1rem; margin-bottom: 12px; color: #10b981;">🏆 শীর্ষ পারফর্মিং রিসেলার (Top Resellers)</h3>
+          <div class="table-responsive">
+            <table>
+              <thead>
+                <tr>
+                  <th>রিসেলার নাম</th>
+                  <th>মোবাইল নম্বর</th>
+                  <th>সফল সেলস সংখ্যা</th>
+                  <th>মোট সেলস ভলিউম</th>
+                  <th>মোট অর্জিত কমিশন</th>
+                </tr>
+              </thead>
+              <tbody id="analyticsTopResellersBody">
+                <!-- Dynamically loaded -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section 5: Announcements -->
+      <div id="adminAnnouncementsSection" style="display: none;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <h3 style="font-size: 1.1rem;">অফার ও নোটিশ ব্যানার</h3>
+          <button class="btn-nav" style="background: var(--sbf-amber); color: #fff;" onclick="openAddAnnouncementModal()">+ নতুন ঘোষণা</button>
+        </div>
+        <div class="table-responsive">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>শিরোনাম</th>
+                <th>বার্তা</th>
+                <th>টাইপ</th>
+                <th>স্ট্যাটাস</th>
+                <th>অ্যাকশন</th>
+              </tr>
+            </thead>
+            <tbody id="adminAnnouncementsTableBody">
+              <!-- Dynamically loaded -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Section 6: Backups & Data Safety -->
+      <div id="adminBackupsSection" style="display: none;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+          <div>
+            <h3 style="font-size: 1.1rem; color: #34d399; margin: 0;">💾 ডাটাবেজ ব্যাকআপ ও ডাটা সুরক্ষা</h3>
+            <p style="font-size: 0.8rem; color: var(--sbf-text-muted); margin: 4px 0 0;">নিরাপদ অনলাইন SQLite স্ন্যাপশট ব্যাকআপ ও অফলাইন ডাউনলোড</p>
+          </div>
+          <button class="btn-nav" style="background: #059669; color: #fff;" onclick="triggerInstantBackup()">⚡ ইনস্ট্যান্ট ব্যাকআপ তৈরি করুন</button>
+        </div>
+        <div id="adminBackupsList" style="margin-top: 14px;"></div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Add Product Modal -->
+  <div class="modal-overlay" id="addProductModal" role="dialog" aria-modal="true" aria-labelledby="productFormTitle">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 id="productFormTitle">নতুন প্রোডাক্ট যোগ করুন</h3>
+        <button class="btn-close" onclick="closeModal('addProductModal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="editProductId" value="">
+        <div class="form-group">
+          <label class="form-label">টাইটেল (বাংলা নাম সহ) *</label>
+          <input type="text" id="prodTitle" class="form-control" placeholder="যেমন: আধুনিক ফার্মেসি ডেকোরেশন">
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+          <div class="form-group">
+            <label class="form-label">SKU কোড *</label>
+            <input type="text" id="prodSku" class="form-control" placeholder="যেমন: SBF-111">
+          </div>
+          <div class="form-group">
+            <label class="form-label">ব্র্যান্ড *</label>
+            <select id="prodBrand" class="form-control">
+              <option value="SB Furniture">SB Furniture</option>
+              <option value="SB POWER">SB POWER</option>
+            </select>
+          </div>
+        </div>
+        <!-- Multi-Vendor / Partner Shop Promotion Fields -->
+        <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: var(--radius-sm); padding: 10px; margin-bottom: 12px;">
+          <div style="font-size: 0.85rem; font-weight: 700; color: #34d399; margin-bottom: 8px;">
+            🏪 শপ / ভেন্ডর প্রমোশন (অন্যান্য দোকান মালিকের পণ্য প্রোমোট করতে)
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+            <div class="form-group" style="margin-bottom: 8px;">
+              <label class="form-label">শপ / দোকানের নাম</label>
+              <input type="text" id="prodShopName" class="form-control" placeholder="যেমন: ভাই ভাই ফার্নিচার / SB Furniture">
+            </div>
+            <div class="form-group" style="margin-bottom: 8px;">
+              <label class="form-label">ভেন্ডরের ফোন / WhatsApp নম্বর</label>
+              <input type="tel" id="prodVendorPhone" class="form-control" placeholder="01XXXXXXXXX">
+            </div>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+            <div class="form-group" style="margin-bottom: 0;">
+              <label class="form-label">ভেন্ডর ব্যাজ</label>
+              <input type="text" id="prodVendorBadge" class="form-control" placeholder="যেমন: Verified Partner, প্রিমিয়াম শপ">
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label class="form-label">শপ লোকেশন / ঠিকানা</label>
+              <input type="text" id="prodVendorAddress" class="form-control" placeholder="যেমন: মিরপুর ১০, ঢাকা">
+            </div>
+          </div>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+          <div class="form-group">
+            <label class="form-label">ক্যাটাগরি *</label>
+            <select id="prodCategory" class="form-control">
+              <option value="দোকান ডেকোরেশন">দোকান ডেকোরেশন</option>
+              <option value="হোম ও অফিস ফার্নিচার">হোম ও অফিস ফার্নিচার</option>
+              <option value="ওয়্যারলেস অডিও ও গ্যাজেটস">ওয়্যারলেস অডিও ও গ্যাজেটস</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">কমিশন ট্যাব *</label>
+            <select id="prodCommTab" class="form-control">
+              <option value="50tk">৫০৳ লাভ</option>
+              <option value="100tk">১০০৳ লাভ</option>
+              <option value="500tk">৫০০৳ লাভ</option>
+              <option value="1000tk">১০০০৳ লাভ</option>
+            </select>
+          </div>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;">
+          <div class="form-group">
+            <label class="form-label">বিক্রয় মূল্য *</label>
+            <input type="number" id="prodPrice" class="form-control" placeholder="টাকা">
+          </div>
+          <div class="form-group">
+            <label class="form-label">কমিশন (লাভ) *</label>
+            <input type="number" id="prodCommission" class="form-control" placeholder="যেমন: 500">
+          </div>
+          <div class="form-group">
+            <label class="form-label">স্টক পরিমাণ</label>
+            <input type="number" id="prodStock" class="form-control" value="50">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">ছবির লিংক (URL) *</label>
+          <input type="url" id="prodImageUrl" class="form-control" placeholder="https://...">
+        </div>
+        <div class="form-group">
+          <label class="form-label">বোর্ড উপকরণ (মেলামাইন / সুপার এস / রম)</label>
+          <input type="text" id="prodMaterials" class="form-control" placeholder="যেমন: সুপার এস বোর্ড">
+        </div>
+        <div class="form-group">
+          <label class="form-label">ফিনিশিং ও কালার</label>
+          <input type="text" id="prodFinish" class="form-control" placeholder="যেমন: White Carrara Marble">
+        </div>
+        <div class="form-group">
+          <label class="form-label">বিবরণ (Description)</label>
+          <textarea id="prodDesc" class="form-control" rows="2" placeholder="পণ্য সম্পর্কে বিস্তারিত লিখুন..."></textarea>
+        </div>
+        <button class="btn-submit" onclick="submitProductForm()">সংরক্ষণ করুন</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Order Audit Trail Modal -->
+  <div class="modal-overlay" id="orderAuditModal" role="dialog" aria-modal="true" aria-labelledby="auditModalTitle">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 id="auditModalTitle">অর্ডার স্ট্যাটাস অডিট ট্রেইল</h3>
+        <button class="btn-close" onclick="closeModal('orderAuditModal')">&times;</button>
+      </div>
+      <div class="modal-body" id="auditModalBody">
+        <!-- Dynamically loaded -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Announcement Add/Edit Modal -->
+  <div class="modal-overlay" id="announcementModal" role="dialog" aria-modal="true" aria-labelledby="announcementModalTitle">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 id="announcementModalTitle">নতুন অফার / নোটিশ</h3>
+        <button class="btn-close" onclick="closeModal('announcementModal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="editAnnouncementId" value="">
+        <div class="form-group">
+          <label class="form-label">শিরোনাম *</label>
+          <input type="text" id="annTitle" class="form-control" placeholder="যেমন: 🔥 মেগা অফার: আজই প্রথম সেল...">
+        </div>
+        <div class="form-group">
+          <label class="form-label">বিস্তারিত বার্তা *</label>
+          <textarea id="annMessage" class="form-control" rows="3" placeholder="ঘোষণার বার্তা লিখুন..."></textarea>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+          <div class="form-group">
+            <label class="form-label">টাইপ</label>
+            <select id="annType" class="form-control">
+              <option value="flash_deal">ফ্ল্যাশ ডিল / অফার</option>
+              <option value="general">সাধারণ নোটিশ</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">স্ট্যাটাস</label>
+            <select id="annActive" class="form-control">
+              <option value="1">সক্রিয় (Active)</option>
+              <option value="0">নিষ্ক্রিয় (Inactive)</option>
+            </select>
+          </div>
+        </div>
+        <button class="btn-submit" onclick="submitAnnouncementForm()">সংরক্ষণ করুন</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast-msg"></div>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/admin.js"></script>
+</body>
+</html>

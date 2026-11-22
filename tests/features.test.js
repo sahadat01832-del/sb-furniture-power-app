@@ -1,0 +1,774 @@
+const { test, before, after } = require('node:test');
+const assert = require('node:assert/strict');
+const http = require('node:http');
+const app = require('../src/server');
+const { initDb, run, get, query, withTransaction } = require('../src/db');
+const { seedData } = require('../src/seed');
+const config = require('../src/config');
+
+let server;
+let baseUrl;
+
+const request = (path, options = {}) => {
+  return new Promise((resolve, reject) => {
+    const url = new URL(path, baseUrl);
+    const reqOptions = {
+      method: options.method || 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(options.headers || {})
+      }
+    };
+
+    const req = http.request(url, reqOptions, (res) => {
+      let data = '';
+      res.on('data', (chunk) => (data += chunk));
+      res.on('end', () => {
+        let json;
+        try {
+          json = JSON.parse(data);
+        } catch (e) {
+          json = data;
+        }
+        resolve({
+          status: res.statusCode,
+          headers: res.headers,
+          body: json
+        });
+      });
+    });
+
+    req.on('error', reject);
+    if (options.body) {
+      req.write(JSON.stringify(options.body));
+    }
+    req.end();
+  });
+};
+
+before(async () => {
+  await initDb();
+  await seedData();
+
+  await new Promise((resolve) => {
+    server = app.listen(0, () => {
+      const port = server.address().port;
+      baseUrl = `http://127.0.0.1:${port}`;
+      resolve();
+    });
+  });
+});
+
+after(async () => {
+  if (server) {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test('Features 1: Auth - Session, Profile Update, and Password Change', async () => {
+  const phone = '01799112233';
+  const initialPassword = 'Password123';
+  const newPassword = 'NewSecretPassword456';
+
+  // 1. Session check before auth
+  const noSession = await request('/api/auth/session');
+  assert.equal(noSession.status, 200);
+  assert.equal(noSession.body.authenticated, false);
+  assert.equal(noSession.body.user, null);
+
+  // 2. Register new reseller
+  const regRes = await request('/api/auth/register', {
+    method: 'POST',
+    body: {
+      name: 'হাসান মাহমুদ',
+      phone,
+      password: initialPassword
+    }
+  });
+  assert.equal(regRes.status, 201);
+  const token = regRes.body.token;
+  assert.ok(token);
+
+  // 3. Session check with valid token
+  const validSession = await request('/api/auth/session', {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  assert.equal(validSession.status, 200);
+  assert.equal(validSession.body.authenticated, true);
+  assert.equal(validSession.body.user.phone, phone);
+
+  // 4. Profile update via PUT /api/auth/me
+  const updateRes = await request('/api/auth/me', {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}` },
+    body: {
+      name: 'হাসান মাহমুদ চৌধুরী'
+    }
+  });
+  assert.equal(updateRes.status, 200);
+  assert.equal(updateRes.body.success, true);
+  assert.equal(updateRes.body.user.name, 'হাসান মাহমুদ চৌধুরী');
+
+  // 5. Password change with wrong old password
+  const badPassRes = await request('/api/auth/change-password', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: {
+      old_password: 'WrongPassword999',
+      new_password: newPassword
+    }
+  });
+  assert.equal(badPassRes.status, 400);
+  assert.ok(badPassRes.body.message.includes('বর্তমান পাসওয়ার্ড সঠিক নয়'));
+
+  // 6. Password change with correct credentials
+  const goodPassRes = await request('/api/auth/change-password', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: {
+      old_password: initialPassword,
+      new_password: newPassword
+    }
+  });
+  assert.equal(goodPassRes.status, 200);
+  assert.equal(goodPassRes.body.success, true);
+
+  // 7. Verify login works with new password
+  const newLoginRes = await request('/api/auth/login', {
+    method: 'POST',
+    body: {
+      phone,
+      password: newPassword
+    }
+  });
+  assert.equal(newLoginRes.status, 200);
+  assert.ok(newLoginRes.body.token);
+});
+
+test('Features 2: Product Catalog - Price Range, Sorting, Categories Meta & Pagination', async () => {
+  // 1. Categories meta
+  const metaRes = await request('/api/products/meta/categories');
+  assert.equal(metaRes.status, 200);
+  assert.ok(Array.isArray(metaRes.body.categories));
+  assert.ok(metaRes.body.categories.length > 0);
+
+  // 2. Price range filtering
+  const rangeRes = await request('/api/products?min_price=2000&max_price=10000');
+  assert.equal(rangeRes.status, 200);
+  assert.ok(rangeRes.body.products.length > 0);
+  rangeRes.body.products.forEach(p => {
+    assert.ok(p.regular_price >= 2000 && p.regular_price <= 10000, `Product price ${p.regular_price} out of range`);
+  });
+
+  // 3. Sorting by price asc
+  const ascRes = await request('/api/products?sort=price_asc&limit=10');
+  assert.equal(ascRes.status, 200);
+  for (let i = 0; i < ascRes.body.products.length - 1; i++) {
+    assert.ok(ascRes.body.products[i].regular_price <= ascRes.body.products[i + 1].regular_price);
+  }
+
+  // 4. Sorting by commission desc
+  const commDescRes = await request('/api/products?sort=commission_desc&limit=10');
+  assert.equal(commDescRes.status, 200);
+  for (let i = 0; i < commDescRes.body.products.length - 1; i++) {
+    assert.ok(commDescRes.body.products[i].reseller_commission >= commDescRes.body.products[i + 1].reseller_commission);
+  }
+
+  // 5. Pagination structure
+  const pageRes = await request('/api/products?page=2&limit=5');
+  assert.equal(pageRes.status, 200);
+  assert.equal(pageRes.body.current_page, 2);
+  assert.equal(pageRes.body.limit, 5);
+  assert.ok(pageRes.body.total >= 30);
+  assert.ok(pageRes.body.total_pages >= 6);
+  assert.equal(pageRes.body.products.length, 5);
+});
+
+test('Features 3: Order History, Phone-Based Search, and Reseller Sales List', async () => {
+  // 1. Get an existing product
+  const prods = await query('SELECT * FROM products LIMIT 1');
+  assert.ok(prods.length > 0);
+  const sampleProd = prods[0];
+
+  // 2. Register reseller
+  const resPhone = '01799223344';
+  const reg = await request('/api/auth/register', {
+    method: 'POST',
+    body: { name: 'আসিফ ইকবাল', phone: resPhone, password: 'password123' }
+  });
+  const resToken = reg.body.token;
+
+  // 3. Place order with reseller referral
+  const customerPhone = '01855667788';
+  const orderRes = await request('/api/orders', {
+    method: 'POST',
+    body: {
+      customer_name: 'কাস্টমার রফিক',
+      customer_phone: customerPhone,
+      delivery_address: 'মিরপুর ১২, ঢাকা',
+      delivery_city: 'inside_dhaka',
+      advance_paid: 500,
+      advance_trx_id: 'TRX-FEAT-999',
+      referral_code: reg.body.user.referral_code,
+      items: [{ product_id: sampleProd.id, quantity: 1 }]
+    }
+  });
+  assert.equal(orderRes.status, 201);
+  const orderNumber = orderRes.body.order.order_number;
+  assert.ok(orderNumber);
+
+  // 4. Customer order history via GET /api/orders/my-orders?phone=...
+  const custOrders = await request(`/api/orders/my-orders?phone=${customerPhone}`);
+  assert.equal(custOrders.status, 200);
+  assert.ok(custOrders.body.orders.length >= 1);
+  assert.equal(custOrders.body.orders[0].customer_phone, customerPhone);
+
+  // 5. Tracking search by phone
+  const trackSearch = await request(`/api/orders/track/search?query=${customerPhone}`);
+  assert.equal(trackSearch.status, 200);
+  assert.ok(trackSearch.body.orders.length >= 1);
+  assert.equal(trackSearch.body.orders[0].order_number, orderNumber);
+
+  // 6. Direct tracking by order number
+  const singleTrack = await request(`/api/orders/track/${orderNumber}`);
+  assert.equal(singleTrack.status, 200);
+  assert.equal(singleTrack.body.order.order_number, orderNumber);
+  assert.ok(Array.isArray(singleTrack.body.order.items));
+
+  // 7. Reseller sales list via GET /api/orders/reseller-sales
+  const salesList = await request('/api/orders/reseller-sales', {
+    headers: { Authorization: `Bearer ${resToken}` }
+  });
+  assert.equal(salesList.status, 200);
+  assert.ok(salesList.body.orders.length >= 1);
+  assert.equal(salesList.body.orders[0].order_number, orderNumber);
+  assert.ok(salesList.body.orders[0].reseller_commission >= 0);
+});
+
+test('Features 4: Order Audit Trail & Real-Time Reseller Notification on Status Transition', async () => {
+  const prods = await query('SELECT * FROM products LIMIT 1');
+  const resPhone = '01799334455';
+  const reg = await request('/api/auth/register', {
+    method: 'POST',
+    body: { name: 'সুমাইয়া জাহান', phone: resPhone, password: 'password123' }
+  });
+  const resToken = reg.body.token;
+
+  const orderRes = await request('/api/orders', {
+    method: 'POST',
+    body: {
+      customer_name: 'তাহমিন আক্তার',
+      customer_phone: '01911445566',
+      delivery_address: 'ধানমন্ডি, ঢাকা',
+      delivery_city: 'inside_dhaka',
+      advance_paid: 500,
+      advance_trx_id: 'TRX-AUDIT-123',
+      referral_code: reg.body.user.referral_code,
+      items: [{ product_id: prods[0].id, quantity: 1 }]
+    }
+  });
+  assert.equal(orderRes.status, 201);
+  const orderId = orderRes.body.order.id;
+
+  // 2. Admin logs in
+  const adminLogin = await request('/api/auth/login', {
+    method: 'POST',
+    body: { phone: config.ADMIN.phone, password: config.ADMIN.password }
+  });
+  const adminToken = adminLogin.body.token;
+  assert.ok(adminToken);
+
+  // 3. Admin updates order status to 'confirmed' with note
+  const updateRes1 = await request(`/api/admin/orders/${orderId}/status`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${adminToken}` },
+    body: { status: 'confirmed', notes: 'কারখানা থেকে ডেলিভারির জন্য প্রস্তুত করা হচ্ছে' }
+  });
+  assert.equal(updateRes1.status, 200);
+
+  // 4. Verify audit trail via GET /api/admin/orders/:id/audit-trail
+  const auditRes = await request(`/api/admin/orders/${orderId}/audit-trail`, {
+    headers: { Authorization: `Bearer ${adminToken}` }
+  });
+  assert.equal(auditRes.status, 200);
+  assert.ok(Array.isArray(auditRes.body.audit_trail));
+  assert.ok(auditRes.body.audit_trail.length >= 2); // Initial pending + confirmed
+  const confirmedLog = auditRes.body.audit_trail.find(log => log.new_status === 'confirmed');
+  assert.ok(confirmedLog);
+  assert.equal(confirmedLog.notes, 'কারখানা থেকে ডেলিভারির জন্য প্রস্তুত করা হচ্ছে');
+
+  // 5. Admin updates to 'delivered'
+  const updateRes2 = await request(`/api/admin/orders/${orderId}/status`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${adminToken}` },
+    body: { status: 'delivered', notes: 'গ্রাহক পণ্য বুঝে পেয়েছেন' }
+  });
+  assert.equal(updateRes2.status, 200);
+
+  // 6. Check reseller notifications via GET /api/auth/notifications
+  const notifRes = await request('/api/auth/notifications', {
+    headers: { Authorization: `Bearer ${resToken}` }
+  });
+  assert.equal(notifRes.status, 200);
+  assert.ok(Array.isArray(notifRes.body.notifications));
+  assert.ok(notifRes.body.notifications.length >= 2);
+  const deliveredNotif = notifRes.body.notifications.find(n => n.message.includes('delivered'));
+  assert.ok(deliveredNotif);
+  assert.equal(deliveredNotif.is_read, 0);
+
+  // 7. Mark notification as read via PUT /api/auth/notifications/:id/read
+  const readRes = await request(`/api/auth/notifications/${deliveredNotif.id}/read`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${resToken}` }
+  });
+  assert.equal(readRes.status, 200);
+  assert.equal(readRes.body.success, true);
+});
+
+test('Features 5: Downline Team Breakdown & Admin Analytics', async () => {
+  // 1. Parent reseller registers
+  const parentPhone = '01799445566';
+  const parentReg = await request('/api/auth/register', {
+    method: 'POST',
+    body: { name: 'টিম লিডার তানভীর', phone: parentPhone, password: 'password123' }
+  });
+  const parentToken = parentReg.body.token;
+  const parentRefCode = parentReg.body.user.referral_code;
+
+  // 2. Child reseller registers using parent's referral code
+  const childPhone = '01799556677';
+  const childReg = await request('/api/auth/register', {
+    method: 'POST',
+    body: {
+      name: 'সদস্য কামরুল',
+      phone: childPhone,
+      password: 'password123',
+      referral_code: parentRefCode
+    }
+  });
+  assert.equal(childReg.status, 201);
+
+  // 3. Parent checks downline team via GET /api/wallet/downline
+  const downlineRes = await request('/api/wallet/downline', {
+    headers: { Authorization: `Bearer ${parentToken}` }
+  });
+  assert.equal(downlineRes.status, 200);
+  assert.equal(downlineRes.body.success, true);
+  assert.ok(Array.isArray(downlineRes.body.team));
+  assert.equal(downlineRes.body.count, 1);
+  const member = downlineRes.body.team[0];
+  assert.equal(member.name, 'সদস্য কামরুল');
+
+  // 4. Admin Analytics via GET /api/admin/analytics
+  const adminLogin = await request('/api/auth/login', {
+    method: 'POST',
+    body: { phone: config.ADMIN.phone, password: config.ADMIN.password }
+  });
+  const analyticsRes = await request('/api/admin/analytics', {
+    headers: { Authorization: `Bearer ${adminLogin.body.token}` }
+  });
+  assert.equal(analyticsRes.status, 200);
+  assert.ok(analyticsRes.body.analytics);
+  assert.ok(analyticsRes.body.analytics.total_orders >= 1);
+  assert.ok(Array.isArray(analyticsRes.body.analytics.top_products));
+  assert.ok(Array.isArray(analyticsRes.body.analytics.top_resellers));
+});
+
+test('Features 6: Dynamic Announcements CRUD & Public Config Propagation', async () => {
+  const adminLogin = await request('/api/auth/login', {
+    method: 'POST',
+    body: { phone: config.ADMIN.phone, password: config.ADMIN.password }
+  });
+  const adminToken = adminLogin.body.token;
+  assert.ok(adminToken);
+
+  // 1. Create announcement
+  const createRes = await request('/api/admin/announcements', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${adminToken}` },
+    body: {
+      title: 'টেস্ট ফ্ল্যাশ সেল ২০২৬',
+      message: 'সকল প্রিমিয়াম সোফায় ২০% বাড়তি কমিশন ও নিশ্চিত ক্যাশব্যাক!',
+      type: 'flash_deal',
+      is_active: 1
+    }
+  });
+  assert.equal(createRes.status, 201);
+  const announcementId = createRes.body.id;
+  assert.ok(announcementId);
+
+  // 2. Verify active announcement in public /api/config
+  const configRes = await request('/api/config');
+  assert.equal(configRes.status, 200);
+  assert.ok(Array.isArray(configRes.body.announcements));
+  const foundInConfig = configRes.body.announcements.find(a => a.id === announcementId);
+  assert.ok(foundInConfig, 'Announcement should propagate into public /api/config');
+  assert.equal(foundInConfig.title, 'টেস্ট ফ্ল্যাশ সেল ২০২৬');
+
+  // 3. Update announcement
+  const updateRes = await request(`/api/admin/announcements/${announcementId}`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${adminToken}` },
+    body: {
+      title: 'আপডেটেড ফ্ল্যাশ সেল ২০২৬',
+      message: 'অফারটি সীমিত সময়ের জন্য বর্ধিত করা হলো!',
+      type: 'flash_deal',
+      is_active: 1
+    }
+  });
+  assert.equal(updateRes.status, 200);
+
+  // 4. Verify updated title in public /api/config
+  const updatedConfig = await request('/api/config');
+  const foundUpdated = updatedConfig.body.announcements.find(a => a.id === announcementId);
+  assert.equal(foundUpdated.title, 'আপডেটেড ফ্ল্যাশ সেল ২০২৬');
+
+  // 5. Delete announcement
+  const deleteRes = await request(`/api/admin/announcements/${announcementId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${adminToken}` }
+  });
+  assert.equal(deleteRes.status, 200);
+
+  // 6. Verify removed from public /api/config
+  const cleanConfig = await request('/api/config');
+  const deletedStillExists = cleanConfig.body.announcements.some(a => a.id === announcementId);
+  assert.equal(deletedStillExists, false, 'Deleted announcement should not appear in /api/config');
+});
+
+test('Features 7: Concurrency & Transaction Serialization (withTransaction Queue)', async () => {
+  // Test running 10 concurrent transactions that write to announcements or notifications
+  const results = await Promise.all(
+    Array.from({ length: 10 }).map((_, i) =>
+      withTransaction(async ({ run: txRun }) => {
+        const res = await txRun(
+          'INSERT INTO notifications (user_id, title, message) VALUES (?, ?, ?)',
+          [1, `কনকারেন্ট টেস্ট ${i}`, `মেসেজ কনটেন্ট ${i}`]
+        );
+        return res.lastID;
+      })
+    )
+  );
+
+  assert.equal(results.length, 10);
+  results.forEach((id) => assert.ok(id > 0));
+
+  // Clean up
+  await run("DELETE FROM notifications WHERE title LIKE 'কনকারেন্ট টেস্ট%'");
+});
+
+test('Features 8: Admin Products Filter (Active vs Inactive) & Status Update', async () => {
+  const adminLogin = await request('/api/auth/login', {
+    method: 'POST',
+    body: { phone: config.ADMIN.phone, password: config.ADMIN.password }
+  });
+  const adminToken = adminLogin.body.token;
+  assert.ok(adminToken);
+
+  // 1. Create a product specifically to deactivate
+  const dynamicSku = `TEST-INACT-${Date.now()}`;
+  const createProdRes = await request('/api/admin/products', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${adminToken}` },
+    body: {
+      sku: dynamicSku,
+      title: 'টেস্ট নিষ্ক্রিয় সোফা',
+      regular_price: 15000,
+      reseller_price: 13000,
+      category: 'Home & Living',
+      brand: 'SB Furniture',
+      stock: 5,
+      is_active: 1
+    }
+  });
+  assert.equal(createProdRes.status, 201);
+  const prodId = createProdRes.body.product_id;
+  assert.ok(prodId);
+
+  // 2. Deactivate the product
+  const deactRes = await request(`/api/admin/products/${prodId}`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${adminToken}` },
+    body: {
+      is_active: 0
+    }
+  });
+  assert.equal(deactRes.status, 200);
+
+  // 3. Customer /api/products should NOT return this inactive product
+  const publicProdsRes = await request('/api/products');
+  const foundInPublic = publicProdsRes.body.products.some((p) => p.id === prodId);
+  assert.equal(foundInPublic, false, 'Inactive product must be hidden from customer /api/products');
+
+  // 4. Admin /api/admin/products?status=inactive MUST return it
+  const adminInactiveRes = await request('/api/admin/products?status=inactive', {
+    headers: { Authorization: `Bearer ${adminToken}` }
+  });
+  assert.equal(adminInactiveRes.status, 200);
+  const foundInAdminInactive = adminInactiveRes.body.products.some((p) => p.id === prodId);
+  assert.equal(foundInAdminInactive, true, 'Inactive product must be visible in admin filter status=inactive');
+
+  // 5. Clean up product
+  await request(`/api/admin/products/${prodId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${adminToken}` }
+  });
+});
+
+test('Features 9: Admin Payout Approval/Rejection with Atomic Notifications & Balance Reconciliation', async () => {
+  // 1. Register a reseller with available balance
+  const phone = `0188${Math.floor(1000000 + Math.random() * 9000000)}`;
+  const regRes = await request('/api/auth/register', {
+    method: 'POST',
+    body: { name: 'রিসেলার জামিল', phone, password: 'Password123' }
+  });
+  assert.equal(regRes.status, 201);
+  const resellerToken = regRes.body.token;
+  const user = await get('SELECT id FROM users WHERE phone = ?', [phone]);
+
+  // Give reseller 1000 TK available balance directly in wallet_transactions
+  await run(
+    `INSERT INTO wallet_transactions (user_id, amount, type, status, notes)
+     VALUES (?, 1000, 'commission', 'available', 'সরাসরি টেস্ট কমিশন')`,
+    [user.id]
+  );
+
+  // Reseller requests 500 TK payout
+  const payoutReqRes = await request('/api/wallet/payout-request', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${resellerToken}` },
+    body: {
+      amount: 500,
+      payment_method: 'bkash',
+      account_number: phone
+    }
+  });
+  assert.equal(payoutReqRes.status, 201);
+  const payoutId = payoutReqRes.body.payout_id;
+  assert.ok(payoutId);
+
+  // Verify wallet summary shows available_balance = 500 (1000 - 500)
+  const walletSummary1 = await request('/api/wallet/summary', {
+    headers: { Authorization: `Bearer ${resellerToken}` }
+  });
+  assert.equal(walletSummary1.body.summary.available_balance, 500);
+
+  // Admin approves the payout
+  const adminLogin = await request('/api/auth/login', {
+    method: 'POST',
+    body: { phone: config.ADMIN.phone, password: config.ADMIN.password }
+  });
+  const adminToken = adminLogin.body.token;
+
+  const approveRes = await request(`/api/admin/payouts/${payoutId}`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${adminToken}` },
+    body: {
+      status: 'approved',
+      admin_trx_id: 'BKASH_PAY_TRX_9999'
+    }
+  });
+  assert.equal(approveRes.status, 200);
+
+  // Check reseller notifications: should have approval notification
+  const notifRes1 = await request('/api/auth/notifications', {
+    headers: { Authorization: `Bearer ${resellerToken}` }
+  });
+  assert.equal(notifRes1.status, 200);
+  assert.ok(notifRes1.body.notifications.some((n) => n.message.includes('BKASH_PAY_TRX_9999')));
+
+  // Now reseller requests remaining 500 TK payout
+  const payoutReqRes2 = await request('/api/wallet/payout-request', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${resellerToken}` },
+    body: {
+      amount: 500,
+      payment_method: 'nagad',
+      account_number: phone
+    }
+  });
+  assert.equal(payoutReqRes2.status, 201);
+  const payoutId2 = payoutReqRes2.body.payout_id;
+
+  // Available balance is now 0 (1000 - 500 - 500)
+  const walletSummary2 = await request('/api/wallet/summary', {
+    headers: { Authorization: `Bearer ${resellerToken}` }
+  });
+  assert.equal(walletSummary2.body.summary.available_balance, 0);
+
+  // Admin rejects payout 2
+  const rejectRes = await request(`/api/admin/payouts/${payoutId2}`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${adminToken}` },
+    body: {
+      status: 'rejected',
+      notes: 'ভুল নগদ নম্বর দেওয়া হয়েছে'
+    }
+  });
+  assert.equal(rejectRes.status, 200);
+
+  // Available balance must be restored to 500!
+  const walletSummary3 = await request('/api/wallet/summary', {
+    headers: { Authorization: `Bearer ${resellerToken}` }
+  });
+  assert.equal(walletSummary3.body.summary.available_balance, 500, 'Rejected payout must restore available balance');
+
+  // Check reseller notifications: should have rejection notification with reason
+  const notifRes2 = await request('/api/auth/notifications', {
+    headers: { Authorization: `Bearer ${resellerToken}` }
+  });
+  assert.ok(notifRes2.body.notifications.some((n) => n.message.includes('ভুল নগদ নম্বর দেওয়া হয়েছে')));
+});
+
+test('Features 10: Notifications Unread Count & Bulk Read-All', async () => {
+  const phone = `0191${Math.floor(1000000 + Math.random() * 9000000)}`;
+  const regRes = await request('/api/auth/register', {
+    method: 'POST',
+    body: { name: 'রিসেলার সাঈদ', phone, password: 'Password123' }
+  });
+  const token = regRes.body.token;
+  const user = await get('SELECT id FROM users WHERE phone = ?', [phone]);
+
+  // Insert 3 unread notifications
+  await run('INSERT INTO notifications (user_id, title, message, is_read) VALUES (?, ?, ?, 0)', [user.id, 'নোটিফ ১', 'টেস্ট বার্তা ১']);
+  await run('INSERT INTO notifications (user_id, title, message, is_read) VALUES (?, ?, ?, 0)', [user.id, 'নোটিফ ২', 'টেস্ট বার্তা ২']);
+  await run('INSERT INTO notifications (user_id, title, message, is_read) VALUES (?, ?, ?, 0)', [user.id, 'নোটিফ ৩', 'টেস্ট বার্তা ৩']);
+
+  // Check unread_count
+  const notifRes = await request('/api/auth/notifications', {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  assert.equal(notifRes.status, 200);
+  assert.equal(notifRes.body.unread_count, 3);
+
+  // Call bulk read-all
+  const readAllRes = await request('/api/auth/notifications/read-all', {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  assert.equal(readAllRes.status, 200);
+  assert.equal(readAllRes.body.success, true);
+
+  // Re-verify unread_count is 0
+  const afterRes = await request('/api/auth/notifications', {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  assert.equal(afterRes.status, 200);
+  assert.equal(afterRes.body.unread_count, 0);
+  assert.ok(afterRes.body.notifications.every((n) => n.is_read === 1));
+});
+
+test('Features 11: Anti-Fraud Advance Paid Validation', async () => {
+  const prods = await query('SELECT * FROM products LIMIT 1');
+  const prod = prods[0];
+
+  // 1. Order with advance_paid > 0 but NO advance_trx_id should fail (400)
+  const failOrderRes = await request('/api/orders', {
+    method: 'POST',
+    body: {
+      customer_name: 'আরিফুল ইসলাম',
+      customer_phone: '01712345678',
+      delivery_address: 'মিরপুর ১০, ঢাকা',
+      delivery_city: 'inside_dhaka',
+      advance_paid: 500,
+      advance_trx_id: '',
+      items: [{ product_id: prod.id, quantity: 1 }]
+    }
+  });
+  assert.equal(failOrderRes.status, 400);
+  assert.ok(failOrderRes.body.message.includes('TrxID'));
+
+  // 2. Order with advance_paid > 0 and valid advance_trx_id should succeed (201)
+  const successOrderRes = await request('/api/orders', {
+    method: 'POST',
+    body: {
+      customer_name: 'আরিফুল ইসলাম',
+      customer_phone: '01712345678',
+      delivery_address: 'মিরপুর ১০, ঢাকা',
+      delivery_city: 'inside_dhaka',
+      advance_paid: 500,
+      advance_trx_id: 'TRX_TEST_ADVANCE_1234',
+      items: [{ product_id: prod.id, quantity: 1 }]
+    }
+  });
+  assert.equal(successOrderRes.status, 201);
+  assert.equal(successOrderRes.body.order.advance_paid, 500);
+  assert.equal(successOrderRes.body.order.advance_trx_id, 'TRX_TEST_ADVANCE_1234');
+});
+
+test('Features 12: Database Backup & Data Safety (Admin Trigger, List, Download & Path Traversal Prevention)', async () => {
+  const adminLogin = await request('/api/auth/login', {
+    method: 'POST',
+    body: { phone: config.ADMIN.phone, password: config.ADMIN.password }
+  });
+  const adminToken = adminLogin.body.token;
+  assert.ok(adminToken);
+
+  // 1. Trigger backup via Admin API
+  const backupRes = await request('/api/admin/backup', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${adminToken}` }
+  });
+  assert.equal(backupRes.status, 200);
+  assert.equal(backupRes.body.success, true);
+  assert.ok(backupRes.body.backup.filename.endsWith('.sqlite'));
+  assert.ok(backupRes.body.backup.sizeBytes > 0);
+
+  // 2. List backups
+  const listRes = await request('/api/admin/backups', {
+    headers: { Authorization: `Bearer ${adminToken}` }
+  });
+  assert.equal(listRes.status, 200);
+  assert.ok(listRes.body.count > 0);
+  assert.ok(listRes.body.backups.some(b => b.filename === backupRes.body.backup.filename));
+
+  // 3. Download valid backup via Authorization Header
+  const downloadRes = await request(`/api/admin/backups/download/${backupRes.body.backup.filename}`, {
+    headers: { Authorization: `Bearer ${adminToken}` }
+  });
+  assert.equal(downloadRes.status, 200);
+
+  // 4. Download valid backup via Query Parameter Token (browser direct link / download handler)
+  const downloadQueryTokenRes = await request(
+    `/api/admin/backups/download/${backupRes.body.backup.filename}?token=${encodeURIComponent(adminToken)}`
+  );
+  assert.equal(downloadQueryTokenRes.status, 200);
+
+  // 5. Unauthenticated download attempt MUST be rejected with 401
+  const unauthDownloadRes = await request(`/api/admin/backups/download/${backupRes.body.backup.filename}`);
+  assert.equal(unauthDownloadRes.status, 401);
+
+  // 6. Invalid token attempt MUST be rejected with 403
+  const badTokenDownloadRes = await request(
+    `/api/admin/backups/download/${backupRes.body.backup.filename}?token=invalid.jwt.token`
+  );
+  assert.equal(badTokenDownloadRes.status, 403);
+
+  // 7. Invalid file extension security check
+  const badDownloadRes = await request('/api/admin/backups/download/database.env', {
+    headers: { Authorization: `Bearer ${adminToken}` }
+  });
+  assert.equal(badDownloadRes.status, 400);
+});
+
+test('Features 13: Direct APK Distribution Routes & Service Worker Cache Safety', async () => {
+  // 1. Reseller APK direct download route
+  const resellerApkRes = await request('/download/reseller-apk');
+  assert.equal(resellerApkRes.status, 200);
+  assert.ok(resellerApkRes.headers['content-type'].includes('application/vnd.android.package-archive'));
+
+  // 2. Admin APK direct download route
+  const adminApkRes = await request('/download/admin-apk');
+  assert.equal(adminApkRes.status, 200);
+  assert.ok(adminApkRes.headers['content-type'].includes('application/vnd.android.package-archive'));
+
+  // 3. Verify public/sw.js excludes APK downloads and implements safe async navigation fallback
+  const fs = require('fs');
+  const path = require('path');
+  const swContent = fs.readFileSync(path.join(__dirname, '..', 'public', 'sw.js'), 'utf-8');
+  assert.ok(swContent.includes('/download/'));
+  assert.ok(swContent.includes('/dist-apk/'));
+  assert.ok(swContent.includes('await caches.match(event.request)'));
+});
+
+

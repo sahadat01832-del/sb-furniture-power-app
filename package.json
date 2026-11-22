@@ -1,0 +1,52 @@
+{
+  "name": "sb-furniture-power-app",
+  "version": "1.0.0",
+  "description": "SB Furniture & Power App - E-commerce, Reseller Tabs, Referral Program & Cloud Catalog",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "seed": "node src/seed.js",
+    "backup": "node src/backup.js",
+    "test": "node --test tests/api.test.js tests/features.test.js",
+    "build:apks": "bash scripts/build-apks.sh all",
+    "build:apk:client": "bash scripts/build-apks.sh client",
+    "build:apk:admin": "bash scripts/build-apks.sh admin",
+    "daemon:start": "mkdir -p logs && nohup node src/server.js > logs/out.log 2> logs/err.log & echo $! > logs/app.pid",
+    "daemon:stop": "kill $(cat logs/app.pid 2>/dev/null) 2>/dev/null || true",
+    "daemon:status": "ps aux | grep 'node src/server.js' | grep -v grep || echo 'Daemon not running'",
+    "pm2:start": "pm2 start ecosystem.config.js",
+    "pm2:stop": "pm2 stop sb-power-app",
+    "pm2:restart": "pm2 restart sb-power-app",
+    "pm2:logs": "pm2 logs sb-power-app",
+    "pm2:status": "pm2 status"
+  },
+  "keywords": [
+    "furniture",
+    "reseller",
+    "affiliate",
+    "ecommerce",
+    "bangladesh",
+    "pwa",
+    "apk"
+  ],
+  "author": "SB Furniture Team",
+  "license": "ISC",
+  "dependencies": {
+    "@capacitor/core": "^8.6.2",
+    "bcryptjs": "^3.0.3",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.3.1",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.3",
+    "pm2": "^7.1.2",
+    "sqlite3": "^5.1.7"
+  },
+  "devDependencies": {
+    "@capacitor/android": "^8.6.2",
+    "@capacitor/cli": "^8.6.2"
+  }
+}

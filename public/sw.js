@@ -1,0 +1,122 @@
+const CACHE_NAME = 'sb-furniture-v3';
+const ASSETS_TO_CACHE = [
+  '/',
+  '/index.html',
+  '/admin.html',
+  '/css/style.css',
+  '/js/api.js',
+  '/js/catalog.js',
+  '/js/leaderboard.js',
+  '/js/app.js',
+  '/js/admin.js',
+  '/manifest.json',
+  '/manifest-admin.json',
+  '/icons/icon.svg'
+];
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => {
+      return cache.addAll(ASSETS_TO_CACHE);
+    })
+  );
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys().then((keys) => {
+      return Promise.all(
+        keys.map((key) => {
+          if (key !== CACHE_NAME) {
+            return caches.delete(key);
+          }
+        })
+      );
+    })
+  );
+  self.clients.claim();
+});
+
+self.addEventListener('fetch', (event) => {
+  if (event.request.method !== 'GET') {
+    return;
+  }
+
+  const url = new URL(event.request.url);
+
+  // Bypass non-http protocols (e.g. chrome-extension, file, capacitor)
+  if (!url.protocol.startsWith('http')) {
+    return;
+  }
+
+  // Bypass multi-megabyte native APK downloads from Service Worker cache storage
+  if (url.pathname.startsWith('/download/') || url.pathname.startsWith('/dist-apk/')) {
+    return;
+  }
+
+  // 1. Navigation requests (HTML pages): Network-First for instantaneous Over-The-Air upgrades
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request)
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            const responseToCache = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseToCache));
+          }
+          return networkResponse;
+        })
+        .catch(async () => {
+          const cached = await caches.match(event.request);
+          if (cached) return cached;
+          return (await caches.match('/index.html')) || Response.error();
+        })
+    );
+    return;
+  }
+
+  // 2. Network-first caching for public catalog, config & leaderboard APIs (Instant Live Catalog + Offline Fallback)
+  if (
+    url.pathname.startsWith('/api/products') ||
+    url.pathname.startsWith('/api/config') ||
+    url.pathname.startsWith('/api/leaderboard')
+  ) {
+    event.respondWith(
+      fetch(event.request)
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            const responseToCache = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseToCache));
+          }
+          return networkResponse;
+        })
+        .catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
+  // 3. Bypass all other /api/ endpoints (auth, orders, wallet, admin) - direct live server connection
+  if (url.pathname.startsWith('/api/')) {
+    return;
+  }
+
+  // 4. Stale-While-Revalidate strategy for static assets (CSS, JS, images, icons)
+  event.respondWith(
+    caches.match(event.request).then((cachedResponse) => {
+      const fetchPromise = fetch(event.request)
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            const responseToCache = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseToCache));
+          }
+          return networkResponse;
+        });
+
+      if (cachedResponse) {
+        fetchPromise.catch(() => {});
+        return cachedResponse;
+      }
+      return fetchPromise;
+    })
+  );
+});

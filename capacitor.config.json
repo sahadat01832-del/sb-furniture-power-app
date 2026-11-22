@@ -1,0 +1,17 @@
+{
+  "appId": "com.sbfurniture.admin",
+  "appName": "SB Furniture Admin Panel",
+  "webDir": "public-admin",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https",
+    "cleartext": true
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 2000,
+      "backgroundColor": "#1c1917",
+      "showSpinner": false
+    }
+  }
+}
