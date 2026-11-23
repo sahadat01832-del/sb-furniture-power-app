@@ -1,9 +1,14 @@
+require('./testEnv');
+
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
+const fs = require('node:fs');
+const path = require('node:path');
 const app = require('../src/server');
 const { initDb, run, get, query, withTransaction } = require('../src/db');
 const { seedData } = require('../src/seed');
+const { BACKUP_DIR } = require('../src/backup');
 const config = require('../src/config');
 
 let server;
@@ -48,7 +53,7 @@ const request = (path, options = {}) => {
 
 before(async () => {
   await initDb();
-  await seedData();
+  await seedData({ includeDemoProducts: true });
 
   await new Promise((resolve) => {
     server = app.listen(0, () => {
@@ -217,20 +222,38 @@ test('Features 3: Order History, Phone-Based Search, and Reseller Sales List', a
   const orderNumber = orderRes.body.order.order_number;
   assert.ok(orderNumber);
 
-  // 4. Customer order history via GET /api/orders/my-orders?phone=...
-  const custOrders = await request(`/api/orders/my-orders?phone=${customerPhone}`);
+  // Phone-only history is private; only the signed-in reseller can view owned orders.
+  const privateOrders = await request(`/api/orders/my-orders?phone=${customerPhone}`);
+  assert.equal(privateOrders.status, 401);
+  const queryTokenOrders = await request(`/api/orders/my-orders?token=${encodeURIComponent(resToken)}`);
+  assert.equal(queryTokenOrders.status, 401);
+
+  // 4. Authenticated order history for the reseller's orders
+  const custOrders = await request('/api/orders/my-orders', {
+    headers: { Authorization: `Bearer ${resToken}` }
+  });
   assert.equal(custOrders.status, 200);
   assert.ok(custOrders.body.orders.length >= 1);
   assert.equal(custOrders.body.orders[0].customer_phone, customerPhone);
 
-  // 5. Tracking search by phone
-  const trackSearch = await request(`/api/orders/track/search?query=${customerPhone}`);
-  assert.equal(trackSearch.status, 200);
-  assert.ok(trackSearch.body.orders.length >= 1);
-  assert.equal(trackSearch.body.orders[0].order_number, orderNumber);
+  // 5. Order tracking requires both the order number and customer phone.
+  const noPhoneTrack = await request('/api/orders/track', {
+    method: 'POST',
+    body: { order_number: orderNumber }
+  });
+  assert.equal(noPhoneTrack.status, 400);
+
+  const wrongPhoneTrack = await request('/api/orders/track', {
+    method: 'POST',
+    body: { order_number: orderNumber, phone: '01700000000' }
+  });
+  assert.equal(wrongPhoneTrack.status, 404);
 
   // 6. Direct tracking by order number
-  const singleTrack = await request(`/api/orders/track/${orderNumber}`);
+  const singleTrack = await request('/api/orders/track', {
+    method: 'POST',
+    body: { order_number: orderNumber, phone: customerPhone }
+  });
   assert.equal(singleTrack.status, 200);
   assert.equal(singleTrack.body.order.order_number, orderNumber);
   assert.ok(Array.isArray(singleTrack.body.order.items));
@@ -570,12 +593,20 @@ test('Features 9: Admin Payout Approval/Rejection with Atomic Notifications & Ba
   });
   assert.equal(approveRes.status, 200);
 
+  const duplicateApproveRes = await request(`/api/admin/payouts/${payoutId}`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${adminToken}` },
+    body: { status: 'approved', admin_trx_id: 'BKASH_PAY_TRX_9999' }
+  });
+  assert.equal(duplicateApproveRes.status, 409);
+
   // Check reseller notifications: should have approval notification
   const notifRes1 = await request('/api/auth/notifications', {
     headers: { Authorization: `Bearer ${resellerToken}` }
   });
   assert.equal(notifRes1.status, 200);
   assert.ok(notifRes1.body.notifications.some((n) => n.message.includes('BKASH_PAY_TRX_9999')));
+  assert.equal(notifRes1.body.notifications.filter((n) => n.message.includes('BKASH_PAY_TRX_9999')).length, 1);
 
   // Now reseller requests remaining 500 TK payout
   const payoutReqRes2 = await request('/api/wallet/payout-request', {
@@ -659,8 +690,24 @@ test('Features 10: Notifications Unread Count & Bulk Read-All', async () => {
 });
 
 test('Features 11: Anti-Fraud Advance Paid Validation', async () => {
-  const prods = await query('SELECT * FROM products LIMIT 1');
-  const prod = prods[0];
+  const prod = await get("SELECT * FROM products WHERE brand = 'SB Furniture' AND is_active = 1 ORDER BY id LIMIT 1");
+  const gadget = await get("SELECT * FROM products WHERE brand = 'SB POWER' AND is_active = 1 ORDER BY id LIMIT 1");
+  assert.ok(prod);
+  assert.ok(gadget);
+
+  const furnitureCodOrder = await request('/api/orders', {
+    method: 'POST',
+    body: {
+      customer_name: 'আরিফুল ইসলাম',
+      customer_phone: '01712345678',
+      delivery_address: 'কালীগঞ্জ, গাজীপুর',
+      delivery_city: 'inside_dhaka',
+      advance_paid: 0,
+      items: [{ product_id: prod.id, quantity: 1 }]
+    }
+  });
+  assert.equal(furnitureCodOrder.status, 201, 'Furniture orders should allow COD when no advance is requested');
+  assert.equal(furnitureCodOrder.body.order.advance_paid, 0);
 
   // 1. Order with advance_paid > 0 but NO advance_trx_id should fail (400)
   const failOrderRes = await request('/api/orders', {
@@ -694,6 +741,51 @@ test('Features 11: Anti-Fraud Advance Paid Validation', async () => {
   assert.equal(successOrderRes.status, 201);
   assert.equal(successOrderRes.body.order.advance_paid, 500);
   assert.equal(successOrderRes.body.order.advance_trx_id, 'TRX_TEST_ADVANCE_1234');
+
+  const gadgetCodOrder = await request('/api/orders', {
+    method: 'POST',
+    body: {
+      customer_name: 'আরিফুল ইসলাম',
+      customer_phone: '01712345678',
+      delivery_address: 'মিরপুর ১০, ঢাকা',
+      delivery_city: 'inside_dhaka',
+      advance_paid: 0,
+      items: [{ product_id: gadget.id, quantity: 1 }]
+    }
+  });
+  assert.equal(gadgetCodOrder.status, 201);
+  assert.equal(gadgetCodOrder.body.order.advance_trx_id, null);
+});
+
+test('Features 11a: Concurrent cashouts cannot exceed the available balance', async () => {
+  const phone = '01844000001';
+  const registration = await request('/api/auth/register', {
+    method: 'POST',
+    body: { name: 'নিরাপদ ক্যাশআউট পরীক্ষা', phone, password: 'Password123' }
+  });
+  assert.equal(registration.status, 201);
+  const user = await get('SELECT id FROM users WHERE phone = ?', [phone]);
+  await run(
+    `INSERT INTO wallet_transactions (user_id, amount, type, status, notes)
+     VALUES (?, 1000, 'commission', 'available', 'সমান্তরাল ক্যাশআউট পরীক্ষা')`,
+    [user.id]
+  );
+
+  const options = {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${registration.body.token}` },
+    body: { amount: 700, payment_method: 'bkash', account_number: phone }
+  };
+  const results = await Promise.all([
+    request('/api/wallet/payout-request', options),
+    request('/api/wallet/payout-request', options)
+  ]);
+  assert.deepEqual(results.map((result) => result.status).sort(), [201, 400]);
+
+  const summary = await request('/api/wallet/summary', {
+    headers: { Authorization: `Bearer ${registration.body.token}` }
+  });
+  assert.equal(summary.body.summary.available_balance, 300);
 });
 
 test('Features 12: Database Backup & Data Safety (Admin Trigger, List, Download & Path Traversal Prevention)', async () => {
@@ -713,6 +805,11 @@ test('Features 12: Database Backup & Data Safety (Admin Trigger, List, Download 
   assert.equal(backupRes.body.success, true);
   assert.ok(backupRes.body.backup.filename.endsWith('.sqlite'));
   assert.ok(backupRes.body.backup.sizeBytes > 0);
+  if (process.platform !== 'win32') {
+    const backupPath = path.join(BACKUP_DIR, backupRes.body.backup.filename);
+    assert.equal(fs.statSync(BACKUP_DIR).mode & 0o777, 0o700);
+    assert.equal(fs.statSync(backupPath).mode & 0o777, 0o600);
+  }
 
   // 2. List backups
   const listRes = await request('/api/admin/backups', {
@@ -728,21 +825,21 @@ test('Features 12: Database Backup & Data Safety (Admin Trigger, List, Download 
   });
   assert.equal(downloadRes.status, 200);
 
-  // 4. Download valid backup via Query Parameter Token (browser direct link / download handler)
+  // 4. Query-string credentials are rejected to avoid leaking tokens in URLs and logs.
   const downloadQueryTokenRes = await request(
     `/api/admin/backups/download/${backupRes.body.backup.filename}?token=${encodeURIComponent(adminToken)}`
   );
-  assert.equal(downloadQueryTokenRes.status, 200);
+  assert.equal(downloadQueryTokenRes.status, 401);
 
   // 5. Unauthenticated download attempt MUST be rejected with 401
   const unauthDownloadRes = await request(`/api/admin/backups/download/${backupRes.body.backup.filename}`);
   assert.equal(unauthDownloadRes.status, 401);
 
-  // 6. Invalid token attempt MUST be rejected with 403
+  // 6. Invalid query token is ignored and rejected as unauthenticated.
   const badTokenDownloadRes = await request(
     `/api/admin/backups/download/${backupRes.body.backup.filename}?token=invalid.jwt.token`
   );
-  assert.equal(badTokenDownloadRes.status, 403);
+  assert.equal(badTokenDownloadRes.status, 401);
 
   // 7. Invalid file extension security check
   const badDownloadRes = await request('/api/admin/backups/download/database.env', {
@@ -769,6 +866,76 @@ test('Features 13: Direct APK Distribution Routes & Service Worker Cache Safety'
   assert.ok(swContent.includes('/download/'));
   assert.ok(swContent.includes('/dist-apk/'));
   assert.ok(swContent.includes('await caches.match(event.request)'));
+});
+
+test('Features 14: Reseller commissions follow incoming share links and exclude self-orders', async () => {
+  const referrerPhone = '01799000001';
+  const shopperPhone = '01799000002';
+  const referrerReg = await request('/api/auth/register', {
+    method: 'POST',
+    body: { name: 'শেয়ারকারী', phone: referrerPhone, password: 'password123' }
+  });
+  assert.equal(referrerReg.status, 201);
+
+  const shopperReg = await request('/api/auth/register', {
+    method: 'POST',
+    body: {
+      name: 'ক্রেতা ও রিসেলার',
+      phone: shopperPhone,
+      password: 'password123',
+      referral_code: referrerReg.body.user.referral_code
+    }
+  });
+  assert.equal(shopperReg.status, 201);
+
+  const product = await get("SELECT * FROM products WHERE brand = 'SB POWER' AND is_active = 1 LIMIT 1");
+  const placeOrder = (customerPhone, referralCode, token) => request('/api/orders', {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: {
+      customer_name: 'অর্ডার ক্রেতা',
+      customer_phone: customerPhone,
+      delivery_address: 'মিরপুর, ঢাকা',
+      delivery_city: 'inside_dhaka',
+      referral_code: referralCode,
+      items: [{ product_id: product.id, quantity: 1 }]
+    }
+  });
+
+  // A logged-in shopper who buys for their own phone earns no commission.
+  const ownOrderRes = await placeOrder(
+    shopperPhone,
+    referrerReg.body.user.referral_code,
+    shopperReg.body.token
+  );
+  assert.equal(ownOrderRes.status, 201);
+  const ownOrder = await get('SELECT reseller_id FROM orders WHERE id = ?', [ownOrderRes.body.order.id]);
+  assert.equal(ownOrder.reseller_id, null);
+  const ownCommission = await get(
+    "SELECT id FROM wallet_transactions WHERE order_id = ? AND type = 'commission'",
+    [ownOrderRes.body.order.id]
+  );
+  assert.equal(ownCommission, undefined);
+
+  // The referral link wins over the logged-in shopper's own reseller identity.
+  const referredOrderRes = await placeOrder(
+    '01899000001',
+    referrerReg.body.user.referral_code,
+    shopperReg.body.token
+  );
+  assert.equal(referredOrderRes.status, 201);
+  const referredOrder = await get('SELECT reseller_id FROM orders WHERE id = ?', [referredOrderRes.body.order.id]);
+  assert.equal(referredOrder.reseller_id, referrerReg.body.user.id);
+
+  // A reseller can still enter an order for a different customer's phone.
+  const resellerOrderRes = await placeOrder(
+    '01899000002',
+    shopperReg.body.user.referral_code,
+    shopperReg.body.token
+  );
+  assert.equal(resellerOrderRes.status, 201);
+  const resellerOrder = await get('SELECT reseller_id FROM orders WHERE id = ?', [resellerOrderRes.body.order.id]);
+  assert.equal(resellerOrder.reseller_id, shopperReg.body.user.id);
 });
 
 

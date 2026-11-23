@@ -1,168 +1,85 @@
-# SB Furniture (এসবি ফার্নিচার) & SB POWER কমার্স ও রিসেলার প্ল্যাটফর্ম
+# SB Furniture ও SB POWER Social Commerce App
 
-একটি আধুনিক, হাইপার-ফাস্ট এবং পূর্ণাঙ্গ সোশ্যাল কমার্স ও রিসেলার আর্কিটেকচার যা সাধারণ ক্রেতাদের সরাসরি কারখানা রেটে প্রিমিয়াম ফার্নিচার ও ট্রেন্ডিং গ্যাজেট কেনার সুযোগ দেয় এবং রিসেলারদের ঘরে বসে ৫০৳, ১০০৳, ৫০০৳ ও ১০০০৳ ফিক্সড কমিশন, লাইভ লিডারবোর্ড ক্যাশ প্রাইজ ও টিম বোনাস আয় করার সুযোগ প্রদান করে। সাথে রয়েছে অন্যান্য দোকান মালিকদের পণ্য প্রোমোট করার মাল্টি-ভেন্ডর সিস্টেম, সার্বক্ষণিক ডায়নামিক ক্লাউড ক্যাটালগ এবং সাধারণ গ্রাহক ও অ্যাডমিনদের জন্য আলাদা ২টি অ্যান্ড্রয়েড APK।
+এই অ্যাপে নিজের পণ্য ও পার্টনার দোকানের পণ্য তালিকাভুক্ত করা যায়। ক্রেতা অর্ডার করতে পারে, আর যে কেউ পণ্য শেয়ার করে সফল বিক্রিতে সেই পণ্যের জন্য admin-নির্ধারিত সরাসরি কমিশন পেতে পারে। নতুন signup-এর ওপর কোনো bonus বা team commission দেওয়া হয় না।
 
----
+## লোকালভাবে চালানো
 
-## 🚀 এক ক্লিকে সার্ভার চালু করার কমান্ড (Single Run Command)
+প্রথমবার dependencies ইনস্টল করে environment file বানান:
+
+```bash
+npm install
+cp .env.example .env
+```
+
+`.env`-এ `JWT_SECRET`, `ADMIN_PHONE`, `ADMIN_PASSWORD` এবং প্রয়োজনে `DATABASE_FILE` সেট করুন। Secret বা password Git-এ যোগ করবেন না। এরপর চালান:
 
 ```bash
 npm start
 ```
-> সাধারণ গ্রাহক ও রিসেলার শপ: `http://localhost:3000`  
-> অ্যাডমিন কন্ট্রোল প্যানেল: `http://localhost:3000/admin.html`
 
----
+- ক্রেতা ও রিসেলার অ্যাপ: `http://localhost:3000`
+- অ্যাডমিন প্যানেল: `http://localhost:3000/admin.html`
 
-## 💡 Antigravity বন্ধ থাকলেও ব্যাকগ্রাউন্ডে সার্ভার চালানো (Daemon / PM2 কেন দরকার?)
+সার্ভার চালু হলে খালি database-এ admin account তৈরি হয়। আসল পণ্য admin প্যানেল থেকে যোগ করুন। Demo catalog স্বয়ংক্রিয়ভাবে চালু হয় না।
 
-### প্রশ্ন: "why run daemon on here if i off antigravity?" (Antigravity বা টার্মিনাল বন্ধ করলে ব্যাকগ্রাউন্ডে কেন ডেমন চালাব?)
+## এখনকার অ্যাপের কাজ
 
-**সহজ উত্তর:**
-1. সাধারণ টার্মিনালে `npm start` বা `node src/server.js` চালালে সেটি ঐ সেশনের সাথে যুক্ত থাকে। আপনি Antigravity বন্ধ করলে বা SSH/টার্মিনাল ডিসকানেক্ট করলে লিনাক্স ওএস তাৎক্ষণিক সেই সার্ভার বন্ধ (Kill) করে দেয়। ফলে ওয়েবসাইট ও মোবাইল অ্যাপ বন্ধ হয়ে যায়!
-2. **Daemon (PM2 / nohup) চালালে:** সার্ভারটি টার্মিনাল থেকে সম্পূর্ণ বিচ্ছিন্ন হয়ে ব্যাকগ্রাউন্ড সার্ভিস (Daemon) হিসেবে চলতে থাকে।
-   - আপনি Antigravity বন্ধ করে দিলেও সার্ভার **২৪/৭ দিনরাত নিরবচ্ছিন্নভাবে চালু থাকবে**।
-   - সার্ভার কোনো কারণে ক্র্যাশ করলে বা মেমোরি বাড়লে PM2 স্বয়ংক্রিয়ভাবে রিস্টার্ট (`autorestart: true`) করে।
-   - সার্ভারের লগ স্বয়ংক্রিয়ভাবে `logs/out.log` ও `logs/err.log`-এ সংরক্ষিত হয়।
+- ফোন নম্বর দিয়ে account, login, password change ও order history
+- পণ্যের catalog, search, filter, product-specific reseller commission এবং share link
+- customer order, order tracking, order status history ও notification
+- COD order এবং manual advance-payment TrxID জমা
+- admin product ও partner-shop তথ্য, announcement, order, user, payout request ও backup পরিচালনা
+- direct seller commission: admin `delivered` করলে কমিশন wallet-এ available হয়
+- বাস্তব delivered order-এর reseller তালিকা; কোনো demo নাম বা prize promise নেই
 
-### ব্যাকগ্রাউন্ড সার্ভিস চালানোর কমান্ড:
+## পার্টনার দোকান ও Paperfly
 
-**অপশন ১ — PM2 এর মাধ্যমে (উৎপাদন পরিবেশের জন্য সেরা):**
-```bash
-# ব্যাকগ্রাউন্ডে চালু করা
-npm run pm2:start
+পণ্যে shop name, vendor phone, badge ও address রাখার সুবিধা আছে। Paperfly account-এ অর্ডার পাঠানো বা tracking update করার automatic integration এখনো নেই; admin-কে Paperfly merchant panel-এ shipment তৈরি করতে হয়। এক অর্ডারে একাধিক shop থাকলে আলাদা shipment ও seller settlement হিসাবও এখনো নেই।
 
-# সার্ভারের অবস্থা দেখা
-npm run pm2:status
+বর্তমান delivery fee code ঢাকা-ভিতরে/ঢাকা-বাইরের পুরোনো fixed rate ব্যবহার করে। কালীগঞ্জ–গাজীপুর launch-এর জন্য origin, destination zone, parcel weight ও COD fee অনুযায়ী নতুন হিসাব লাগবে। Paperfly-এর শর্তে ৫ কেজির বেশি/heavy furniture parcel নেয় না; furniture-এর জন্য local pickup বা আলাদা transport দরকার। Merchant account-এর নিজের rate যাচাই করে তারপর checkout fee ঠিক করুন।
 
-# লাইভ লগ দেখা
-npm run pm2:logs
+Advance payment-এর TrxID গ্রাহক নিজে দিতে পারে; অ্যাপ provider-এর মাধ্যমে payment verify করে না। Admin-কে নিজের merchant/payment account-এ টাকা মিলিয়ে order confirm করতে হবে।
 
-# সার্ভার বন্ধ করা
-npm run pm2:stop
-```
+## ব্যবসার হিসাবের নিয়ম
 
-**অপশন ২ — লো-র‌্যাম / টার্মাক্স / হালকা লিনাক্স ব্যাকগ্রাউন্ড ডেমন:**
-```bash
-# ব্যাকগ্রাউন্ডে চালু করা (টার্মিনাল বন্ধ করলেও চলবে)
-npm run daemon:start
+প্রতি পণ্যের কমিশন সেট করার আগে হিসাব করুন:
 
-# অবস্থা যাচাই
-npm run daemon:status
+`বিক্রয়দাম - supplier/তৈরির খরচ - reseller commission - payment/COD খরচ - packaging/return খরচ - delivery subsidy - কর = আনুমানিক contribution`
 
-# বন্ধ করা
-npm run daemon:stop
-```
+পার্টনার পণ্যের ক্ষেত্রে shop-এর পাওনা ও platform commission-ও চুক্তিতে লিখতে হবে। Product table-এ এখনো supplier cost বা shop settlement ledger নেই; তাই অ্যাপ এখনো প্রতি পণ্যের নিট লাভ দেখাতে পারে না।
 
----
+## APK তৈরি
 
-## 🏪 অন্যান্য দোকান মালিকদের পণ্য প্রমোশন (Multi-Vendor / Partner Shop Promotion)
-
-আপনি এখন নিজের কারখানার ফার্নিচার ও SB POWER গ্যাজেটের পাশাপাশি **অন্যান্য যেকোনো ফার্নিচার শপ, ইলেকট্রনিক্স বা গ্যাজেট শপ মালিকের পণ্য** প্ল্যাটফর্মে যুক্ত করে প্রোমোট করতে পারেন:
-
-1. **অ্যাডমিন প্যানেলে ভেন্ডর ফিল্ডস:**
-   - অ্যাডমিন প্যানেলে (`/admin.html`) "নতুন পণ্য যুক্ত করুন" বা "এডিট" বাটনে ক্লিক করলে নিবেদিত ভেন্ডর সেকশন রয়েছে:
-     - **শপের নাম (Shop Name):** যেমন— *ভাই ভাই ফার্নিচার, আল-মদিনা গ্যাজেট হাব*
-     - **ভেন্ডরের ফোন / WhatsApp:** যেমন— `018XXXXXXXX` (গ্রাহক বা রিসেলারের অর্ডার সরাসরি এই নম্বরে যাবে)
-     - **ভেন্ডর ব্যাজ (Badge):** যেমন— *Verified Partner, গোল্ড ভেন্ডর, প্রিমিয়াম শপ*
-     - **শপ লোকেশন (Address):** যেমন— *মিরপুর ১০, ঢাকা*
-2. **ক্যাটালগে ভেন্ডর ফিল্টার ও ব্র্যান্ড ব্যাজ:**
-   - ক্যাটালগে নতুন **"🏪 শপ ও ভেন্ডর ফিল্টার"** ট্যাব যোগ করা হয়েছে: `সকল শপ`, `SB Furniture`, `SB POWER`, এবং `পার্টনার শপস (অন্যান্য)`।
-   - পণ্যের কার্ডে ও ডিটেইলস মোডালে পার্টনার শপের নাম, ভেরিফায়েড ব্যাজ ও লোকেশন আকর্ষণীয় ডিজাইনে শো করে।
-3. **১-ক্লিক ভেন্ডর WhatsApp অর্ডার:**
-   - গ্রাহক বা রিসেলার "💬 WhatsApp" বাটনে চাপ দিলে সরাসরি সেই ভেন্ডরের হোয়াটসঅ্যাপে পণ্য বিবরণ ও অর্ডার কোড সহ মেসেজ চলে যায়।
-
----
-
-## 🎯 ইউজার ও রিসেলার আকর্ষণের সেরা ফিচারসমূহ (Viral & Growth Features)
-
-প্ল্যাটফর্মে সাধারণ ক্রেতা ও রিসেলারদের দ্রুত আকর্ষণ ও ধরে রাখার জন্য নিচের ভাইরাল ফিচারগুলো প্রস্তুত ও কার্যকরী:
-
-1. **💰 ৫০৳, ১০০৳, ৫০০৳ ও ১০০০৳ নিশ্চিত কমিশন ট্যাব:**
-   - রিসেলারদের জন্য ফিক্সড ইনকাম ফিল্টার। রিসেলাররা সহজে দেখতে পারে কোন পণ্য বিক্রি করলে কত লাভ হবে।
-2. **🏆 শীর্ষ রিসেলার লিডারবোর্ড ও মেগা প্রাইজ প্রতিযোগিতা:**
-   - প্রতি মাসের ১-৩০ তারিখের মধ্যে সর্বোচ্চ সফল সেলকারীদের জন্য লাইভ লিডারবোর্ড।
-   - ১ম পুরস্কার: **ব্র্যান্ড নিউ স্মার্টফোন + ৫,০০০৳ ক্যাশ**
-   - ২য় পুরস্কার: **স্মার্টওয়াচ + ২,০০০৳ ক্যাশ**
-   - ৩য় পুরস্কার: **SB POWER সাউন্ডবার + ১,০০০৳ ক্যাশ**
-3. **⚡ ফ্ল্যাশ ডিল ও মেগা অফার ব্যানার (Live Announcement Marquee):**
-   - অ্যাপের হোমস্ক্রিনে চলমান অফার ও ইনস্ট্যান্ট বোনাস নোটিশ ব্যানার ক্রেতাদের তাৎক্ষণিক ক্রয়ে উৎসাহিত করে।
-4. **💬 ১-ক্লিক ইনস্ট্যান্ট WhatsApp অর্ডার:**
-   - কোনো জটিল রেজিস্ট্রেশন ছাড়াই গ্রাহক সরাসরি কারখানার হটলাইন বা ভেন্ডরের WhatsApp-এ অর্ডার দিতে পারেন।
-5. **📋 ১-ক্লিক সোশ্যাল মিডিয়া ক্যাপশন ও রেফারেল লিংক কপি:**
-   - ফেসবুক গ্রুপ, পেজ ও মেসেঞ্জারে পোস্ট করার জন্য সুন্দর বাংলা ক্যাপশন ও পণ্যের বিবরণ ১-ক্লিকে কপি হয়।
-6. **🎁 প্রথম সেলে ৫০৳ ইনস্ট্যান্ট ওয়েলকাম বোনাস:**
-   - নতুন রিসেলার প্রথম সফল ডেলিভারি পেলেই ৫০ টাকা বোনাস ওয়ালেটে যোগ হয়।
-7. **👥 আজীবন ৩% টিম রেফারেল ইনকাম (Multi-Tier Referral Chain):**
-   - নিজের রেফার কোড দিয়ে কাউকে যুক্ত করলে তার প্রতি সফল বিক্রয় থেকে আজীবন ৩% কমিশন।
-8. **💸 ইনস্ট্যান্ট বিকাশ / নগদ / রকেট ওয়ালেট পেআউট:**
-   - মাত্র ১০০ টাকা ব্যালেন্স হলেই তাৎক্ষণিক ক্যাশআউট রিকোয়েস্ট।
-9. **🛡️ ফেক অর্ডার প্রতিরোধী অগ্রিম ডেলিভারি TrxID সিস্টেম:**
-   - ফার্নিচারে ঢাকা ভেতরে ৫০০৳ এবং ঢাকা বাইরে ১০০০৳ অগ্রিম ট্রানজেকশন আইডি ছাড়া অর্ডার কনফার্ম হয় না।
-
----
-
-## 📱 ডুয়াল অ্যান্ড্রয়েড APK তৈরি (Dual Separate APKs)
-
-গ্রাহক/রিসেলার এবং অ্যাডমিনদের জন্য সম্পূর্ণ পৃথক ২টি APK প্রস্তুত করার স্বয়ংক্রিয় স্ক্রিপ্ট:
-
-| অ্যাপের ধরন | প্যাকেজ আইডি (App ID) | অ্যাপ নাম | এন্ট্রি স্ক্রিন |
-|---|---|---|---|
-| **১. ক্লায়েন্ট ও রিসেলার অ্যাপ** | `com.sbfurniture.powerapp` | SB Furniture & SB POWER | `public/index.html` |
-| **২. অ্যাডমিন কন্ট্রোল অ্যাপ** | `com.sbfurniture.admin` | SB Furniture Admin Panel | `public-admin/index.html` |
-
-### APK তৈরির কমান্ড:
+Android SDK/Java প্রস্তুত থাকলে এবং release signing-এর credentials `.env`-এ সেট থাকলে:
 
 ```bash
-# ২টি APK-ই একসাথে প্রস্তুত করতে:
 npm run build:apks
-
-# শুধু সাধারণ রিসেলার/গ্রাহক APK প্রস্তুত করতে:
-npm run build:apk:client
-
-# শুধু অ্যাডমিন কন্ট্রোল APK প্রস্তুত করতে:
-npm run build:apk:admin
 ```
 
-> **APK ফাইল পাওয়ার লোকেশন:**  
-> অ্যান্ড্রয়েড এসডিকে চালিত সিস্টেমে বিল্ড শেষে APK সরাসরি `dist-apk/` ফোল্ডারে সেভ হবে:  
-> - `dist-apk/sb-power-reseller.apk` (সাধারণ ব্যবহারকারী)  
-> - `dist-apk/sb-power-admin.apk` (অ্যাডমিন)
+শুধু client বা admin APK চাইলে `npm run build:apk:client` অথবা `npm run build:apk:admin` চালান। APK-গুলো `dist-apk/`-এ তৈরি হয়।
+Release key প্রকল্প ফোল্ডারের বাইরে রাখতে হবে। `ANDROID_KEYSTORE_PATH`, `ANDROID_KEYSTORE_ALIAS`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_PASSWORD` গোপন `.env` ফাইলে দিন; APK build command `.env` থেকে এগুলো পড়ে। `.env` বা keystore কাউকে পাঠাবেন না।
 
----
-
-## 🏢 ব্র্যান্ড পরিচিতি ও ভেরিফায়েড তথ্য
-
-### ১. SB Furniture (এসবি ফার্নিচার)
-* **স্বত্বাধিকারী:** আ: ছাত্তার (A. Sattar)
-* **অভিজ্ঞতা ও কারখানা:** ১৫ বছরের সরাসরি কারখানায় উৎপাদনের অভিজ্ঞতা; পাইকারি ও সাশ্রয়ী দামে নিজস্ব কারখানায় কাস্টম প্রোডাকশন।
-* **ঠিকানা:** বাঙাল হাওলা, কালীগঞ্জ, গাজীপুর
-* **অফিশিয়াল কল ও হোয়াটসঅ্যাপ:** `01929621855`
-* **বোর্ড উপকরণ:** মেলামাইন বোর্ড, সুপার এস বোর্ড এবং রম বোর্ড।
-* **সিগনেচার ফিনিশ:** White Carrara Marble, Black & Gold Marble, Dark Walnut Fluted Stripe, Golden Burma Teak।
-
-### ২. SB POWER (স্মার্ট গ্যাজেটস ও অডিও)
-* **পজিশনিং:** সাশ্রয়ী মূল্যে ট্রেন্ডিং ওয়্যারলেস অডিও ও গ্যাজেট।
-* **অফিশিয়াল অর্ডার ও হোয়াটসঅ্যাপ:** `01634664224`
-* **টিকটক প্রোফাইল:** `@sb.power.official`
-* **ভেরিফায়েড প্রাইসিং:**
-  - **AirPods Pro 2 (Black):** ৫০০ টাকা
-  - **AirPods Pro 2 (White):** ৪৫০ টাকা
-  - **P9 Wireless Headset:** ৪২০ টাকা (৪টি কালার: Black, Silver, Blue, Red)
-
----
-
-## 🔐 অ্যাডমিন অ্যাক্সেস ক্রেডেনশিয়াল (Admin Login)
-
-- **অ্যাডমিন ইউআরএল:** `http://localhost:3000/admin.html`
-- **ডিফল্ট মোবাইল:** `01700000000`
-- **ডিফল্ট পাসওয়ার্ড:** `admin123456`
-
----
-
-## 🧪 অটোমেটেড টেস্ট রান করার নিয়ম (Automated Tests)
+## পরীক্ষা
 
 ```bash
 npm test
 ```
-> বর্তমানে **১৩টি পূর্ণাঙ্গ ইন্টিগ্রেশন টেস্ট সুইট** live SQLite ও Express এপিআই-এর সাথে শতভাগ সফলভাবে পাস করছে।
+
+Test suite আলাদা temporary SQLite database ব্যবহার করে; আসল app database পরিষ্কার বা বদলায় না। Demo products শুধু test fixture হিসেবে স্পষ্টভাবে seed করা হয়।
+
+## Cloud hosting (Render)
+
+অ্যাপের বর্তমান Render service `sb-furniture-power-app`; public link `https://sb-furniture-power-app.onrender.com` এবং এই মুহূর্তে `/health` সফল। সার্ভার Render-এ চলে, তাই নিজের PC বন্ধ থাকলেও চালু থাকতে পারে। এখন service Free plan-এ, ফলে ১৫ মিনিট traffic না থাকলে sleep করে, আবার জাগতে প্রায় এক মিনিট লাগে; Free filesystem-এর SQLite data restart, deploy বা sleep-এ হারাতে পারে।
+
+`render.yaml` একই service-কে paid always-on plan-এ তুলবে, `/var/data`-এ 1 GB persistent disk যোগ করবে এবং `/health` check চালু করবে। Oregon region বাদ রাখা হয়েছে যাতে বিদ্যমান location-ই থাকে। ছোট 0.5 CPU / 512 MB plan $7/মাস এবং 1 GB disk প্রায় $0.25/মাস; bandwidth, কর বা অন্য usage হলে মোট বাড়তে পারে। Disk এক instance-এ সীমাবদ্ধ করে এবং deploy-এর সময় কয়েক সেকেন্ডের বিরতি হতে পারে।
+
+Blueprint-টি `codex/hosted-backend` branch থেকে একই service-এ প্রস্তাবিত পরিবর্তন preview করবে। Existing Render URL-ই থাকবে; নতুন service বা নতুন link তৈরি করার কথা নয়। বর্তমান `JWT_SECRET`, admin credentials ও অন্য secret Blueprint-এ লেখা নেই, যাতে sync-এ সেগুলো বদলে না যায়। `.env`, `data/`, database backup, APK ও release keystore Git-এ দেবেন না।
+
+লোকাল backup-এ পণ্য, ব্যবহারকারী ও অর্ডার আছে। Blueprint apply করলে ওই backup নিজে থেকে Render-এ যাবে না; live service-এর বর্তমান SQLite-ও আগে export করে যাচাই করতে হবে। Disk attach/redeploy-এর আগে দুই দিকের backup ও restore ধাপ ঠিক করা জরুরি। কোনো customer-এর নাম, ফোন, ঠিকানা বা order history cloud-এ পাঠানোর আগে মালিকের অনুমতি নিন।
+
+## Production-এর আগে
+
+- Production server startup-এ এবং প্রতি 24 ঘণ্টায় একটি SQLite backup তৈরি করে, সর্বশেষ 30টি রাখে। ফাইলগুলো Render disk-এই থাকে; আলাদা offsite backup এখনো স্বয়ংক্রিয় নয়।
+- Paperfly fee ও pickup origin, furniture transport, partner settlement, return policy এবং commission ছাড়ার সময় নির্দিষ্ট করুন।
+- GitHub repository বর্তমানে public, এবং পুরোনো release keystore Git history-তে আছে। সেই key exposed ধরে নিন। নতুন APK-তে এটি ব্যবহার করবেন কি না তা সিদ্ধান্তের আগে জেনে নিন: sideloaded app-এর signing key বদলালে পুরোনো install সরাসরি update নাও নিতে পারে।
+- বাংলা Terms-এ delivery, cancellation, return, refund ও after-sales শর্ত লিখুন।

@@ -24,7 +24,7 @@ const computeBalances = async (userId) => {
   );
   const commissionEarned = commRow ? commRow.total : 0;
 
-  // Breakdown: first sale bonus
+  // Historical invite bonuses are preserved; no new invite bonuses are issued.
   const refBonusRow = await get(
     `SELECT COALESCE(SUM(amount), 0) as total 
      FROM wallet_transactions 
@@ -33,7 +33,7 @@ const computeBalances = async (userId) => {
   );
   const firstSaleBonusEarned = refBonusRow ? refBonusRow.total : 0;
 
-  // Breakdown: 3% team bonus
+  // Historical team bonuses are preserved; no new team bonuses are issued.
   const teamBonusRow = await get(
     `SELECT COALESCE(SUM(amount), 0) as total 
      FROM wallet_transactions 
@@ -170,9 +170,9 @@ router.get('/transactions', verifyToken, async (req, res) => {
 router.post('/payout-request', verifyToken, async (req, res) => {
   try {
     const { amount, payment_method, account_number } = req.body;
-    const parsedAmount = parseFloat(amount);
+    const parsedAmount = Number(amount);
 
-    if (isNaN(parsedAmount) || parsedAmount < config.REFERRAL.MIN_CASHOUT_AMOUNT) {
+    if (!Number.isSafeInteger(parsedAmount) || parsedAmount < config.REFERRAL.MIN_CASHOUT_AMOUNT) {
       return res.status(400).json({
         success: false,
         message: `ন্যূনতম ক্যাশআউট পরিমাণ ${config.REFERRAL.MIN_CASHOUT_AMOUNT} টাকা হতে হবে`
@@ -186,7 +186,10 @@ router.post('/payout-request', verifyToken, async (req, res) => {
       });
     }
 
-    if (!account_number || account_number.trim().length < 11) {
+    const cleanAccountNumber = typeof account_number === 'string'
+      ? account_number.trim().replace(/\s+/g, '')
+      : '';
+    if (!/^01[3-9]\d{8}$/.test(cleanAccountNumber)) {
       return res.status(400).json({
         success: false,
         message: 'সঠিক ১১ ডিজিটের বিকাশ/নগদ/রকেট মোবাইল নম্বর দিন'
@@ -204,31 +207,41 @@ router.post('/payout-request', verifyToken, async (req, res) => {
 
     // Duplicate prevention: If an idempotency key is provided, prevent duplicate submissions
     const idempotencyKey = req.headers['idempotency-key'] || req.body.idempotency_key;
-    if (idempotencyKey) {
-      const existingKey = await get(
-        `SELECT id FROM wallet_transactions WHERE user_id = ? AND notes LIKE ?`,
-        [req.user.id, `%[IDEMP:${idempotencyKey}]%`]
-      );
-      if (existingKey) {
-        return res.status(409).json({
-          success: false,
-          message: 'একই রিকোয়েস্ট ইতিমধ্যে গ্রহণ করা হয়েছে (ডুপ্লিকেট রিকোয়েস্ট রোধ)'
-        });
-      }
+    if (idempotencyKey && (typeof idempotencyKey !== 'string' || !/^[A-Za-z0-9._:-]{8,128}$/.test(idempotencyKey))) {
+      return res.status(400).json({ success: false, message: 'রিকোয়েস্ট আইডি সঠিক নয়' });
     }
 
     // Execute atomically
     const { payoutId } = await withTransaction(async ({ run: txRun }) => {
+      if (idempotencyKey) {
+        const existingKey = await get(
+          "SELECT id FROM wallet_transactions WHERE user_id = ? AND notes LIKE ?",
+          [req.user.id, `%[IDEMP:${idempotencyKey}]%`]
+        );
+        if (existingKey) {
+          const duplicateError = new Error('একই রিকোয়েস্ট ইতিমধ্যে গ্রহণ করা হয়েছে (ডুপ্লিকেট রিকোয়েস্ট রোধ)');
+          duplicateError.statusCode = 409;
+          throw duplicateError;
+        }
+      }
+
+      const balancesInTransaction = await computeBalances(req.user.id);
+      if (parsedAmount > balancesInTransaction.availableBalance) {
+        const balanceError = new Error(`পর্যাপ্ত ব্যালেন্স নেই। আপনার উত্তোলনযোগ্য ব্যালেন্স: ${balancesInTransaction.availableBalance} টাকা`);
+        balanceError.statusCode = 400;
+        throw balanceError;
+      }
+
       // Insert payout request
       const payoutResult = await txRun(
         `INSERT INTO payout_requests (
           user_id, amount, payment_method, account_number, status
         ) VALUES (?, ?, ?, ?, 'pending')`,
-        [req.user.id, parsedAmount, payment_method, account_number.trim()]
+        [req.user.id, parsedAmount, payment_method, cleanAccountNumber]
       );
 
       // Insert wallet transaction record with payout_id reference
-      const txNote = `${payment_method.toUpperCase()} নম্বর ${account_number.trim()}-এ ক্যাশআউট রিকোয়েস্ট${idempotencyKey ? ' [IDEMP:' + idempotencyKey + ']' : ''}`;
+      const txNote = `${payment_method.toUpperCase()} নম্বর ${cleanAccountNumber}-এ ক্যাশআউট রিকোয়েস্ট${idempotencyKey ? ' [IDEMP:' + idempotencyKey + ']' : ''}`;
       await txRun(
         `INSERT INTO wallet_transactions (
           user_id, payout_id, amount, type, status, notes
@@ -250,6 +263,9 @@ router.post('/payout-request', verifyToken, async (req, res) => {
       payout_id: payoutId
     });
   } catch (error) {
+    if (error.statusCode === 400 || error.statusCode === 409) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
     console.error('Payout Request Error:', error);
     return res.status(500).json({ success: false, message: 'ক্যাশআউট রিকোয়েস্ট ব্যর্থ হয়েছে' });
   }

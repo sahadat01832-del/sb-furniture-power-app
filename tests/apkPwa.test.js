@@ -1,3 +1,5 @@
+require('./testEnv');
+
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
@@ -93,45 +95,28 @@ test('APK & PWA 3: HTML Landing Page & Admin Portal Integrate Zero-Friction PWA 
   assert.ok(adminRes.text.includes('id="btnNavInstall"'));
 });
 
-test('APK & PWA 4: Production Keystore & Release APK Verification (v1 + v2 + v3 Schemes)', () => {
+test('APK & PWA 4: Release signing requires external credentials', () => {
   const rootDir = path.join(__dirname, '..');
-  const keystorePath = path.join(rootDir, 'config', 'sb-release.keystore');
-  assert.ok(fs.existsSync(keystorePath), 'Permanent release keystore must exist in config/');
+  const gradleConfig = fs.readFileSync(path.join(rootDir, 'android', 'app', 'build.gradle'), 'utf8');
+  assert.match(gradleConfig, /System\.getenv\('ANDROID_KEYSTORE_PASSWORD'\)/);
+  assert.match(gradleConfig, /System\.getenv\('ANDROID_KEY_PASSWORD'\)/);
+  assert.match(gradleConfig, /storePassword releaseKeystorePassword/);
+  assert.match(gradleConfig, /keyPassword releaseKeyPassword/);
+  assert.doesNotMatch(gradleConfig, /storePassword\s+["'][^"']{8,}["']/);
+  assert.doesNotMatch(gradleConfig, /keyPassword\s+["'][^"']{8,}["']/);
+  assert.equal(fs.existsSync(path.join(rootDir, 'config', 'sb-release.keystore')), false);
 
-  const apks = [
-    { name: 'reseller', path: path.join(rootDir, 'dist-apk', 'sb-power-reseller.apk'), appId: 'com.sbfurniture.powerapp' },
-    { name: 'admin', path: path.join(rootDir, 'dist-apk', 'sb-power-admin.apk'), appId: 'com.sbfurniture.admin' }
-  ];
-
-  for (const apkInfo of apks) {
-    assert.ok(fs.existsSync(apkInfo.path), `${apkInfo.name} APK must exist`);
-    const stat = fs.statSync(apkInfo.path);
-    assert.ok(stat.size > 1024 * 1024, `${apkInfo.name} APK size must be > 1MB`);
-  }
-
-  // Verify signature and debuggable state with Android SDK tools if present
-  const apksigner = '/home/don/whynet ecosystem/NEWTUBE/NewTube_Android/.android-sdk/build-tools/35.0.0/apksigner';
-  const aapt = '/home/don/whynet ecosystem/NEWTUBE/NewTube_Android/.android-sdk/build-tools/35.0.0/aapt';
-
-  if (fs.existsSync(apksigner)) {
-    for (const apkInfo of apks) {
-      const verifyOut = spawnSync(apksigner, ['verify', '-v', '--min-sdk-version', '23', '--print-certs', apkInfo.path], { encoding: 'utf-8' });
-      assert.equal(verifyOut.status, 0, `apksigner verify must pass on ${apkInfo.name} APK`);
-      assert.ok(verifyOut.stdout.includes('Verified using v1 scheme (JAR signing): true'), `v1 signing must be true for ${apkInfo.name}`);
-      assert.ok(verifyOut.stdout.includes('Verified using v2 scheme (APK Signature Scheme v2): true'), `v2 signing must be true for ${apkInfo.name}`);
-      assert.ok(verifyOut.stdout.includes('Verified using v3 scheme (APK Signature Scheme v3): true'), `v3 signing must be true for ${apkInfo.name}`);
-      assert.ok(verifyOut.stdout.includes('CN=SB Furniture & SB POWER'), `Certificate DN must match for ${apkInfo.name}`);
+  const buildResult = spawnSync('bash', [path.join(rootDir, 'scripts', 'build-apks.sh'), 'client'], {
+    cwd: rootDir,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      ANDROID_KEYSTORE_PATH: '',
+      ANDROID_KEYSTORE_ALIAS: '',
+      ANDROID_KEYSTORE_PASSWORD: '',
+      ANDROID_KEY_PASSWORD: ''
     }
-  }
-
-  if (fs.existsSync(aapt)) {
-    for (const apkInfo of apks) {
-      const badgingOut = spawnSync(aapt, ['dump', 'badging', apkInfo.path], { encoding: 'utf-8' });
-      assert.equal(badgingOut.status, 0, `aapt dump badging must succeed on ${apkInfo.name}`);
-      assert.ok(!badgingOut.stdout.includes('application-debuggable'), `${apkInfo.name} APK must NOT have application-debuggable`);
-      assert.ok(badgingOut.stdout.includes("versionCode='2'"), `${apkInfo.name} APK must have bumped versionCode=2`);
-      assert.ok(badgingOut.stdout.includes("versionName='1.0.1'"), `${apkInfo.name} APK must have versionName=1.0.1`);
-      assert.ok(badgingOut.stdout.includes(`package: name='${apkInfo.appId}'`), `${apkInfo.name} package name must match`);
-    }
-  }
+  });
+  assert.notEqual(buildResult.status, 0, 'Release build must stop when signing credentials are missing');
+  assert.match(`${buildResult.stdout}\n${buildResult.stderr}`, /ANDROID_KEYSTORE_PATH/);
 });

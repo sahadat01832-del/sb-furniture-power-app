@@ -14,6 +14,9 @@ let searchQuery = '';
 let searchTimeout;
 let priceFilterTimeout;
 
+const escapeCatalogHtml = (value) => window.sbEscapeHtml(value);
+const safeCatalogImageUrl = (value) => window.sbSafeImageUrl(value);
+
 // Load Products from API
 async function loadProducts() {
   const grid = document.getElementById('productGrid');
@@ -105,30 +108,31 @@ function renderProductGrid(products) {
     const isPartner = item.shop_name && !['SB Furniture', 'SB POWER'].includes(item.shop_name);
     const brandBadgeClass = isPartner ? 'brand-partner' : (isFurniture ? 'brand-furniture' : 'brand-power');
     const brandDisplay = isPartner ? `🏪 ${item.shop_name}` : item.brand;
+    const imageUrl = escapeCatalogHtml(safeCatalogImageUrl(item.image_url));
 
     return `
       <div class="product-card">
         <div class="product-thumb-wrap" onclick="viewProductDetails(${item.id})">
-          <img src="${item.image_url}" alt="${item.title}" class="product-thumb" loading="lazy">
-          <span class="badge-sku">${item.sku}</span>
-          <span class="badge-commission">কমিশন ${item.reseller_commission}৳</span>
-          <span class="badge-brand ${brandBadgeClass}">${brandDisplay}</span>
-          ${item.vendor_badge ? `<span class="badge-vendor-verified">✓ ${item.vendor_badge}</span>` : ''}
+          <img src="${imageUrl}" alt="${escapeCatalogHtml(item.title)}" class="product-thumb" loading="lazy">
+          <span class="badge-sku">${escapeCatalogHtml(item.sku)}</span>
+          <span class="badge-commission">কমিশন ${escapeCatalogHtml(item.reseller_commission)}৳</span>
+          <span class="badge-brand ${brandBadgeClass}">${escapeCatalogHtml(brandDisplay)}</span>
+          ${item.vendor_badge ? `<span class="badge-vendor-verified">✓ ${escapeCatalogHtml(item.vendor_badge)}</span>` : ''}
         </div>
         <div class="product-body">
-          <h4 class="product-title" onclick="viewProductDetails(${item.id})">${item.title}</h4>
+          <h4 class="product-title" onclick="viewProductDetails(${item.id})">${escapeCatalogHtml(item.title)}</h4>
           <div class="product-meta-row">
-            <span>${item.category}</span>
-            ${item.finish ? ` • <span>${item.finish}</span>` : ''}
+            <span>${escapeCatalogHtml(item.category)}</span>
+            ${item.finish ? ` • <span>${escapeCatalogHtml(item.finish)}</span>` : ''}
           </div>
           <div class="product-price-row">
             <div class="price-box">
               <span class="price-label">বিক্রয় মূল্য</span>
-              <span class="price-val">${item.regular_price} ৳</span>
+              <span class="price-val">${escapeCatalogHtml(item.regular_price)} ৳</span>
             </div>
             <div class="commission-box">
-              <span class="commission-label">আপনার লাভ</span>
-              <span class="commission-val">+${item.reseller_commission} ৳</span>
+              <span class="commission-label">আপনার কমিশন</span>
+              <span class="commission-val">+${escapeCatalogHtml(item.reseller_commission)} ৳</span>
             </div>
           </div>
           <div class="product-actions">
@@ -245,12 +249,13 @@ function orderViaWhatsApp(productId) {
 function generateShareText(item) {
   const isFurniture = item.brand === 'SB Furniture';
   const isPartner = item.shop_name && !['SB Furniture', 'SB POWER'].includes(item.shop_name);
-  const phone = item.vendor_phone || (isFurniture ? '01929621855' : '01634664224');
+  const phone = String(item.vendor_phone || (isFurniture ? '01929621855' : '01634664224')).replace(/\D/g, '');
+  const imageUrl = escapeCatalogHtml(safeCatalogImageUrl(item.image_url));
   const trustLine = isPartner
-    ? `🏪 ${item.shop_name} — ভেরিফাইড পার্টনার শপের সেরা কোয়ালিটি গ্যারান্টি!`
-    : (isFurniture 
-        ? '১৫ বছরের অভিজ্ঞতায় সরাসরি কারখানা থেকে পাইকারি ও সাশ্রয়ী দামে তৈরি করে দেওয়া হয়।' 
-        : 'সাশ্রয়ী মূল্যে ১০০% অরিজিনাল সাউন্ড ও গ্যাজেটের সেরা কালেকশন!');
+    ? `🏪 ${item.shop_name} — এই পণ্যটি পার্টনার দোকানের মাধ্যমে সরবরাহ করা হবে।`
+    : (isFurniture
+        ? 'SB Furniture-এর ফার্নিচার ও দোকান সাজানোর পণ্য।'
+        : 'SB POWER-এর গ্যাজেট; পণ্যের ব্র্যান্ড ও বিবরণ দেখে অর্ডার করুন।');
   
   const activeUser = (typeof currentUser !== 'undefined' && currentUser) ? currentUser : JSON.parse(localStorage.getItem('sb_user') || 'null');
   const refCode = activeUser ? activeUser.referral_code : localStorage.getItem('sb_ref_code');
@@ -258,7 +263,7 @@ function generateShareText(item) {
   const productLink = refCode ? `${appBaseUrl}/?ref=${refCode}&sku=${item.sku}` : `${appBaseUrl}/?sku=${item.sku}`;
 
   let text = `🔥 ${item.title}\n`;
-  text += `💵 নির্ধারিত পাইকারি মূল্য: ${item.regular_price} ৳\n`;
+  text += `💵 বিক্রয় মূল্য: ${item.regular_price} ৳\n`;
   if (isPartner) {
     text += `🏪 শপ/ভেন্ডর: ${item.shop_name}${item.vendor_badge ? ' (' + item.vendor_badge + ')' : ''}\n`;
   }
@@ -266,7 +271,7 @@ function generateShareText(item) {
   if (item.finish) text += `🎨 ফিনিশিং ও কালার: ${item.finish}\n`;
   if (item.description) text += `📌 বিবরণ: ${item.description}\n`;
   text += `\n✅ ${trustLine}\n`;
-  text += `\n📦 সরাসরি কারখানা রেটে অর্ডার করতে Call / WhatsApp: ${phone}\n`;
+  text += `\n📦 পণ্য সম্পর্কে জানতে Call / WhatsApp: ${phone}\n`;
   text += `🌐 সরাসরি অনলাইন অর্ডার লিংক: ${productLink}`;
 
   return text;
@@ -300,7 +305,8 @@ function viewProductDetails(productId) {
 
   const isFurniture = item.brand === 'SB Furniture';
   const isPartner = item.shop_name && !['SB Furniture', 'SB POWER'].includes(item.shop_name);
-  const phone = item.vendor_phone || (isFurniture ? '01929621855' : '01634664224');
+  const phone = String(item.vendor_phone || (isFurniture ? '01929621855' : '01634664224')).replace(/\D/g, '');
+  const imageUrl = escapeCatalogHtml(safeCatalogImageUrl(item.image_url));
 
   document.getElementById('modalProductTitle').textContent = item.sku + ' — বিস্তারিত তথ্য';
 
@@ -323,33 +329,33 @@ function viewProductDetails(productId) {
   if (isPartner) {
     vendorInfoHtml = `
       <div style="background: rgba(16, 185, 129, 0.12); border: 1px solid #10b981; border-radius: var(--radius-sm); padding: 10px; margin-bottom: 12px; font-size: 0.85rem;">
-        <div style="font-weight: 700; color: #34d399; margin-bottom: 4px;">🏪 পার্টনার শপ: ${item.shop_name}</div>
-        ${item.vendor_badge ? `<div style="color: #a7f3d0; font-size: 0.78rem;">✓ ${item.vendor_badge}</div>` : ''}
-        ${item.vendor_phone ? `<div style="color: #d1fae5; font-size: 0.78rem;">📞 ভেন্ডর মোবাইল: ${item.vendor_phone}</div>` : ''}
-        ${item.vendor_address ? `<div style="color: #9ca3af; font-size: 0.75rem;">📍 শপ লোকেশন: ${item.vendor_address}</div>` : ''}
+        <div style="font-weight: 700; color: #34d399; margin-bottom: 4px;">🏪 পার্টনার শপ: ${escapeCatalogHtml(item.shop_name)}</div>
+        ${item.vendor_badge ? `<div style="color: #a7f3d0; font-size: 0.78rem;">✓ ${escapeCatalogHtml(item.vendor_badge)}</div>` : ''}
+        ${item.vendor_phone ? `<div style="color: #d1fae5; font-size: 0.78rem;">📞 ভেন্ডর মোবাইল: ${escapeCatalogHtml(item.vendor_phone)}</div>` : ''}
+        ${item.vendor_address ? `<div style="color: #9ca3af; font-size: 0.75rem;">📍 শপ লোকেশন: ${escapeCatalogHtml(item.vendor_address)}</div>` : ''}
       </div>
     `;
   }
 
   document.getElementById('modalProductBody').innerHTML = `
     <div style="text-align: center; margin-bottom: 14px;">
-      <img src="${item.image_url}" alt="${item.title}" style="width: 100%; max-height: 280px; object-fit: cover; border-radius: var(--radius-sm);">
+      <img src="${imageUrl}" alt="${escapeCatalogHtml(item.title)}" style="width: 100%; max-height: 280px; object-fit: cover; border-radius: var(--radius-sm);">
     </div>
     <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px;">
-      <span class="badge-sku" style="position: static;">${item.sku}</span>
-      <span class="badge-commission" style="position: static;">রিসেলার কমিশন: ${item.reseller_commission} ৳</span>
-      <span style="font-size: 0.75rem; background: #38332f; padding: 3px 8px; border-radius: 4px; color: #fff;">${item.shop_name || item.brand}</span>
-      ${item.vendor_badge ? `<span style="font-size: 0.75rem; background: #065f46; color: #a7f3d0; padding: 3px 8px; border-radius: 4px;">✓ ${item.vendor_badge}</span>` : ''}
+      <span class="badge-sku" style="position: static;">${escapeCatalogHtml(item.sku)}</span>
+      <span class="badge-commission" style="position: static;">রিসেলার কমিশন: ${escapeCatalogHtml(item.reseller_commission)} ৳</span>
+      <span style="font-size: 0.75rem; background: #38332f; padding: 3px 8px; border-radius: 4px; color: #fff;">${escapeCatalogHtml(item.shop_name || item.brand)}</span>
+      ${item.vendor_badge ? `<span style="font-size: 0.75rem; background: #065f46; color: #a7f3d0; padding: 3px 8px; border-radius: 4px;">✓ ${escapeCatalogHtml(item.vendor_badge)}</span>` : ''}
     </div>
-    <h3 style="font-size: 1.15rem; color: #fff; margin-bottom: 8px;">${item.title}</h3>
+    <h3 style="font-size: 1.15rem; color: #fff; margin-bottom: 8px;">${escapeCatalogHtml(item.title)}</h3>
     <div style="font-size: 1.25rem; font-weight: 700; color: var(--sbp-yellow); margin-bottom: 12px;">
-      মূল্য: ${item.regular_price} ৳
+      মূল্য: ${escapeCatalogHtml(item.regular_price)} ৳
     </div>
     ${vendorInfoHtml}
     <div style="background: #292524; padding: 12px; border-radius: var(--radius-sm); font-size: 0.85rem; margin-bottom: 14px; line-height: 1.6;">
-      ${item.materials ? `<div><strong>উপকরণ:</strong> ${item.materials}</div>` : ''}
-      ${item.finish ? `<div><strong>ফিনিশিং:</strong> ${item.finish}</div>` : ''}
-      <div style="margin-top: 6px;">${item.description}</div>
+      ${item.materials ? `<div><strong>উপকরণ:</strong> ${escapeCatalogHtml(item.materials)}</div>` : ''}
+      ${item.finish ? `<div><strong>ফিনিশিং:</strong> ${escapeCatalogHtml(item.finish)}</div>` : ''}
+      <div style="margin-top: 6px;">${escapeCatalogHtml(item.description)}</div>
     </div>
     ${colorSelectorHtml}
     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px;">

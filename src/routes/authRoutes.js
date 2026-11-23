@@ -1,7 +1,16 @@
 const express = require('express');
+const crypto = require('crypto');
 const router = express.Router();
 const { query, get, run } = require('../db');
 const { hashPassword, comparePassword, generateToken, verifyToken } = require('../auth');
+const config = require('../config');
+
+const normalizePhone = (value) => {
+  let digits = String(value || '').replace(/\D/g, '');
+  if (digits.startsWith('00880')) digits = `0${digits.slice(5)}`;
+  else if (digits.startsWith('880')) digits = `0${digits.slice(3)}`;
+  return digits;
+};
 
 // Generate collision-resistant unique referral code
 const generateReferralCode = async (phone) => {
@@ -9,7 +18,7 @@ const generateReferralCode = async (phone) => {
   let code;
   let exists = true;
   while (exists) {
-    const randomLetters = Math.random().toString(36).substring(2, 6).toUpperCase();
+    const randomLetters = crypto.randomBytes(3).toString('hex').slice(0, 4).toUpperCase();
     code = `SB${cleanPhone}${randomLetters}`;
     const row = await get('SELECT id FROM users WHERE referral_code = ?', [code]);
     if (!row) exists = false;
@@ -22,24 +31,27 @@ router.post('/register', async (req, res) => {
   try {
     const { name, phone, password, referral_code } = req.body;
 
-    if (!name || !name.trim()) {
+    if (typeof name !== 'string' || !name.trim() || name.trim().length > 100) {
       return res.status(400).json({ success: false, message: 'আপনার পূর্ণ নাম প্রদান করুন' });
     }
 
-    if (!phone || !phone.trim() || phone.trim().length < 11) {
+    const cleanPhone = normalizePhone(phone);
+    if (!/^01[3-9]\d{8}$/.test(cleanPhone)) {
       return res.status(400).json({ success: false, message: 'সঠিক ১১ ডিজিটের মোবাইল নম্বর দিন' });
     }
 
-    if (!password || password.length < 6) {
-      return res.status(400).json({ success: false, message: 'পাসওয়ার্ড ন্যূনতম ৬ অক্ষরের হতে হবে' });
+    if (typeof password !== 'string' || Buffer.byteLength(password, 'utf8') < 8 || Buffer.byteLength(password, 'utf8') > 72) {
+      return res.status(400).json({ success: false, message: 'পাসওয়ার্ড ৮ থেকে ৭২ বাইটের মধ্যে হতে হবে' });
     }
-
-    const cleanPhone = phone.trim();
 
     // Check if phone already registered
     const existingUser = await get('SELECT * FROM users WHERE phone = ?', [cleanPhone]);
     if (existingUser) {
       return res.status(400).json({ success: false, message: 'এই ফোন নম্বরটি ইতিমধ্যে নিবন্ধিত রয়েছে' });
+    }
+
+    if (referral_code !== undefined && referral_code !== null && typeof referral_code !== 'string') {
+      return res.status(400).json({ success: false, message: 'রেফারেল কোড সঠিক নয়' });
     }
 
     // Check referrer if code provided
@@ -73,7 +85,8 @@ router.post('/register', async (req, res) => {
 
     res.cookie('token', token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: config.NODE_ENV === 'production',
+      sameSite: 'lax',
       maxAge: 30 * 24 * 60 * 60 * 1000
     });
 
@@ -94,11 +107,11 @@ router.post('/login', async (req, res) => {
   try {
     const { phone, password } = req.body;
 
-    if (!phone || !password) {
+    if (typeof phone !== 'string' || typeof password !== 'string' || !password) {
       return res.status(400).json({ success: false, message: 'ফোন নম্বর এবং পাসওয়ার্ড আবশ্যক' });
     }
 
-    const cleanPhone = phone.trim();
+    const cleanPhone = normalizePhone(phone);
     const user = await get('SELECT * FROM users WHERE phone = ?', [cleanPhone]);
 
     if (!user) {
@@ -123,7 +136,8 @@ router.post('/login', async (req, res) => {
 
     res.cookie('token', token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: config.NODE_ENV === 'production',
+      sameSite: 'lax',
       maxAge: 30 * 24 * 60 * 60 * 1000
     });
 
@@ -162,7 +176,7 @@ router.get('/me', verifyToken, async (req, res) => {
 router.put('/me', verifyToken, async (req, res) => {
   try {
     const { name } = req.body;
-    if (!name || !name.trim()) {
+    if (typeof name !== 'string' || !name.trim() || name.trim().length > 100) {
       return res.status(400).json({ success: false, message: 'নাম প্রদান করুন' });
     }
 
@@ -188,12 +202,12 @@ router.post('/change-password', verifyToken, async (req, res) => {
   try {
     const { old_password, new_password } = req.body;
 
-    if (!old_password || !new_password) {
+    if (typeof old_password !== 'string' || typeof new_password !== 'string' || !old_password || !new_password) {
       return res.status(400).json({ success: false, message: 'পুরাতন ও নতুন উভয় পাসওয়ার্ড প্রদান করুন' });
     }
 
-    if (new_password.length < 6) {
-      return res.status(400).json({ success: false, message: 'নতুন পাসওয়ার্ড ন্যূনতম ৬ অক্ষরের হতে হবে' });
+    if (Buffer.byteLength(new_password, 'utf8') < 8 || Buffer.byteLength(new_password, 'utf8') > 72) {
+      return res.status(400).json({ success: false, message: 'নতুন পাসওয়ার্ড ৮ থেকে ৭২ বাইটের মধ্যে হতে হবে' });
     }
 
     const user = await get('SELECT password_hash FROM users WHERE id = ?', [req.user.id]);
@@ -308,7 +322,11 @@ router.put('/notifications/:id/read', verifyToken, async (req, res) => {
 
 // Logout
 router.post('/logout', (req, res) => {
-  res.clearCookie('token');
+  res.clearCookie('token', {
+    httpOnly: true,
+    secure: config.NODE_ENV === 'production',
+    sameSite: 'lax'
+  });
   res.json({ success: true, message: 'সফলভাবে লগআউট হয়েছেন' });
 });
 

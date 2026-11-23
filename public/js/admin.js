@@ -7,6 +7,8 @@ let currentAdminSection = 'orders';
 let adminProductsList = [];
 
 const api = (path) => (typeof window.apiUrl === 'function' ? window.apiUrl(path) : path);
+const escapeAdminHtml = (value) => window.sbEscapeHtml(value);
+const safeAdminImageUrl = (value) => window.sbSafeImageUrl(value);
 
 document.addEventListener('DOMContentLoaded', () => {
   if (adminToken) {
@@ -148,15 +150,15 @@ async function loadAdminOrders() {
 
     tbody.innerHTML = data.orders.map((o) => `
       <tr>
-        <td><strong>#${o.order_number}</strong><br><span style="font-size: 0.72rem; color: #a8a29e;">${new Date(o.created_at).toLocaleDateString('bn-BD')}</span></td>
-        <td><strong>${o.customer_name}</strong><br><a href="tel:${o.customer_phone}" style="color: var(--sbp-yellow);">${o.customer_phone}</a></td>
-        <td>${o.delivery_address}<br><span style="color: #38bdf8;">(${o.delivery_city === 'inside_dhaka' ? 'ঢাকা ভেতরে' : 'ঢাকা বাইরে'})</span></td>
-        <td><strong>${o.total_amount} ৳</strong><br><span style="font-size: 0.75rem; color: #a8a29e;">(অগ্রিম: ${o.advance_paid}৳)</span></td>
-        <td>${o.advance_trx_id ? `<strong style="color: #34d399;">${o.advance_trx_id}</strong>` : '<span style="color: #ef4444;">নেই</span>'}</td>
-        <td>${o.reseller_name ? `${o.reseller_name}<br><span style="font-size: 0.75rem; color: #a8a29e;">${o.reseller_phone}</span>` : '<span style="color: #a8a29e;">সরাসরি</span>'}</td>
+        <td><strong>#${escapeAdminHtml(o.order_number)}</strong><br><span style="font-size: 0.72rem; color: #a8a29e;">${new Date(o.created_at).toLocaleDateString('bn-BD')}</span></td>
+        <td><strong>${escapeAdminHtml(o.customer_name)}</strong><br><a href="tel:${escapeAdminHtml(String(o.customer_phone).replace(/\D/g, ''))}" style="color: var(--sbp-yellow);">${escapeAdminHtml(o.customer_phone)}</a></td>
+        <td>${escapeAdminHtml(o.delivery_address)}<br><span style="color: #38bdf8;">(${o.delivery_city === 'inside_dhaka' ? 'ঢাকা ভেতরে' : 'ঢাকা বাইরে'})</span></td>
+        <td><strong>${escapeAdminHtml(o.total_amount)} ৳</strong><br><span style="font-size: 0.75rem; color: #a8a29e;">(অগ্রিম: ${escapeAdminHtml(o.advance_paid)}৳)</span></td>
+        <td>${o.advance_trx_id ? `<strong style="color: #34d399;">${escapeAdminHtml(o.advance_trx_id)}</strong>` : '<span style="color: #ef4444;">নেই</span>'}</td>
+        <td>${o.reseller_name ? `${escapeAdminHtml(o.reseller_name)}<br><span style="font-size: 0.75rem; color: #a8a29e;">${escapeAdminHtml(o.reseller_phone)}</span>` : '<span style="color: #a8a29e;">সরাসরি</span>'}</td>
         <td>
           <span style="background: ${getStatusBadgeBg(o.status)}; color: #fff; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 700;">
-            ${o.status}
+            ${escapeAdminHtml(o.status)}
           </span>
         </td>
         <td>
@@ -165,7 +167,7 @@ async function loadAdminOrders() {
             ${['pending', 'confirmed'].includes(o.status) ? `<button class="action-btn-sm btn-ship" onclick="updateOrderStatus(${o.id}, 'shipped')">শিপড</button>` : ''}
             ${['pending', 'confirmed', 'shipped'].includes(o.status) ? `<button class="action-btn-sm btn-deliver" onclick="updateOrderStatus(${o.id}, 'delivered')">ডেলিভার্ড</button>` : ''}
             ${o.status !== 'delivered' && o.status !== 'cancelled' ? `<button class="action-btn-sm btn-cancel" onclick="updateOrderStatus(${o.id}, 'cancelled')">বাতিল</button>` : ''}
-            <button class="action-btn-sm" style="background: #475569; color: #fff;" onclick="viewOrderAuditTrail(${o.id}, '${o.order_number}')">অডিট</button>
+            <button class="action-btn-sm" style="background: #475569; color: #fff;" onclick="viewOrderAuditTrail(${o.id})">অডিট</button>
           </div>
         </td>
       </tr>
@@ -178,7 +180,7 @@ async function loadAdminOrders() {
 
 async function updateOrderStatus(orderId, newStatus) {
   if (newStatus === 'delivered') {
-    const ok = confirm('অর্ডার ডেলিভার্ড হিসেবে মার্ক করতে চান? এর ফলে রিসেলারের ওয়ালেটে কমিশন এবং প্রযোজ্য ক্ষেত্রে রেফারেল বোনাস যোগ হবে।');
+    const ok = confirm('অর্ডার ডেলিভার্ড হিসেবে মার্ক করতে চান? এতে অর্ডারের সরাসরি রিসেলার কমিশন ছাড় হবে।');
     if (!ok) return;
   }
 
@@ -221,24 +223,26 @@ async function loadAdminPayouts() {
       return;
     }
 
+    window._adminPayoutsById = Object.fromEntries(data.payouts.map((payout) => [payout.id, payout]));
+
     tbody.innerHTML = data.payouts.map((p) => `
       <tr>
         <td>#${p.id}</td>
-        <td><strong>${p.user_name}</strong></td>
-        <td>${p.user_phone}</td>
-        <td><strong style="color: var(--sbp-yellow);">${p.amount} ৳</strong></td>
-        <td><span style="text-transform: uppercase; font-weight: 700;">${p.payment_method}</span></td>
-        <td><strong style="color: #38bdf8;">${p.account_number}</strong></td>
+        <td><strong>${escapeAdminHtml(p.user_name)}</strong></td>
+        <td>${escapeAdminHtml(p.user_phone)}</td>
+        <td><strong style="color: var(--sbp-yellow);">${escapeAdminHtml(p.amount)} ৳</strong></td>
+        <td><span style="text-transform: uppercase; font-weight: 700;">${escapeAdminHtml(p.payment_method)}</span></td>
+        <td><strong style="color: #38bdf8;">${escapeAdminHtml(p.account_number)}</strong></td>
         <td>
           <span style="background: ${p.status === 'approved' ? '#10b981' : p.status === 'pending' ? '#f59e0b' : '#ef4444'}; color: #fff; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 700;">
-            ${p.status}
+            ${escapeAdminHtml(p.status)}
           </span>
         </td>
-        <td>${p.admin_trx_id || '-'}<br><span style="font-size: 0.7rem; color: #a8a29e;">${new Date(p.created_at).toLocaleDateString('bn-BD')}</span></td>
+        <td>${escapeAdminHtml(p.admin_trx_id || '-')}<br><span style="font-size: 0.7rem; color: #a8a29e;">${new Date(p.created_at).toLocaleDateString('bn-BD')}</span></td>
         <td>
           ${p.status === 'pending' ? `
             <div style="display: flex; gap: 4px;">
-              <button class="action-btn-sm btn-deliver" onclick="approvePayoutPrompt(${p.id}, ${p.amount}, '${p.payment_method}', '${p.account_number}')">অনুমোদন</button>
+              <button class="action-btn-sm btn-deliver" onclick="approvePayoutPrompt(${p.id})">অনুমোদন</button>
               <button class="action-btn-sm btn-cancel" onclick="rejectPayoutPrompt(${p.id})">বাতিল</button>
             </div>
           ` : '<span style="color: #a8a29e; font-size: 0.75rem;">সম্পন্ন</span>'}
@@ -251,7 +255,10 @@ async function loadAdminPayouts() {
   }
 }
 
-async function approvePayoutPrompt(payoutId, amount, method, account) {
+async function approvePayoutPrompt(payoutId) {
+  const payout = window._adminPayoutsById && window._adminPayoutsById[payoutId];
+  if (!payout) return showToast('ক্যাশআউট তথ্য পাওয়া যায়নি। তালিকাটি আবার লোড করুন।');
+  const { amount, payment_method: method, account_number: account } = payout;
   const trxId = prompt(`${method.toUpperCase()} নম্বর ${account}-এ ${amount} ৳ পাঠানোর পর ট্রানজেকশন আইডি (TrxID) দিন:`);
   if (!trxId) return;
 
@@ -327,18 +334,18 @@ async function loadAdminProducts() {
       const isPartner = p.shop_name && !['SB Furniture', 'SB POWER'].includes(p.shop_name);
       return `
       <tr style="${p.is_active ? '' : 'opacity: 0.65; background: rgba(239, 68, 68, 0.05);'}">
-        <td><img src="${p.image_url}" alt="${p.title}" style="width: 44px; height: 36px; object-fit: cover; border-radius: 4px;"></td>
-        <td><strong>${p.sku}</strong>${p.is_active ? '' : '<br><span style="background: #ef4444; color: #fff; padding: 1px 4px; border-radius: 3px; font-size: 0.68rem;">নিষ্ক্রিয়</span>'}</td>
-        <td><strong>${p.title}</strong></td>
+        <td><img src="${escapeAdminHtml(safeAdminImageUrl(p.image_url))}" alt="${escapeAdminHtml(p.title)}" style="width: 44px; height: 36px; object-fit: cover; border-radius: 4px;"></td>
+        <td><strong>${escapeAdminHtml(p.sku)}</strong>${p.is_active ? '' : '<br><span style="background: #ef4444; color: #fff; padding: 1px 4px; border-radius: 3px; font-size: 0.68rem;">নিষ্ক্রিয়</span>'}</td>
+        <td><strong>${escapeAdminHtml(p.title)}</strong></td>
         <td>
-          <span style="color: ${p.brand === 'SB Furniture' ? '#f59e0b' : '#38bdf8'}; font-weight: 700;">${p.brand}</span>
-          ${isPartner ? `<br><span style="font-size: 0.75rem; color: #34d399; font-weight: 600;">🏪 ${p.shop_name}</span>` : ''}
-          ${p.vendor_phone ? `<br><span style="font-size: 0.72rem; color: #a8a29e;">📞 ${p.vendor_phone}</span>` : ''}
-          <br><span style="font-size: 0.72rem; color: #a8a29e;">${p.category}</span>
+          <span style="color: ${p.brand === 'SB Furniture' ? '#f59e0b' : '#38bdf8'}; font-weight: 700;">${escapeAdminHtml(p.brand)}</span>
+          ${isPartner ? `<br><span style="font-size: 0.75rem; color: #34d399; font-weight: 600;">🏪 ${escapeAdminHtml(p.shop_name)}</span>` : ''}
+          ${p.vendor_phone ? `<br><span style="font-size: 0.72rem; color: #a8a29e;">📞 ${escapeAdminHtml(p.vendor_phone)}</span>` : ''}
+          <br><span style="font-size: 0.72rem; color: #a8a29e;">${escapeAdminHtml(p.category)}</span>
         </td>
-        <td><strong>${p.regular_price} ৳</strong></td>
-        <td><span style="background: #059669; color: #fff; padding: 2px 6px; border-radius: 4px; font-size: 0.75rem;">+${p.reseller_commission}৳ (${p.commission_tab})</span></td>
-        <td>${p.stock}</td>
+        <td><strong>${escapeAdminHtml(p.regular_price)} ৳</strong></td>
+        <td><span style="background: #059669; color: #fff; padding: 2px 6px; border-radius: 4px; font-size: 0.75rem;">+${escapeAdminHtml(p.reseller_commission)}৳ (${escapeAdminHtml(p.commission_tab)})</span></td>
+        <td>${escapeAdminHtml(p.stock)}</td>
         <td>
           <div style="display: flex; gap: 4px;">
             <button class="action-btn-sm btn-ship" onclick="editProductModal(${p.id})">এডিট</button>
@@ -532,10 +539,10 @@ async function loadAdminAnalytics() {
       } else {
         prodTbody.innerHTML = top_products.map((p) => `
           <tr>
-            <td><strong>${p.sku}</strong></td>
-            <td>${p.title}</td>
-            <td><strong style="color: var(--sbp-yellow);">${p.total_units_sold} টি</strong></td>
-            <td><strong>${p.total_sales_volume} ৳</strong></td>
+            <td><strong>${escapeAdminHtml(p.sku)}</strong></td>
+            <td>${escapeAdminHtml(p.title)}</td>
+            <td><strong style="color: var(--sbp-yellow);">${escapeAdminHtml(p.total_units_sold)} টি</strong></td>
+            <td><strong>${escapeAdminHtml(p.total_sales_volume)} ৳</strong></td>
           </tr>
         `).join('');
       }
@@ -547,11 +554,11 @@ async function loadAdminAnalytics() {
       } else {
         resTbody.innerHTML = top_resellers.map((r) => `
           <tr>
-            <td><strong>${r.name}</strong></td>
-            <td>${r.phone}</td>
-            <td><strong style="color: #10b981;">${r.delivered_sales_count} টি</strong></td>
-            <td><strong>${r.total_volume} ৳</strong></td>
-            <td><strong style="color: var(--sbp-yellow);">${r.total_commission_earned} ৳</strong></td>
+            <td><strong>${escapeAdminHtml(r.name)}</strong></td>
+            <td>${escapeAdminHtml(r.phone)}</td>
+            <td><strong style="color: #10b981;">${escapeAdminHtml(r.delivered_sales_count)} টি</strong></td>
+            <td><strong>${escapeAdminHtml(r.total_volume)} ৳</strong></td>
+            <td><strong style="color: var(--sbp-yellow);">${escapeAdminHtml(r.total_commission_earned)} ৳</strong></td>
           </tr>
         `).join('');
       }
@@ -562,8 +569,8 @@ async function loadAdminAnalytics() {
 }
 
 // ================= AUDIT TRAIL MODAL =================
-async function viewOrderAuditTrail(orderId, orderNumber) {
-  document.getElementById('auditModalTitle').textContent = `অর্ডার #${orderNumber} — স্ট্যাটাস অডিট ট্রেইল`;
+async function viewOrderAuditTrail(orderId) {
+  document.getElementById('auditModalTitle').textContent = `অর্ডার #${orderId} — স্ট্যাটাস অডিট ট্রেইল`;
   const body = document.getElementById('auditModalBody');
   body.innerHTML = '<div style="text-align: center; padding: 20px;"><span class="spinner"></span> অডিট হিস্ট্রি লোড হচ্ছে...</div>';
   openModal('orderAuditModal');
@@ -595,10 +602,10 @@ async function viewOrderAuditTrail(orderId, orderNumber) {
             ${data.audit_trail.map((log) => `
               <tr>
                 <td style="font-size: 0.75rem; color: #a8a29e;">${new Date(log.created_at).toLocaleString('bn-BD')}</td>
-                <td><span style="font-size: 0.75rem; color: #a8a29e;">${log.previous_status || 'শুরু'}</span></td>
-                <td><span style="background: ${getStatusBadgeBg(log.new_status)}; color: #fff; padding: 2px 6px; border-radius: 4px; font-size: 0.72rem; font-weight: 700;">${log.new_status}</span></td>
-                <td>${log.admin_name || 'সিস্টেম'}</td>
-                <td style="font-size: 0.78rem;">${log.notes || '-'}</td>
+                <td><span style="font-size: 0.75rem; color: #a8a29e;">${escapeAdminHtml(log.previous_status || 'শুরু')}</span></td>
+                <td><span style="background: ${getStatusBadgeBg(log.new_status)}; color: #fff; padding: 2px 6px; border-radius: 4px; font-size: 0.72rem; font-weight: 700;">${escapeAdminHtml(log.new_status)}</span></td>
+                <td>${escapeAdminHtml(log.admin_name || 'সিস্টেম')}</td>
+                <td style="font-size: 0.78rem;">${escapeAdminHtml(log.notes || '-')}</td>
               </tr>
             `).join('')}
           </tbody>
@@ -633,9 +640,9 @@ async function loadAdminAnnouncements() {
     tbody.innerHTML = data.announcements.map((a) => `
       <tr>
         <td>#${a.id}</td>
-        <td><strong>${a.title}</strong></td>
-        <td style="max-width: 250px;">${a.message}</td>
-        <td><span style="background: #38332f; padding: 2px 6px; border-radius: 4px; font-size: 0.75rem;">${a.type}</span></td>
+        <td><strong>${escapeAdminHtml(a.title)}</strong></td>
+        <td style="max-width: 250px;">${escapeAdminHtml(a.message)}</td>
+        <td><span style="background: #38332f; padding: 2px 6px; border-radius: 4px; font-size: 0.75rem;">${escapeAdminHtml(a.type)}</span></td>
         <td><span style="color: ${a.is_active ? '#10b981' : '#ef4444'}; font-weight: 700;">${a.is_active ? 'সক্রিয়' : 'নিষ্ক্রিয়'}</span></td>
         <td>
           <div style="display: flex; gap: 4px;">
@@ -736,7 +743,7 @@ async function triggerInstantBackup() {
     });
     const data = await res.json();
     if (data.success) {
-      showToast(`🎉 ব্যাকআপ সফল! ফাইল: ${data.backup.filename}`);
+      showToast(`🎉 ব্যাকআপ সফল! ফাইল: ${escapeAdminHtml(data.backup.filename)}`);
       loadAdminBackupsList();
     } else {
       alert(`ব্যাকআপ ব্যর্থ: ${data.message}`);
@@ -762,13 +769,15 @@ async function loadAdminBackupsList() {
       return;
     }
 
+    window._adminBackups = data.backups;
+
     container.innerHTML = data.backups.map((b) => `
       <div style="background: #1c1917; border: 1px solid var(--sbf-border); padding: 8px 12px; border-radius: var(--radius-sm); margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center;">
         <div>
-          <strong style="color: #fde68a; font-size: 0.85rem;">${b.filename}</strong>
+          <strong style="color: #fde68a; font-size: 0.85rem;">${escapeAdminHtml(b.filename)}</strong>
           <div style="font-size: 0.75rem; color: var(--sbf-text-muted); margin-top: 2px;">সাইজ: ${b.sizeFormatted} • সময়: ${new Date(b.createdAt).toLocaleString('bn-BD')}</div>
         </div>
-        <button onclick="downloadBackupFile('${b.filename}')" class="action-btn-sm btn-ship" style="cursor: pointer; padding: 4px 10px;">⬇️ ডাউনলোড</button>
+        <button onclick="downloadBackupFile(${data.backups.indexOf(b)})" class="action-btn-sm btn-ship" style="cursor: pointer; padding: 4px 10px;">⬇️ ডাউনলোড</button>
       </div>
     `).join('');
   } catch (err) {
@@ -776,8 +785,11 @@ async function loadAdminBackupsList() {
   }
 }
 
-async function downloadBackupFile(filename) {
+async function downloadBackupFile(index) {
   try {
+    const backup = window._adminBackups && window._adminBackups[index];
+    if (!backup || typeof backup.filename !== 'string') return showToast('ব্যাকআপ তথ্য পাওয়া যায়নি।');
+    const filename = backup.filename;
     showToast('⏳ ব্যাকআপ ফাইল ডাউনলোড হচ্ছে...');
     const url = api(`/api/admin/backups/download/${encodeURIComponent(filename)}`);
     const res = await fetch(url, { headers: { Authorization: `Bearer ${adminToken}` } });
@@ -793,6 +805,6 @@ async function downloadBackupFile(filename) {
     window.URL.revokeObjectURL(downloadUrl);
     showToast('✅ ব্যাকআপ ফাইল সফলভাবে ডাউনলোড হয়েছে!');
   } catch (err) {
-    window.open(api(`/api/admin/backups/download/${encodeURIComponent(filename)}?token=${encodeURIComponent(adminToken)}`), '_blank');
+    showToast('ব্যাকআপ ফাইল ডাউনলোড ব্যর্থ হয়েছে। আবার চেষ্টা করুন।');
   }
 }

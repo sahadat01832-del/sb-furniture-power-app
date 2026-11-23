@@ -410,7 +410,7 @@
               </div>
             </div>
             <p style="font-size: 0.8rem; color: #d6d3d1; line-height: 1.5; margin-bottom: 12px;">
-              রিসেলার অ্যাপের ৫০৳, ১০০৳, ৫০০৳ ও ১০০০৳ লাভ ট্যাবে পণ্য দেখাতে প্রোডাক্ট এডিট করার সময় পছন্দের কমিশন ট্যাব সিলেক্ট করুন।
+              রিসেলার অ্যাপে কমিশন ফিল্টার চালু করতে পণ্যের নির্ধারিত কমিশনের সঙ্গে মিলিয়ে কমিশন ট্যাব নির্বাচন করুন।
             </p>
             <button class="action-btn-sm btn-ship" style="width: 100%; padding: 8px;" onclick="switchAdminSection('products')">
               👉 প্রোডাক্ট কমিশন ট্যাব সেট করুন
@@ -446,8 +446,8 @@
             <div style="font-size: 0.78rem; color: #d6d3d1; line-height: 1.6; margin-bottom: 12px;">
               <div>• <strong>SB Furniture:</strong> 01929621855 (WhatsApp)</div>
               <div>• <strong>SB POWER:</strong> 01634664224 (TikTok @sb.power.official)</div>
-              <div>• <strong>ডেলিভারি:</strong> ঢাকা ৫০০৳ / বাইরে ১০০০৳ (আসবাবপত্র), গ্যাজেট ৮০/১৫০৳</div>
-              <div>• <strong>রেফারেল বোনাস:</strong> ১ম সেলে ৫০৳ + আজীবন ৩% টিম কমিশন</div>
+              <div>• <strong>ডেলিভারি:</strong> Paperfly চার্জ pickup origin, destination zone ও parcel weight অনুযায়ী merchant account-এ যাচাই করুন। ভারী furniture-এর জন্য local transport লাগবে।</div>
+              <div>• <strong>রিসেলার:</strong> পণ্যভিত্তিক সরাসরি কমিশন; নতুন অর্ডারে team bonus নেই।</div>
             </div>
             <button class="action-btn-sm" style="background: #10b981; color: #fff; width: 100%; padding: 8px; font-weight: 600;" onclick="copyToClipboard('01929621855', 'হটলাইন নম্বর কপি হয়েছে!')">
               📋 হটলাইন নম্বর কপি করুন
@@ -502,7 +502,7 @@
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
             <div class="form-group" style="margin-bottom: 0;">
               <label class="form-label">ভেন্ডর ব্যাজ</label>
-              <input type="text" id="prodVendorBadge" class="form-control" placeholder="যেমন: Verified Partner, প্রিমিয়াম শপ">
+          <input type="text" id="prodVendorBadge" class="form-control" placeholder="যেমন: স্থানীয় পার্টনার শপ">
             </div>
             <div class="form-group" style="margin-bottom: 0;">
               <label class="form-label">শপ লোকেশন / ঠিকানা</label>
@@ -522,10 +522,10 @@
           <div class="form-group">
             <label class="form-label">কমিশন ট্যাব *</label>
             <select id="prodCommTab" class="form-control">
-              <option value="50tk">৫০৳ লাভ</option>
-              <option value="100tk">১০০৳ লাভ</option>
-              <option value="500tk">৫০০৳ লাভ</option>
-              <option value="1000tk">১০০০৳ লাভ</option>
+              <option value="50tk">৫০৳ কমিশন</option>
+              <option value="100tk">১০০৳ কমিশন</option>
+              <option value="500tk">৫০০৳ কমিশন</option>
+              <option value="1000tk">১০০০৳ কমিশন</option>
             </select>
           </div>
         </div>
@@ -630,7 +630,7 @@
           <input type="tel" id="newUserPhone" class="form-control" placeholder="01XXXXXXXXX">
         </div>
         <div class="form-group">
-          <label class="form-label">লগইন পাসওয়ার্ড (ন্যূনতম ৬ অক্ষর) *</label>
+          <label class="form-label">লগইন পাসওয়ার্ড (৮ থেকে ৭২ বাইট) *</label>
           <input type="password" id="newUserPassword" class="form-control" placeholder="শক্তিশালী পাসওয়ার্ড দিন">
         </div>
         <div class="form-group">
@@ -659,7 +659,7 @@
           <input type="password" id="adminOldPass" class="form-control" placeholder="বর্তমান পাসওয়ার্ড দিন">
         </div>
         <div class="form-group">
-          <label class="form-label">নতুন পাসওয়ার্ড (ন্যূনতম ৬ অক্ষর) *</label>
+          <label class="form-label">নতুন পাসওয়ার্ড (৮ থেকে ৭২ বাইট) *</label>
           <input type="password" id="adminNewPass" class="form-control" placeholder="নতুন পাসওয়ার্ড লিখুন">
         </div>
         <button class="btn-submit" onclick="submitAdminPasswordChange()">পাসওয়ার্ড আপডেট করুন</button>

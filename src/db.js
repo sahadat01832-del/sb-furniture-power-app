@@ -3,9 +3,17 @@ const fs = require('fs');
 const path = require('path');
 const config = require('./config');
 
+if (process.platform !== 'win32') {
+  process.umask(0o077);
+  for (const filePath of [config.DATABASE_FILE, `${config.DATABASE_FILE}-wal`, `${config.DATABASE_FILE}-shm`]) {
+    if (!fs.existsSync(filePath)) continue;
+    if (fs.statSync(filePath).isFile()) fs.chmodSync(filePath, 0o600);
+  }
+}
+
 const dbDir = path.dirname(config.DATABASE_FILE);
 if (!fs.existsSync(dbDir)) {
-  fs.mkdirSync(dbDir, { recursive: true });
+  fs.mkdirSync(dbDir, { recursive: true, mode: 0o700 });
 }
 
 const db = new sqlite3.Database(config.DATABASE_FILE, (err) => {
@@ -229,6 +237,19 @@ const initDb = async () => {
     )
   `);
 
+  // Replace only the exact legacy default copy that promised unapproved bonuses.
+  await run(
+    `UPDATE announcements
+     SET title = ?, message = ?
+     WHERE type = 'flash_deal' AND title = ? AND message = ?`,
+    [
+      'পণ্য শেয়ার করুন; সফল বিক্রিতে পণ্যভিত্তিক কমিশন পান।',
+      'প্রতিটি পণ্যের কমিশন ও ডেলিভারির নিয়ম অর্ডারের আগে দেখে নিন।',
+      '🔥 মেগা অফার: আজই প্রথম সফল অর্ডারে ৫০৳ ইনস্ট্যান্ট বোনাস! প্রতি সপ্তাহে বিকাশ ও নগদে দ্রুত ক্যাশআউট!',
+      '🏆 চলতি মাসের শীর্ষ ৩ জন সফল রিসেলারের জন্য রয়েছে স্মার্টফোন, স্মার্টওয়াচ ও ক্যাশ প্রাইজ!'
+    ]
+  );
+
   // User Notifications
   await run(`
     CREATE TABLE IF NOT EXISTS notifications (
@@ -247,8 +268,8 @@ const initDb = async () => {
     await run(
       `INSERT INTO announcements (title, message, type, is_active) VALUES (?, ?, 'flash_deal', 1)`,
       [
-        '🔥 মেগা অফার: আজই প্রথম সফল অর্ডারে ৫০৳ ইনস্ট্যান্ট বোনাস! প্রতি সপ্তাহে বিকাশ ও নগদে দ্রুত ক্যাশআউট!',
-        '🏆 চলতি মাসের শীর্ষ ৩ জন সফল রিসেলারের জন্য রয়েছে স্মার্টফোন, স্মার্টওয়াচ ও ক্যাশ প্রাইজ!'
+        'পণ্য শেয়ার করুন; সফল বিক্রিতে পণ্যভিত্তিক কমিশন পান।',
+        'প্রতিটি পণ্যের কমিশন ও ডেলিভারির নিয়ম অর্ডারের আগে দেখে নিন।'
       ]
     );
   }

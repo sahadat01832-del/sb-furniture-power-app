@@ -594,7 +594,6 @@ dialog::backdrop {
   .product-actions { grid-template-columns: 1fr; gap: 4px; }
   .product-actions button { font-size: 0.72rem; padding: 6px 2px; }
   .hero-content h2 { font-size: 1.2rem; }
-  .leaderboard-prizes-grid { grid-template-columns: 1fr; }
 }
 
 /* ================= Flash Deals Banner / Ticker ================= */
@@ -653,7 +652,7 @@ dialog::backdrop {
   color: #34d399;
 }
 
-/* ================= Reseller Leaderboard Modal & Prizes ================= */
+/* ================= Reseller Sales Leaderboard ================= */
 .modal-dialog-lg {
   max-width: 650px;
 }
@@ -674,47 +673,6 @@ dialog::backdrop {
   font-size: 0.82rem;
   color: #d6d3d1;
   margin: 0;
-}
-.leaderboard-prizes-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 10px;
-  margin-bottom: 16px;
-}
-.leaderboard-prize-card {
-  background: #292524;
-  border: 1px solid var(--sbf-border);
-  border-radius: var(--radius-sm);
-  padding: 12px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.leaderboard-prize-card:nth-child(1) {
-  border-color: #f59e0b;
-  background: rgba(245, 158, 11, 0.08);
-}
-.leaderboard-prize-card:nth-child(2) {
-  border-color: #94a3b8;
-  background: rgba(148, 163, 184, 0.08);
-}
-.leaderboard-prize-card:nth-child(3) {
-  border-color: #b45309;
-  background: rgba(180, 83, 9, 0.08);
-}
-.prize-icon {
-  font-size: 1.8rem;
-}
-.prize-rank {
-  font-size: 0.72rem;
-  font-weight: 700;
-  color: var(--sbf-text-muted);
-}
-.prize-reward {
-  font-size: 0.82rem;
-  font-weight: 700;
-  color: #fff;
-  margin-top: 2px;
 }
 .rank-circle {
   display: inline-flex;

@@ -25,6 +25,30 @@ router.get('/', async (req, res) => {
   try {
     const { tab, category, brand, shop, search, min_price, max_price, sort, page, limit } = req.query;
 
+    const scalarFilters = { tab, category, brand, shop, search, min_price, max_price, sort, page, limit };
+    if (Object.values(scalarFilters).some((value) => value !== undefined && typeof value !== 'string')) {
+      return res.status(400).json({ success: false, message: 'পণ্যের ফিল্টার সঠিকভাবে দিন' });
+    }
+    if (search && search.trim().length > 100) {
+      return res.status(400).json({ success: false, message: 'সার্চের লেখা ১০০ অক্ষরের মধ্যে দিন' });
+    }
+    if (tab && tab !== 'all' && !['50tk', '100tk', '500tk', '1000tk'].includes(tab)) {
+      return res.status(400).json({ success: false, message: 'কমিশন ফিল্টার সঠিক নয়' });
+    }
+    if (brand && brand !== 'all' && !['SB Furniture', 'SB POWER'].includes(brand)) {
+      return res.status(400).json({ success: false, message: 'ব্র্যান্ড ফিল্টার সঠিক নয়' });
+    }
+    const pricePattern = /^(?:0|[1-9]\d{0,8})(?:\.\d{1,2})?$/;
+    if ((min_price !== undefined && !pricePattern.test(min_price)) || (max_price !== undefined && !pricePattern.test(max_price))) {
+      return res.status(400).json({ success: false, message: 'দামের ফিল্টার সঠিক সংখ্যা হতে হবে' });
+    }
+    if (page !== undefined && (!/^\d{1,7}$/.test(page) || Number(page) < 1)) {
+      return res.status(400).json({ success: false, message: 'পৃষ্ঠা নম্বর সঠিক নয়' });
+    }
+    if (limit !== undefined && (!/^\d{1,3}$/.test(limit) || Number(limit) < 1)) {
+      return res.status(400).json({ success: false, message: 'প্রতি পৃষ্ঠার পণ্যের সংখ্যা সঠিক নয়' });
+    }
+
     let whereSql = ' WHERE is_active = 1';
     const params = [];
 
@@ -92,8 +116,8 @@ router.get('/', async (req, res) => {
     // Pagination
     let paginationSql = '';
     const queryParams = [...params];
-    const parsedPage = parseInt(page, 10);
-    const parsedLimit = parseInt(limit, 10);
+    const parsedPage = page === undefined ? NaN : Number(page);
+    const parsedLimit = limit === undefined ? NaN : Math.min(Number(limit), 100);
     const effectiveLimit = !isNaN(parsedLimit) && parsedLimit > 0 ? parsedLimit : (!isNaN(parsedPage) && parsedPage > 0 ? 20 : null);
 
     if (!isNaN(parsedPage) && parsedPage > 0 && effectiveLimit) {
@@ -152,9 +176,12 @@ router.get('/:idOrSku', async (req, res) => {
 
     const isPartnerShop = product.shop_name && !['SB Furniture', 'SB POWER'].includes(product.shop_name);
     const trustLine = isPartnerShop
-      ? `🏪 ${product.shop_name} — আমাদের ভেরিফাইড পার্টনার শপের সেরা কোয়ালিটি প্রোডাক্ট!`
-      : (isFurniture ? config.SB_FURNITURE.trust_line : 'সাশ্রয়ী মূল্যে ১০০% অরিজিনাল সাউন্ড ও গ্যাজেটের সেরা কালেকশন!');
+      ? `🏪 ${product.shop_name} — এই পণ্যটি পার্টনার দোকানের মাধ্যমে সরবরাহ করা হবে।`
+      : (isFurniture ? config.SB_FURNITURE.trust_line : 'SB POWER-এর গ্যাজেট; পণ্যের ব্র্যান্ড ও বিবরণ দেখে অর্ডার করুন।');
 
+    if (req.query.ref !== undefined && (typeof req.query.ref !== 'string' || req.query.ref.length > 40 || !/^[a-z0-9_-]*$/i.test(req.query.ref))) {
+      return res.status(400).json({ success: false, message: 'রেফারেল কোড সঠিক নয়' });
+    }
     const refCode = req.query.ref ? req.query.ref.trim().toUpperCase() : '';
     const productLink = refCode ? `/?ref=${refCode}&sku=${product.sku}` : `/?sku=${product.sku}`;
 

@@ -409,12 +409,12 @@ async function renderResellerDashboard() {
 
     body.innerHTML = `
       <div class="referral-share-box">
-        <div style="font-size: 0.88rem; font-weight: 700; color: #fde68a;">🚀 ভাইরাল রেফারেল লিংক (প্রথম সেলে ৫০৳ বোনাস + ৩% আজীবন কমিশন)</div>
+        <div style="font-size: 0.88rem; font-weight: 700; color: #fde68a;">🛍️ পণ্য শেয়ার লিংক — সফল বিক্রিতে পণ্যভিত্তিক কমিশন</div>
         <div class="ref-link-row">
           <input type="text" readonly value="${refLink}" class="ref-link-input" id="myRefLinkInput">
           <button class="btn-nav" style="background: var(--sbf-amber); padding: 4px 10px;" onclick="copyReferralLink('${refLink}')">কপি</button>
         </div>
-        <div style="font-size: 0.75rem; color: #a8a29e; margin-top: 6px;">রেফারেল কোড: <strong style="color: #fff;">${s.referral_code}</strong> | আপনার টিমে: <strong style="color: var(--sbp-yellow);">${s.referred_count} জন</strong></div>
+        <div style="font-size: 0.75rem; color: #a8a29e; margin-top: 6px;">আপনার শেয়ার কোড: <strong style="color: #fff;">${s.referral_code}</strong></div>
       </div>
       <div class="wallet-cards-grid">
         <div class="wallet-stat-card"><div class="wallet-stat-title">উত্তোলনযোগ্য ব্যালেন্স</div><div class="wallet-stat-amount green">${s.available_balance} ৳</div></div>
@@ -434,7 +434,6 @@ async function renderResellerDashboard() {
 
       <div style="display: flex; gap: 6px; flex-wrap: wrap; justify-content: space-between; align-items: center; margin-top: 10px;">
         <button class="btn-nav" style="padding: 6px 10px; font-size: 0.8rem;" onclick="showMyOrders()">📦 সেলস ও অর্ডার</button>
-        <button class="btn-nav" style="padding: 6px 10px; font-size: 0.8rem;" onclick="showDownlineTeam()">👥 ডাউনলাইন টিম</button>
         <button class="btn-nav" style="padding: 6px 10px; font-size: 0.8rem;" onclick="showResellerNotifications()">🔔 নোটিশ <span id="resellerNotifBadge" class="badge" style="display:none; position:static; margin-left:2px; font-size:0.7rem;">0</span></button>
         <button class="btn-nav" style="padding: 6px 10px; font-size: 0.8rem;" onclick="showChangePasswordForm()">🔑 পাসওয়ার্ড</button>
         <button class="btn-nav" style="padding: 6px 10px; font-size: 0.8rem; color: var(--sbp-red);" onclick="resellerLogout()">লগআউট</button>
@@ -523,38 +522,6 @@ async function showMyOrders() {
   } catch (err) {
     console.error(err);
     subContent.innerHTML = '<div style="color: var(--sbp-red); font-size: 0.85rem;">লোড ব্যর্থ হয়েছে</div>';
-  }
-}
-
-async function showDownlineTeam() {
-  const subContent = document.getElementById('resellerSubContent');
-  subContent.innerHTML = '<div style="text-align: center; font-size: 0.85rem;"><span class="spinner"></span> টিম মেম্বার লোড হচ্ছে...</div>';
-  try {
-    const res = await fetch(api('/api/wallet/downline'), {
-      headers: { Authorization: `Bearer ${authToken}` }
-    });
-    const data = await res.json();
-    if (!data.success || !data.team || data.team.length === 0) {
-      subContent.innerHTML = '<div style="text-align: center; color: var(--sbf-text-muted); font-size: 0.85rem; padding: 12px;">আপনার টিমে এখনও কোনো সদস্য যুক্ত হয়নি। রেফারেল লিংক শেয়ার করে টিম তৈরি করুন!</div>';
-      return;
-    }
-    subContent.innerHTML = `
-      <h4 style="font-size: 0.9rem; color: #fff; margin-bottom: 8px;">আপনার টিম মেম্বার (${data.count} জন):</h4>
-      ${data.team.map((m) => `
-        <div style="background: #1c1917; border: 1px solid var(--sbf-border); padding: 8px 10px; border-radius: var(--radius-sm); margin-bottom: 6px; font-size: 0.8rem;">
-          <div style="display: flex; justify-content: space-between;">
-            <strong>${m.name}</strong>
-            <span style="color: var(--sbp-yellow); font-weight: 700;">${m.delivered_orders_count}টি সেল</span>
-          </div>
-          <div style="color: var(--sbf-text-muted); display: flex; justify-content: space-between; margin-top: 2px;">
-            <span>ফোন: ${m.masked_phone}</span>
-            <span>ভলিউম: ${m.total_sales_volume}৳</span>
-          </div>
-        </div>
-      `).join('')}
-    `;
-  } catch (err) {
-    subContent.innerHTML = '<div style="color: var(--sbp-red); font-size: 0.85rem;">টিম লোড ব্যর্থ হয়েছে</div>';
   }
 }
 

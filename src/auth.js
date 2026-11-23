@@ -1,6 +1,14 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const config = require('./config');
+const { get } = require('./db');
+
+const getRequestToken = (req) => {
+  if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+    return req.headers.authorization.slice(7).trim();
+  }
+  return req.cookies && req.cookies.token ? req.cookies.token : null;
+};
 
 const hashPassword = async (plainPassword) => {
   const salt = await bcrypt.genSalt(10);
@@ -25,53 +33,58 @@ const generateToken = (user) => {
   );
 };
 
-const verifyToken = (req, res, next) => {
-  let token = null;
-
-  if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
-    token = req.headers.authorization.split(' ')[1];
-  } else if (req.cookies && req.cookies.token) {
-    token = req.cookies.token;
-  } else if (req.query && req.query.token) {
-    token = req.query.token;
-  }
-
+const verifyToken = async (req, res, next) => {
+  const token = getRequestToken(req);
   if (!token) {
     return res.status(401).json({ success: false, message: 'লগইন আবশ্যক (অনুগ্রহ করে সাইন-ইন করুন)' });
   }
 
+  let decoded;
   try {
-    const decoded = jwt.verify(token, config.JWT_SECRET);
-    req.user = decoded;
-    next();
+    decoded = jwt.verify(token, config.JWT_SECRET, { algorithms: ['HS256'] });
   } catch (err) {
     return res.status(403).json({ success: false, message: 'মেয়াদোত্তীর্ণ বা অবৈধ টোকেন' });
   }
+
+  try {
+    const user = await get(
+      'SELECT id, name, phone, role, referral_code, referred_by_id FROM users WHERE id = ?',
+      [decoded.id]
+    );
+    if (!user) {
+      return res.status(401).json({ success: false, message: 'ব্যবহারকারী পাওয়া যায়নি; আবার লগইন করুন' });
+    }
+    req.user = user;
+    return next();
+  } catch (err) {
+    return next(err);
+  }
 };
 
-const optionalAuth = (req, res, next) => {
-  let token = null;
-
-  if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
-    token = req.headers.authorization.split(' ')[1];
-  } else if (req.cookies && req.cookies.token) {
-    token = req.cookies.token;
-  } else if (req.query && req.query.token) {
-    token = req.query.token;
-  }
-
-  if (token) {
-    try {
-      const decoded = jwt.verify(token, config.JWT_SECRET);
-      req.user = decoded;
-    } catch (e) {
-      // Ignore invalid token in optional auth
-      req.user = null;
-    }
-  } else {
+const optionalAuth = async (req, res, next) => {
+  const token = getRequestToken(req);
+  if (!token) {
     req.user = null;
+    return next();
   }
-  next();
+
+  let decoded;
+  try {
+    decoded = jwt.verify(token, config.JWT_SECRET, { algorithms: ['HS256'] });
+  } catch (e) {
+    req.user = null;
+    return next();
+  }
+
+  try {
+    req.user = await get(
+      'SELECT id, name, phone, role, referral_code, referred_by_id FROM users WHERE id = ?',
+      [decoded.id]
+    ) || null;
+    return next();
+  } catch (err) {
+    return next(err);
+  }
 };
 
 const requireRole = (...roles) => {

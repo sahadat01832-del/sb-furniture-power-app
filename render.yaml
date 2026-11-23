@@ -1,19 +1,21 @@
 services:
   - type: web
-    name: sb-power-app
-    env: node
-    plan: free
-    region: singapore # Closest region to Bangladesh for ultra-low latency (<50ms)
-    buildCommand: npm install
-    startCommand: npm start
+    name: sb-furniture-power-app
+    runtime: docker
+    plan: 0.5c-512mb
+    branch: codex/hosted-backend
+    dockerfilePath: ./Dockerfile
+    numInstances: 1
     healthCheckPath: /health
-    autoDeploy: true
+    autoDeployTrigger: commit
+    disk:
+      name: sb-furniture-power-data
+      mountPath: /var/data
+      sizeGB: 1
     envVars:
       - key: NODE_ENV
         value: production
-      - key: PORT
-        value: 10000
-      - key: JWT_SECRET
-        generateValue: true
+      - key: DATABASE_FILE
+        value: /var/data/database.sqlite
       - key: CORS_ORIGINS
-        value: "https://sb-power-app.web.app,https://sb-power-app.firebaseapp.com"
+        value: "https://sb-furniture-power-app.onrender.com,https://localhost,capacitor://localhost"

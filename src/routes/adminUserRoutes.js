@@ -1,4 +1,5 @@
 const express = require('express');
+const crypto = require('crypto');
 const router = express.Router();
 const { query, get, run } = require('../db');
 const { hashPassword, comparePassword } = require('../auth');
@@ -9,7 +10,7 @@ const generateReferralCode = async (phone) => {
   let code;
   let exists = true;
   while (exists) {
-    const randomLetters = Math.random().toString(36).substring(2, 6).toUpperCase();
+    const randomLetters = crypto.randomBytes(3).toString('hex').slice(0, 4).toUpperCase();
     code = `SB${cleanPhone}${randomLetters}`;
     const row = await get('SELECT id FROM users WHERE referral_code = ?', [code]);
     if (!row) exists = false;
@@ -125,8 +126,8 @@ router.post('/users', async (req, res) => {
       return res.status(400).json({ success: false, message: 'সঠিক ১১ ডিজিটের বাংলাদেশী মোবাইল নম্বর দিন (যেমন: 01XXXXXXXXX)' });
     }
 
-    if (!password || typeof password !== 'string' || password.length < 6) {
-      return res.status(400).json({ success: false, message: 'পাসওয়ার্ড ন্যূনতম ৬ অক্ষরের হতে হবে' });
+    if (typeof password !== 'string' || Buffer.byteLength(password, 'utf8') < 8 || Buffer.byteLength(password, 'utf8') > 72) {
+      return res.status(400).json({ success: false, message: 'পাসওয়ার্ড ৮ থেকে ৭২ বাইটের মধ্যে হতে হবে' });
     }
 
     const targetRole = (role || 'reseller').toLowerCase().trim();
@@ -176,7 +177,7 @@ router.put('/users/:id/role', async (req, res) => {
     const targetUserId = parseInt(req.params.id, 10);
     const { role } = req.body;
 
-    if (isNaN(targetUserId)) {
+    if (!Number.isSafeInteger(targetUserId) || targetUserId < 1) {
       return res.status(400).json({ success: false, message: 'অবৈধ ইউজার আইডি' });
     }
 
@@ -227,8 +228,8 @@ router.put('/profile/password', async (req, res) => {
   try {
     const { old_password, new_password } = req.body;
 
-    if (!new_password || typeof new_password !== 'string' || new_password.length < 6) {
-      return res.status(400).json({ success: false, message: 'নতুন পাসওয়ার্ড ন্যূনতম ৬ অক্ষরের হতে হবে' });
+    if (typeof new_password !== 'string' || Buffer.byteLength(new_password, 'utf8') < 8 || Buffer.byteLength(new_password, 'utf8') > 72) {
+      return res.status(400).json({ success: false, message: 'নতুন পাসওয়ার্ড ৮ থেকে ৭২ বাইটের মধ্যে হতে হবে' });
     }
 
     const adminUser = await get('SELECT id, password_hash FROM users WHERE id = ?', [req.user.id]);

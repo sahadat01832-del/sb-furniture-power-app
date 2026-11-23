@@ -8,8 +8,10 @@ And update & re-sign dist-apk/*.apk
 
 import os
 import shutil
+import tempfile
 import zipfile
 import subprocess
+import sys
 from PIL import Image, ImageDraw, ImageFont
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -196,26 +198,48 @@ def export_android_res_icons(res_dir, icon_type='client'):
         img_fg = draw_fn(px, is_round=False, is_foreground=True)
         img_fg.save(os.path.join(out_dir, 'ic_launcher_foreground.png'), 'PNG')
 
-def update_apk_icons(apk_path, icon_type='client'):
-    """Inject new icons into existing APK and re-sign with uber-apk-signer"""
-    if not os.path.exists(apk_path):
-        print(f"Warning: {apk_path} does not exist.")
-        return
+def find_android_tool(name):
+    tool = shutil.which(name)
+    if tool:
+        return tool
 
-    print(f"Injecting custom {icon_type} icons into {apk_path}...")
+    for sdk in [os.environ.get('ANDROID_SDK_ROOT'), os.environ.get('ANDROID_HOME')]:
+        if not sdk:
+            continue
+        build_tools = os.path.join(sdk, 'build-tools')
+        if not os.path.isdir(build_tools):
+            continue
+        for version in sorted(os.listdir(build_tools), reverse=True):
+            candidate = os.path.join(build_tools, version, name)
+            if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+                return candidate
+    return None
+
+
+def update_apk_icons(apk_path, icon_type='client'):
+    """Replace launcher icons, align, and sign with credentials supplied outside the repository."""
+    if not os.path.exists(apk_path):
+        raise FileNotFoundError(f"APK was not produced for the requested target: {apk_path}")
+
+    keystore_path = os.environ.get('ANDROID_KEYSTORE_PATH', '').strip()
+    keystore_alias = os.environ.get('ANDROID_KEYSTORE_ALIAS', '').strip()
+    required_credentials = ['ANDROID_KEYSTORE_PASSWORD', 'ANDROID_KEY_PASSWORD']
+    if not keystore_path or not keystore_alias or any(not os.environ.get(key) for key in required_credentials):
+        raise RuntimeError('Set ANDROID_KEYSTORE_PATH, ANDROID_KEYSTORE_ALIAS, ANDROID_KEYSTORE_PASSWORD, and ANDROID_KEY_PASSWORD before signing an APK.')
+
+    keystore_path = os.path.realpath(keystore_path)
+    if os.path.commonpath([ROOT_DIR, keystore_path]) == ROOT_DIR:
+        raise RuntimeError('The release keystore must be stored outside the project directory.')
+    if not os.path.isfile(keystore_path):
+        raise RuntimeError('The configured release keystore file was not found.')
+
+    apksigner = find_android_tool('apksigner')
+    zipalign = find_android_tool('zipalign')
+    if not apksigner or not zipalign:
+        raise RuntimeError('Android SDK build-tools with apksigner and zipalign are required to sign APKs.')
+
+    print(f"Injecting custom {icon_type} icons and signing the APK with the configured external key...")
     draw_fn = draw_client_icon if icon_type == 'client' else draw_admin_icon
-    
-    # Prepare temp icons
-    temp_dir = os.path.join(ROOT_DIR, 'tmp_apk_icons')
-    os.makedirs(temp_dir, exist_ok=True)
-    
-    icon_replacements = {}
-    
-    apk_zip = zipfile.ZipFile(apk_path, 'r')
-    existing_files = apk_zip.namelist()
-    apk_zip.close()
-    
-    # Map resolution folders inside APK
     res_map = {
         'res/mipmap-mdpi-v4': 48,
         'res/mipmap-hdpi-v4': 72,
@@ -223,135 +247,74 @@ def update_apk_icons(apk_path, icon_type='client'):
         'res/mipmap-xxhdpi-v4': 144,
         'res/mipmap-xxxhdpi-v4': 192,
     }
-    
-    for folder, px in res_map.items():
-        sq_img = draw_fn(px, is_round=False, is_foreground=False)
-        rd_img = draw_fn(px, is_round=True, is_foreground=False)
-        fg_img = draw_fn(px, is_round=False, is_foreground=True)
-        
-        sq_path = os.path.join(temp_dir, f"{px}_sq.png")
-        rd_path = os.path.join(temp_dir, f"{px}_rd.png")
-        fg_path = os.path.join(temp_dir, f"{px}_fg.png")
-        
-        sq_img.save(sq_path, 'PNG')
-        rd_img.save(rd_path, 'PNG')
-        fg_img.save(fg_path, 'PNG')
-        
-        p1 = f"{folder}/ic_launcher.png"
-        p2 = f"{folder}/ic_launcher_round.png"
-        p3 = f"{folder}/ic_launcher_foreground.png"
-        
-        if p1 in existing_files:
-            icon_replacements[p1] = sq_path
-        if p2 in existing_files:
-            icon_replacements[p2] = rd_path
-        if p3 in existing_files:
-            icon_replacements[p3] = fg_path
 
-    # Unpack, replace, repack
-    unpack_dir = os.path.join(ROOT_DIR, 'tmp_apk_unpacked')
-    if os.path.exists(unpack_dir):
-        shutil.rmtree(unpack_dir)
-    os.makedirs(unpack_dir)
-    
-    with zipfile.ZipFile(apk_path, 'r') as zin:
-        zin.extractall(unpack_dir)
-        
-    for in_apk_path, local_img in icon_replacements.items():
-        dest = os.path.join(unpack_dir, in_apk_path)
-        os.makedirs(os.path.dirname(dest), exist_ok=True)
-        shutil.copyfile(local_img, dest)
-        
-    # Remove existing signatures from META-INF so re-signing succeeds cleanly
-    meta_inf = os.path.join(unpack_dir, 'META-INF')
-    if os.path.exists(meta_inf):
-        for f in os.listdir(meta_inf):
-            if f.endswith('.RSA') or f.endswith('.DSA') or f.endswith('.SF') or f.endswith('.MF'):
-                os.remove(os.path.join(meta_inf, f))
-                
-    # Repack zip
-    temp_apk = apk_path + ".unsigned.apk"
-    if os.path.exists(temp_apk):
-        os.remove(temp_apk)
-        
-    with zipfile.ZipFile(temp_apk, 'w', zipfile.ZIP_DEFLATED) as zout:
-        for root, dirs, files in os.walk(unpack_dir):
-            for file in files:
-                full_path = os.path.join(root, file)
-                rel_path = os.path.relpath(full_path, unpack_dir)
-                zout.write(full_path, rel_path)
-                
-    # Sign with release keystore using uber-apk-signer and apksigner
-    signer_jar = os.path.join(ROOT_DIR, 'scripts', 'uber-apk-signer.jar')
-    java_bin = '/home/don/.local/share/jvm/temurin-17/bin/java'
-    if not os.path.exists(java_bin):
-        java_bin = '/home/don/.local/bin/java'
-    
-    keystore_path = os.path.join(ROOT_DIR, 'config', 'sb-release.keystore')
-    signed_dir = os.path.join(ROOT_DIR, 'tmp_signed')
-    if os.path.exists(signed_dir):
-        shutil.rmtree(signed_dir)
-    os.makedirs(signed_dir)
-    
-    if os.path.exists(keystore_path):
-        print(f"🔐 Signing APK with SB Furniture & SB POWER Production Keystore: {keystore_path}")
-        cmd = [
-            java_bin, '-jar', signer_jar,
-            '-a', temp_apk,
+    with tempfile.TemporaryDirectory(prefix='sb-power-apk-') as temp_dir:
+        replacements = {}
+        for folder, px in res_map.items():
+            for filename, image in [
+                ('ic_launcher.png', draw_fn(px, is_round=False, is_foreground=False)),
+                ('ic_launcher_round.png', draw_fn(px, is_round=True, is_foreground=False)),
+                ('ic_launcher_foreground.png', draw_fn(px, is_round=False, is_foreground=True)),
+            ]:
+                image_path = os.path.join(temp_dir, f'{px}-{filename}')
+                image.save(image_path, 'PNG')
+                replacements[f'{folder}/{filename}'] = image_path
+
+        unsigned_apk = os.path.join(temp_dir, 'updated-unsigned.apk')
+        replaced_count = 0
+        with zipfile.ZipFile(apk_path, 'r') as source:
+            with zipfile.ZipFile(unsigned_apk, 'w', zipfile.ZIP_DEFLATED, allowZip64=True) as output:
+                for info in source.infolist():
+                    name = info.filename
+                    upper_name = name.upper()
+                    if name.startswith('META-INF/') and upper_name.endswith(('.RSA', '.DSA', '.SF', '.MF')):
+                        continue
+                    replacement_path = replacements.get(name)
+                    if replacement_path:
+                        with open(replacement_path, 'rb') as replacement_file:
+                            content = replacement_file.read()
+                        replaced_count += 1
+                    else:
+                        content = source.read(name)
+                    output.writestr(info, content)
+
+        if replaced_count == 0:
+            raise RuntimeError('No launcher icons were found in the APK.')
+
+        aligned_apk = os.path.join(temp_dir, 'updated-aligned.apk')
+        signed_apk = os.path.join(temp_dir, 'updated-signed.apk')
+        subprocess.run([zipalign, '-f', '4', unsigned_apk, aligned_apk], check=True)
+        subprocess.run([
+            apksigner, 'sign',
             '--ks', keystore_path,
-            '--ksAlias', 'sbpower',
-            '--ksPass', 'sbfurniture2026',
-            '--ksKeyPass', 'sbfurniture2026',
-            '--overwrite',
-            '--allowResign'
-        ]
-    else:
-        print("⚠️ Warning: Release keystore not found, falling back to default signer...")
-        cmd = [java_bin, '-jar', signer_jar, '-a', temp_apk, '--overwrite', '--allowResign']
+            '--ks-key-alias', keystore_alias,
+            '--ks-pass', 'env:ANDROID_KEYSTORE_PASSWORD',
+            '--key-pass', 'env:ANDROID_KEY_PASSWORD',
+            '--v1-signing-enabled', 'true',
+            '--v2-signing-enabled', 'true',
+            '--v3-signing-enabled', 'true',
+            '--out', signed_apk,
+            aligned_apk,
+        ], check=True)
+        subprocess.run([apksigner, 'verify', '--verbose', signed_apk], check=True, stdout=subprocess.DEVNULL)
 
-    subprocess.check_call(cmd)
-    
-    # Move signed temp_apk to target destination
-    shutil.move(temp_apk, apk_path)
-
-    # Secondary enforcement using Android SDK apksigner (v1 + v2 + v3)
-    apksigner_candidates = [
-        "/home/don/whynet ecosystem/NEWTUBE/NewTube_Android/.android-sdk/build-tools/35.0.0/apksigner",
-        "/home/don/whynet ecosystem/NEWTUBE/NewTube_Android/.android-sdk/build-tools/34.0.0/apksigner",
-        os.path.join(os.environ.get('ANDROID_HOME', ''), 'build-tools', '35.0.0', 'apksigner'),
-    ]
-    apksigner_bin = None
-    for c in apksigner_candidates:
-        if os.path.exists(c):
-            apksigner_bin = c
-            break
-
-    if apksigner_bin and os.path.exists(keystore_path):
+        descriptor, staged_apk = tempfile.mkstemp(prefix='.sb-power-apk-', suffix='.tmp', dir=os.path.dirname(apk_path))
+        os.close(descriptor)
         try:
-            print(f"🛡️ Enforcing full v1+v2+v3 signature scheme via apksigner ({apksigner_bin})...")
-            apksign_cmd = [
-                apksigner_bin, 'sign',
-                '--ks', keystore_path,
-                '--ks-key-alias', 'sbpower',
-                '--ks-pass', 'pass:sbfurniture2026',
-                '--key-pass', 'pass:sbfurniture2026',
-                '--v1-signing-enabled', 'true',
-                '--v2-signing-enabled', 'true',
-                '--v3-signing-enabled', 'true',
-                apk_path
-            ]
-            subprocess.check_call(apksign_cmd)
-            print("✅ apksigner v1+v2+v3 signing applied cleanly.")
-        except Exception as e:
-            print(f"⚠️ apksigner signing warning: {e}")
+            shutil.copyfile(signed_apk, staged_apk)
+            os.replace(staged_apk, apk_path)
+        finally:
+            if os.path.exists(staged_apk):
+                os.unlink(staged_apk)
 
-    print(f"✅ Successfully updated & signed: {apk_path}")
-        
-    # Clean up
-    shutil.rmtree(temp_dir, ignore_errors=True)
-    shutil.rmtree(unpack_dir, ignore_errors=True)
+    print(f"✅ Successfully updated and verified: {apk_path}")
 
-def main():
+def main(targets=None):
+    targets = targets or []
+    invalid_targets = set(targets) - {'client', 'admin'}
+    if invalid_targets:
+        raise ValueError('Targets must be client and/or admin.')
+
     print("--- Generating Custom App Logos ---")
     
     # 1. Update public/icons/playstore-icon.png and icons
@@ -374,14 +337,16 @@ def main():
         if os.path.exists(target_res):
             export_android_res_icons(target_res, icon_type='admin')
             
-    # 3. Update & re-sign APK binaries
-    reseller_apk = os.path.join(ROOT_DIR, 'dist-apk', 'sb-power-reseller.apk')
-    admin_apk = os.path.join(ROOT_DIR, 'dist-apk', 'sb-power-admin.apk')
-    
-    update_apk_icons(reseller_apk, icon_type='client')
-    update_apk_icons(admin_apk, icon_type='admin')
-    
-    print("All icons generated and APKs re-signed successfully!")
+    # 3. Update only APKs built during this invocation.
+    if 'client' in targets:
+        update_apk_icons(os.path.join(ROOT_DIR, 'dist-apk', 'sb-power-reseller.apk'), icon_type='client')
+    if 'admin' in targets:
+        update_apk_icons(os.path.join(ROOT_DIR, 'dist-apk', 'sb-power-admin.apk'), icon_type='admin')
+
+    if targets:
+        print("All requested APK icons were updated and their signatures verified.")
+    else:
+        print("Web and Android project icons generated; no existing APK was changed.")
 
 if __name__ == '__main__':
-    main()
+    main(sys.argv[1:])

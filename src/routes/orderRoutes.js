@@ -1,8 +1,16 @@
 const express = require('express');
+const crypto = require('crypto');
 const router = express.Router();
 const { query, get, run, withTransaction } = require('../db');
 const { optionalAuth, verifyToken } = require('../auth');
 const config = require('../config');
+
+const normalizePhone = (value) => {
+  let digits = String(value || '').replace(/\D/g, '');
+  if (digits.startsWith('00880')) digits = `0${digits.slice(5)}`;
+  else if (digits.startsWith('880')) digits = `0${digits.slice(3)}`;
+    return digits;
+};
 
 // Calculate delivery fee
 const calculateDeliveryFee = (hasFurniture, city) => {
@@ -32,15 +40,16 @@ router.post('/', optionalAuth, async (req, res) => {
     } = req.body;
 
     // Validations
-    if (!customer_name || !customer_name.trim()) {
+    if (typeof customer_name !== 'string' || !customer_name.trim() || customer_name.trim().length > 100) {
       return res.status(400).json({ success: false, message: 'গ্রাহকের নাম আবশ্যক' });
     }
 
-    if (!customer_phone || !customer_phone.trim() || customer_phone.trim().length < 11) {
+    const cleanCustomerPhone = normalizePhone(customer_phone);
+    if (!/^01[3-9]\d{8}$/.test(cleanCustomerPhone)) {
       return res.status(400).json({ success: false, message: 'গ্রাহকের সঠিক ১১ ডিজিটের মোবাইল নম্বর দিন' });
     }
 
-    if (!delivery_address || !delivery_address.trim()) {
+    if (typeof delivery_address !== 'string' || !delivery_address.trim() || delivery_address.trim().length > 300) {
       return res.status(400).json({ success: false, message: 'সম্পূর্ণ ডেলিভারি ঠিকানা দিন' });
     }
 
@@ -48,25 +57,45 @@ router.post('/', optionalAuth, async (req, res) => {
       return res.status(400).json({ success: false, message: 'ডেলিভারি এরিয়া (ঢাকা ভেতরে / ঢাকা বাইরে) নির্বাচন করুন' });
     }
 
-    if (!items || !Array.isArray(items) || items.length === 0) {
+    if (!Array.isArray(items) || items.length === 0 || items.length > 20) {
       return res.status(400).json({ success: false, message: 'অর্ডারে অন্তত একটি পণ্য নির্বাচন করুন' });
     }
 
-    const parsedAdvanceCheck = parseFloat(advance_paid);
-    if (!isNaN(parsedAdvanceCheck) && parsedAdvanceCheck > 0) {
-      if (!advance_trx_id || !advance_trx_id.trim() || advance_trx_id.trim().length < 4) {
+    const advanceAmount = advance_paid === undefined || advance_paid === null || advance_paid === '' ? 0 : Number(advance_paid);
+    if (!Number.isFinite(advanceAmount) || advanceAmount < 0) {
+      return res.status(400).json({ success: false, message: 'অগ্রিম টাকার পরিমাণ সঠিকভাবে দিন' });
+    }
+    if (advance_trx_id !== undefined && advance_trx_id !== null && advance_trx_id !== '' && typeof advance_trx_id !== 'string') {
+      return res.status(400).json({ success: false, message: 'অগ্রিম পেমেন্টের TrxID সঠিকভাবে দিন' });
+    }
+    if (advanceAmount > 0) {
+      if (typeof advance_trx_id !== 'string' || advance_trx_id.trim().length < 4 || advance_trx_id.trim().length > 80) {
         return res.status(400).json({ success: false, message: 'অগ্রিম বুকিং পেমেন্টের সঠিক বিকাশ/নগদ TrxID প্রদান করুন' });
       }
     }
+    if (notes !== undefined && notes !== null && (typeof notes !== 'string' || notes.length > 500)) {
+      return res.status(400).json({ success: false, message: 'অতিরিক্ত নোট ৫০০ অক্ষরের মধ্যে দিন' });
+    }
+    if (referral_code !== undefined && referral_code !== null && (typeof referral_code !== 'string' || referral_code.length > 40)) {
+      return res.status(400).json({ success: false, message: 'রেফারেল কোড সঠিক নয়' });
+    }
 
-    // Determine Reseller attribution
+    // Attribute a sale to the code that brought the customer. Do not award
+    // commission when the order is for the reseller's own phone number.
     let resellerId = null;
-    if (req.user && req.user.id) {
-      resellerId = req.user.id;
-    } else if (referral_code && referral_code.trim()) {
-      const resellerUser = await get('SELECT id FROM users WHERE referral_code = ?', [referral_code.trim().toUpperCase()]);
-      if (resellerUser) {
-        resellerId = resellerUser.id;
+    const isAccountHolderOrder = req.user && normalizePhone(req.user.phone) === cleanCustomerPhone;
+    if (!isAccountHolderOrder) {
+      if (referral_code && referral_code.trim()) {
+        const resellerUser = await get(
+          'SELECT id, phone FROM users WHERE referral_code = ?',
+          [referral_code.trim().toUpperCase()]
+        );
+        if (resellerUser && normalizePhone(resellerUser.phone) !== cleanCustomerPhone) {
+          resellerId = resellerUser.id;
+        }
+      } else if (req.user && req.user.role === 'reseller') {
+        // Supports a reseller entering an order for a separate customer.
+        resellerId = req.user.id;
       }
     }
 
@@ -77,8 +106,11 @@ router.post('/', optionalAuth, async (req, res) => {
     const validatedItems = [];
 
     for (const item of items) {
-      const productId = parseInt(item.product_id, 10);
-      const quantity = Math.max(1, parseInt(item.quantity, 10) || 1);
+      const productId = Number(item && item.product_id);
+      const quantity = Number(item && item.quantity);
+      if (!Number.isSafeInteger(productId) || productId < 1 || !Number.isSafeInteger(quantity) || quantity < 1 || quantity > 100) {
+        return res.status(400).json({ success: false, message: 'পণ্যের আইডি বা পরিমাণ সঠিক নয়' });
+      }
 
       const product = await get('SELECT * FROM products WHERE id = ? AND is_active = 1', [productId]);
       if (!product) {
@@ -89,8 +121,16 @@ router.post('/', optionalAuth, async (req, res) => {
         hasFurniture = true;
       }
 
+      if (item.selected_color !== undefined && item.selected_color !== null && (typeof item.selected_color !== 'string' || item.selected_color.length > 80)) {
+        return res.status(400).json({ success: false, message: 'পণ্যের রঙের তথ্য সঠিক নয়' });
+      }
+
       const itemTotal = product.regular_price * quantity;
       const itemCommission = product.reseller_commission * quantity;
+
+      if (!Number.isSafeInteger(itemTotal) || !Number.isSafeInteger(itemCommission)) {
+        return res.status(400).json({ success: false, message: 'অর্ডারের মূল্য গণনা করা যাচ্ছে না' });
+      }
 
       subtotal += itemTotal;
       totalCommission += itemCommission;
@@ -108,11 +148,12 @@ router.post('/', optionalAuth, async (req, res) => {
     }
 
     const deliveryFee = calculateDeliveryFee(hasFurniture, delivery_city);
-    const advanceAmount = Math.max(0, parseFloat(advance_paid) || 0);
     const totalAmount = subtotal + deliveryFee;
-
+    if (advanceAmount > totalAmount) {
+      return res.status(400).json({ success: false, message: 'অগ্রিমের পরিমাণ মোট অর্ডারের চেয়ে বেশি হতে পারবে না' });
+    }
     // Generate readable order number
-    const orderNumber = `SB-${Date.now().toString().slice(-6)}-${Math.floor(100 + Math.random() * 900)}`;
+    const orderNumber = `SB-${Date.now().toString().slice(-6)}-${crypto.randomInt(100, 1000)}`;
 
     // Insert Order, Items, Wallet Transaction, and Audit Log atomically
     const { orderId } = await withTransaction(async ({ run: txRun }) => {
@@ -126,14 +167,14 @@ router.post('/', optionalAuth, async (req, res) => {
           orderNumber,
           resellerId,
           customer_name.trim(),
-          customer_phone.trim(),
+          cleanCustomerPhone,
           delivery_address.trim(),
           delivery_city,
           subtotal,
           deliveryFee,
           totalAmount,
           advanceAmount,
-          advance_trx_id ? advance_trx_id.trim() : null,
+          advanceAmount > 0 ? advance_trx_id.trim() : null,
           notes ? notes.trim() : null
         ]
       );
@@ -189,11 +230,11 @@ router.post('/', optionalAuth, async (req, res) => {
         id: orderId,
         order_number: orderNumber,
         customer_name: customer_name.trim(),
-        customer_phone: customer_phone.trim(),
+        customer_phone: cleanCustomerPhone,
         subtotal_amount: subtotal,
         delivery_fee: deliveryFee,
         advance_paid: advanceAmount,
-        advance_trx_id: advance_trx_id ? advance_trx_id.trim() : null,
+        advance_trx_id: advanceAmount > 0 ? advance_trx_id.trim() : null,
         total_amount: totalAmount,
         status: 'pending',
         reseller_id: resellerId
@@ -205,77 +246,22 @@ router.post('/', optionalAuth, async (req, res) => {
   }
 });
 
-// Search order tracking by order_number OR customer_phone
-router.get('/track/search', async (req, res) => {
+// Public order tracking requires both the order number and its phone number.
+router.post('/track', async (req, res) => {
   try {
-    const q = req.query.query ? req.query.query.trim() : '';
-    if (!q) {
-      return res.status(400).json({ success: false, message: 'অর্ডার নম্বর বা ফোন নম্বর দিন' });
+    const orderNumber = typeof req.body.order_number === 'string' ? req.body.order_number.trim().toUpperCase() : '';
+    const phone = normalizePhone(req.body.phone);
+    if (!/^SB-[A-Z0-9-]{6,40}$/.test(orderNumber) || !/^01\d{9}$/.test(phone)) {
+      return res.status(400).json({ success: false, message: 'সঠিক অর্ডার নম্বর ও ১১ ডিজিটের ফোন নম্বর দিন' });
     }
 
-    const cleanQuery = q.toUpperCase();
-    const cleanPhone = q.replace(/\D/g, '');
-
-    let orders;
-    if (cleanPhone.length >= 10) {
-      orders = await query(
-        'SELECT * FROM orders WHERE customer_phone LIKE ? OR order_number = ? ORDER BY id DESC LIMIT 10',
-        [`%${cleanPhone.slice(-10)}%`, cleanQuery]
-      );
-    } else {
-      orders = await query(
-        'SELECT * FROM orders WHERE order_number = ? OR customer_phone = ? ORDER BY id DESC LIMIT 10',
-        [cleanQuery, q]
-      );
-    }
-
-    if (!orders || orders.length === 0) {
-      return res.status(404).json({ success: false, message: 'কোনো অর্ডার খুঁজে পাওয়া যায়নি' });
-    }
-
-    const enriched = await Promise.all(
-      orders.map(async (order) => {
-        const items = await query('SELECT * FROM order_items WHERE order_id = ?', [order.id]);
-        return { ...order, items };
-      })
-    );
-
-    return res.json({
-      success: true,
-      count: enriched.length,
-      orders: enriched,
-      order: enriched[0] // convenient single order lookup
-    });
-  } catch (error) {
-    console.error('Track Search Error:', error);
-    return res.status(500).json({ success: false, message: 'ট্র্যাকিং অনুসন্ধানে সমস্যা হয়েছে' });
-  }
-});
-
-// Customer order tracking by order_number (with phone fallback)
-router.get('/track/:orderNumber', async (req, res) => {
-  try {
-    const param = req.params.orderNumber.trim();
-    let order = await get('SELECT * FROM orders WHERE order_number = ?', [param.toUpperCase()]);
-
-    if (!order && param.replace(/\D/g, '').length >= 10) {
-      const phoneDigits = param.replace(/\D/g, '').slice(-10);
-      order = await get('SELECT * FROM orders WHERE customer_phone LIKE ? ORDER BY id DESC LIMIT 1', [`%${phoneDigits}%`]);
-    }
-
+    const order = await get('SELECT * FROM orders WHERE order_number = ? AND customer_phone = ?', [orderNumber, phone]);
     if (!order) {
-      return res.status(404).json({ success: false, message: 'অর্ডার নম্বরটি পাওয়া যায়নি' });
+      return res.status(404).json({ success: false, message: 'অর্ডার নম্বর বা ফোন নম্বর মেলেনি' });
     }
 
     const items = await query('SELECT * FROM order_items WHERE order_id = ?', [order.id]);
-
-    return res.json({
-      success: true,
-      order: {
-        ...order,
-        items
-      }
-    });
+    return res.json({ success: true, order: { ...order, items } });
   } catch (error) {
     console.error('Order Tracking Error:', error);
     return res.status(500).json({ success: false, message: 'অর্ডার ট্র্যাকিং ব্যর্থ হয়েছে' });
@@ -283,40 +269,16 @@ router.get('/track/:orderNumber', async (req, res) => {
 });
 
 // Customer order history (/api/orders/my-orders)
-router.get('/my-orders', optionalAuth, async (req, res) => {
+router.get('/my-orders', verifyToken, async (req, res) => {
   try {
-    const phone = req.query.phone ? req.query.phone.trim() : (req.user ? req.user.phone : null);
-    const userId = req.user ? req.user.id : null;
-
-    if (!phone && !userId) {
-      return res.status(400).json({ success: false, message: 'মোবাইল নম্বর অথবা লগইন সেশন প্রয়োজন' });
-    }
-
-    let orders;
-    if (userId && phone) {
-      orders = await query(
-        `SELECT o.*, 
-          (SELECT SUM(commission_per_unit * quantity) FROM order_items WHERE order_id = o.id) as reseller_commission
-         FROM orders o 
-         WHERE o.reseller_id = ? OR o.customer_phone = ?
-         ORDER BY o.id DESC LIMIT 50`,
-        [userId, phone]
-      );
-    } else if (userId) {
-      orders = await query(
-        `SELECT o.*, 
-          (SELECT SUM(commission_per_unit * quantity) FROM order_items WHERE order_id = o.id) as reseller_commission
-         FROM orders o 
-         WHERE o.reseller_id = ? 
-         ORDER BY o.id DESC LIMIT 50`,
-        [userId]
-      );
-    } else {
-      orders = await query(
-        `SELECT * FROM orders WHERE customer_phone = ? ORDER BY id DESC LIMIT 50`,
-        [phone]
-      );
-    }
+    const orders = await query(
+      `SELECT o.*,
+        (SELECT SUM(commission_per_unit * quantity) FROM order_items WHERE order_id = o.id) as reseller_commission
+       FROM orders o
+       WHERE o.reseller_id = ? OR o.customer_phone = ?
+       ORDER BY o.id DESC LIMIT 50`,
+      [req.user.id, req.user.phone]
+    );
 
     const enriched = await Promise.all(
       orders.map(async (order) => {

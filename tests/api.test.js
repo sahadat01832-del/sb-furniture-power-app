@@ -1,3 +1,5 @@
+require('./testEnv');
+
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
@@ -59,7 +61,7 @@ before(async () => {
   await run("DELETE FROM users WHERE role != 'admin'");
   await run("DELETE FROM products WHERE sku LIKE 'SBF-999%'");
 
-  await seedData();
+  await seedData({ includeDemoProducts: true });
 
   await new Promise((resolve) => {
     server = app.listen(0, () => {
@@ -90,9 +92,11 @@ test('2. Public brand config returns contacts and delivery rules', async () => {
   assert.equal(res.body.power.phone, '01634664224');
   assert.equal(res.body.delivery.INSIDE_DHAKA_FURNITURE, 500);
   assert.equal(res.body.delivery.OUTSIDE_DHAKA_FURNITURE, 1000);
+  assert.ok(!res.body.announcement.headline.includes('৫০৳'));
+  assert.ok(!res.body.announcement.subtext.includes('প্রাইজ'));
 });
 
-test('3. Product Catalog has 30 sample items across 3 sections with verified prices', async () => {
+test('3. Explicit demo catalog seed has 30 sample items and fixture prices', async () => {
   const res = await request('/api/products');
   assert.equal(res.status, 200);
   assert.equal(res.body.success, true);
@@ -110,7 +114,7 @@ test('3. Product Catalog has 30 sample items across 3 sections with verified pri
   const gadgetRes = await request('/api/products?brand=' + encodeURIComponent('SB POWER'));
   assert.equal(gadgetRes.body.count, 10);
 
-  // Check Strict Verified Pricing
+  // Check stable test fixture values, not market or supplier pricing.
   const blackAirpods = gadgetRes.body.products.find((p) => p.sku === 'SBP-101');
   assert.ok(blackAirpods, 'AirPods Pro 2 Black must exist');
   assert.equal(blackAirpods.regular_price, 500, 'AirPods Pro 2 Black price must strictly be 500 TK');
@@ -207,7 +211,7 @@ test('5. Auth: User registration and validation edge cases', async () => {
   assert.equal(badLogin.status, 401);
 });
 
-test('6. Order placement, anti-fraud advance TrxID, and delivery fee calculation', async () => {
+test('6. Order placement, optional advance, and delivery fee calculation', async () => {
   // Get product SBF-101 (Furniture) and SBP-101 (Gadget)
   const sbf = await get("SELECT * FROM products WHERE sku = 'SBF-101'");
   const sbp = await get("SELECT * FROM products WHERE sku = 'SBP-101'");
@@ -229,7 +233,7 @@ test('6. Order placement, anti-fraud advance TrxID, and delivery fee calculation
   assert.equal(orderInsideDhaka.body.order.delivery_fee, 500);
   assert.equal(orderInsideDhaka.body.order.advance_paid, 500);
 
-  // Place order containing furniture outside Dhaka -> delivery fee should be 1000 TK
+  // A furniture order can also use COD when no advance is agreed.
   const orderOutsideDhaka = await request('/api/orders', {
     method: 'POST',
     body: {
@@ -237,22 +241,28 @@ test('6. Order placement, anti-fraud advance TrxID, and delivery fee calculation
       customer_phone: '01811223355',
       delivery_address: 'কালীগঞ্জ বাজার, গাজীপুর',
       delivery_city: 'outside_dhaka',
-      advance_paid: 1000,
-      advance_trx_id: 'TRX123456789',
+      advance_paid: 0,
       items: [{ product_id: sbf.id, quantity: 1 }]
     }
   });
   assert.equal(orderOutsideDhaka.status, 201);
   assert.equal(orderOutsideDhaka.body.order.delivery_fee, 1000);
+  assert.equal(orderOutsideDhaka.body.order.advance_paid, 0);
 
   // Track order
-  const trackRes = await request(`/api/orders/track/${orderInsideDhaka.body.order.order_number}`);
+  const trackRes = await request('/api/orders/track', {
+    method: 'POST',
+    body: {
+      order_number: orderInsideDhaka.body.order.order_number,
+      phone: '01811223344'
+    }
+  });
   assert.equal(trackRes.status, 200);
   assert.equal(trackRes.body.order.customer_name, 'কাস্টমার শাকিল');
   assert.equal(trackRes.body.order.items.length, 1);
 });
 
-test('7. Reseller Commission, First Sale Bonus, Team Bonus, and Payout Workflow', async () => {
+test('7. Direct Reseller Commission and Payout Workflow', async () => {
   // Login as admin
   const adminLogin = await request('/api/auth/login', {
     method: 'POST',
@@ -279,6 +289,8 @@ test('7. Reseller Commission, First Sale Bonus, Team Bonus, and Payout Workflow'
       customer_phone: '01799887766',
       delivery_address: 'উত্তরা, ঢাকা',
       delivery_city: 'inside_dhaka',
+      advance_paid: 500,
+      advance_trx_id: 'TRX-COMMISSION-TEST',
       items: [{ product_id: sbf101.id, quantity: 1 }]
     }
   });
@@ -307,9 +319,7 @@ test('7. Reseller Commission, First Sale Bonus, Team Bonus, and Payout Workflow'
   assert.equal(walletRes.body.summary.available_balance, 1000);
   assert.equal(walletRes.body.summary.pending_commission, 0);
 
-  // Check Referrer (User 1) wallet:
-  // Since this was Reseller 2's FIRST delivered sale:
-  // Referrer receives 50 TK first sale bonus + 3% team bonus on 18,500 TK (555 TK)!
+  // Inviting a reseller does not create a team bonus; earnings are from direct sales.
   const refLogin = await request('/api/auth/login', {
     method: 'POST',
     body: { phone: '01711000001', password: 'password123' }
@@ -319,8 +329,7 @@ test('7. Reseller Commission, First Sale Bonus, Team Bonus, and Payout Workflow'
   const referrerWallet = await request('/api/wallet/summary', {
     headers: { Authorization: `Bearer ${referrerToken}` }
   });
-  // 50 (first sale bonus) + 555 (3% of 18500) = 605 TK
-  assert.equal(referrerWallet.body.summary.available_balance, 605);
+  assert.equal(referrerWallet.body.summary.available_balance, 0);
 
   // Reseller 2 requests a Cashout (Payout) of 500 TK via bKash
   const payoutReq = await request('/api/wallet/payout-request', {
@@ -361,7 +370,7 @@ test('7. Reseller Commission, First Sale Bonus, Team Bonus, and Payout Workflow'
   assert.ok(statsRes.body.stats.delivered_orders >= 1);
 });
 
-test('8. Idempotent Order Delivery Bonus & Cancellation Reversal', async () => {
+test('8. Idempotent Direct Commission Delivery & Cancellation Reversal', async () => {
   // Login as admin
   const adminLogin = await request('/api/auth/login', {
     method: 'POST',
@@ -400,12 +409,12 @@ test('8. Idempotent Order Delivery Bonus & Cancellation Reversal', async () => {
     body: { status: 'delivered' }
   });
 
-  // Count team_bonus transactions for this order
+  // Direct-sale-only model: no team bonus is awarded.
   let teamBonuses = await query(
     "SELECT * FROM wallet_transactions WHERE order_id = ? AND type = 'team_bonus'",
     [testOrderId]
   );
-  assert.equal(teamBonuses.length, 1);
+  assert.equal(teamBonuses.length, 0);
 
   // 2. Change status to 'shipped' (reverted from delivered)
   await request(`/api/admin/orders/${testOrderId}/status`, {
@@ -421,12 +430,12 @@ test('8. Idempotent Order Delivery Bonus & Cancellation Reversal', async () => {
     body: { status: 'delivered' }
   });
 
-  // Verify NO duplicate team bonus was created
+  // Verify re-delivery still does not create a team bonus.
   teamBonuses = await query(
     "SELECT * FROM wallet_transactions WHERE order_id = ? AND type = 'team_bonus'",
     [testOrderId]
   );
-  assert.equal(teamBonuses.length, 1, 'Team bonus must remain strictly 1 row (idempotent)');
+  assert.equal(teamBonuses.length, 0, 'No team bonus should be created');
 
   // 4. Cancel order and verify all wallet transactions for this order are cancelled
   await request(`/api/admin/orders/${testOrderId}/status`, {
@@ -577,6 +586,27 @@ test('11. Dynamic Cloud Catalog: Admin Product CRUD & Single Item Retrieval', as
   assert.equal(newProductRes.status, 201);
   const createdProdId = newProductRes.body.product_id;
 
+  const unsafeProductRes = await request('/api/admin/products', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${adminToken}` },
+    body: {
+      title: 'অবৈধ ছবি পরীক্ষা',
+      sku: 'SBF-999-UNSAFE',
+      brand: 'SB Furniture',
+      category: 'হোম ও অফিস ফার্নিচার',
+      regular_price: 5000,
+      image_url: 'javascript:alert(1)'
+    }
+  });
+  assert.equal(unsafeProductRes.status, 400);
+
+  const invalidPriceRes = await request(`/api/admin/products/${createdProdId}`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${adminToken}` },
+    body: { regular_price: -1 }
+  });
+  assert.equal(invalidPriceRes.status, 400);
+
   // 2. Fetch created product by SKU
   const getProdRes = await request('/api/products/SBF-999');
   assert.equal(getProdRes.status, 200);
@@ -639,7 +669,7 @@ test('12. Multi-Vendor / Partner Shop Promotion: Admin Creation, Filtering & Wha
       stock: 10,
       shop_name: 'ভাই ভাই ফার্নিচার',
       vendor_phone: '01811223344',
-      vendor_badge: 'Verified Partner',
+      vendor_badge: 'পার্টনার শপ',
       vendor_address: 'মিরপুর ১০, ঢাকা'
     }
   });
@@ -673,7 +703,8 @@ test('12. Multi-Vendor / Partner Shop Promotion: Admin Creation, Filtering & Wha
   assert.equal(prod.vendor_phone, '01811223344');
   assert.equal(prod.contact_phone, '01811223344');
   assert.ok(prod.share_copy.includes('ভাই ভাই ফার্নিচার'), 'Share copy should highlight partner shop name');
-  assert.ok(prod.share_copy.includes('Verified Partner'), 'Share copy should include vendor badge');
+  assert.ok(prod.share_copy.includes('পার্টনার শপ'), 'Share copy should include vendor badge');
+  assert.ok(!prod.share_copy.includes('100% অরিজিনাল'), 'Share copy should not claim unverified product authenticity');
   assert.ok(prod.share_copy.includes('01811223344'), 'Share copy should direct customer calls to vendor phone');
   assert.ok(prod.share_copy.includes('ref=SBPROMO'), 'Share copy should embed reseller referral code');
 
@@ -696,27 +727,22 @@ test('12. Multi-Vendor / Partner Shop Promotion: Admin Creation, Filtering & Wha
   await run('DELETE FROM products WHERE id = ?', [createdId]);
 });
 
-test('13. Reseller Leaderboard: Real-time rankings, Prizes & Campaign Rules', async () => {
+test('13. Reseller Leaderboard: Real delivered sales only, no invented prizes', async () => {
   const res = await request('/api/leaderboard');
   assert.equal(res.status, 200);
   assert.equal(res.body.success, true);
 
-  // Validate campaign & rules
+  // This endpoint only shows actual delivered sales.
   assert.ok(res.body.campaign, 'Campaign title must be present');
   assert.ok(res.body.rules, 'Campaign rules must be present');
-
-  // Validate prizes structure
-  assert.ok(Array.isArray(res.body.prizes), 'Prizes should be an array');
-  assert.equal(res.body.prizes.length, 3, 'Should have top 3 prize tiers');
-  assert.ok(res.body.prizes[0].reward.includes('স্মার্টফোন'));
+  assert.equal(res.body.prizes, undefined, 'Unconfirmed prizes should not be advertised');
 
   // Validate leaders structure
   assert.ok(Array.isArray(res.body.leaders), 'Leaders should be an array');
-  assert.ok(res.body.leaders.length > 0, 'Leaders should not be empty');
-  const top1 = res.body.leaders[0];
-  assert.ok(top1.name, 'Leader must have a name');
-  assert.ok(top1.rank === 1, 'Top leader must have rank 1');
-  assert.ok(top1.badge, 'Leader must have a badge');
-  assert.ok(top1.total_sales >= 0, 'Leader must have total_sales');
+  for (const leader of res.body.leaders) {
+    assert.ok(leader.name, 'Leader must have a name');
+    assert.ok(leader.rank >= 1, 'Leader rank must be positive');
+    assert.ok(leader.total_sales > 0, 'Leaderboard entries must have real completed sales');
+  }
 });
 

@@ -1,6 +1,9 @@
+require('./testEnv');
+
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
+const crypto = require('node:crypto');
 const app = require('../src/server');
 const { initDb, run, get } = require('../src/db');
 const { hashPassword } = require('../src/auth');
@@ -11,6 +14,8 @@ let adminToken;
 let resellerToken;
 let adminUserId;
 let sampleResellerId;
+const isolatedAdminPassword = crypto.randomBytes(24).toString('hex');
+const nextAdminPassword = crypto.randomBytes(24).toString('hex');
 
 const request = (path, options = {}) => {
   return new Promise((resolve, reject) => {
@@ -63,7 +68,7 @@ before(async () => {
   });
 
   // Ensure isolated test admin exists for this test suite
-  const adminHash = await hashPassword('admin123456');
+  const adminHash = await hashPassword(isolatedAdminPassword);
   let admin = await get("SELECT * FROM users WHERE phone = '01999887766'");
   if (!admin) {
     const res = await run(
@@ -79,7 +84,7 @@ before(async () => {
   // Login as isolated admin
   const adminLoginRes = await request('/api/auth/login', {
     method: 'POST',
-    body: { phone: '01999887766', password: 'admin123456' }
+    body: { phone: '01999887766', password: isolatedAdminPassword }
   });
   assert.equal(adminLoginRes.status, 200);
   adminToken = adminLoginRes.body.token;
@@ -277,11 +282,11 @@ test('Admin Users 4: Role toggling, promotion and demotion protection (PUT /api/
 });
 
 test('Admin Users 5: Admin profile password update (PUT /api/admin/profile/password)', async () => {
-  // Attempt with short password (< 6 chars)
+  // Attempt with a password below the 8-byte minimum
   const shortPass = await request('/api/admin/profile/password', {
     method: 'PUT',
     headers: { Authorization: `Bearer ${adminToken}` },
-    body: { old_password: 'admin123456', new_password: '123' }
+    body: { old_password: isolatedAdminPassword, new_password: '123' }
   });
   assert.equal(shortPass.status, 400);
 
@@ -298,7 +303,7 @@ test('Admin Users 5: Admin profile password update (PUT /api/admin/profile/passw
   const successPass = await request('/api/admin/profile/password', {
     method: 'PUT',
     headers: { Authorization: `Bearer ${adminToken}` },
-    body: { old_password: 'admin123456', new_password: 'newSecretPass789' }
+    body: { old_password: isolatedAdminPassword, new_password: nextAdminPassword }
   });
   assert.equal(successPass.status, 200);
   assert.equal(successPass.body.success, true);
@@ -306,7 +311,7 @@ test('Admin Users 5: Admin profile password update (PUT /api/admin/profile/passw
   // Verify login works with the new password
   const newLogin = await request('/api/auth/login', {
     method: 'POST',
-    body: { phone: '01999887766', password: 'newSecretPass789' }
+    body: { phone: '01999887766', password: nextAdminPassword }
   });
   assert.equal(newLogin.status, 200);
 
@@ -314,7 +319,7 @@ test('Admin Users 5: Admin profile password update (PUT /api/admin/profile/passw
   const resetPass = await request('/api/admin/profile/password', {
     method: 'PUT',
     headers: { Authorization: `Bearer ${newLogin.body.token}` },
-    body: { old_password: 'newSecretPass789', new_password: 'admin123456' }
+    body: { old_password: nextAdminPassword, new_password: isolatedAdminPassword }
   });
   assert.equal(resetPass.status, 200);
 });

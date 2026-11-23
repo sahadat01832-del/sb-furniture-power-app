@@ -4,6 +4,141 @@ const { query, get, run, withTransaction } = require('../db');
 const { verifyToken, requireRole } = require('../auth');
 const config = require('../config');
 
+const PRODUCT_DEFAULT_IMAGE = 'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?auto=format&fit=crop&w=800&q=80';
+const PRODUCT_BRANDS = new Set(['SB Furniture', 'SB POWER']);
+const COMMISSION_TABS = new Set(['50tk', '100tk', '500tk', '1000tk']);
+
+function validateProductPayload(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return { error: 'প্রোডাক্টের তথ্য সঠিকভাবে পাঠান' };
+  }
+
+  const data = {};
+  const textFields = {
+    title: { required: true, max: 200 },
+    sku: { required: true, max: 40 },
+    brand: { required: true, max: 40 },
+    category: { required: true, max: 100 },
+    shop_name: { max: 100 },
+    vendor_badge: { max: 100 },
+    vendor_address: { max: 300 },
+    description: { max: 5000 },
+    materials: { max: 300 },
+    finish: { max: 200 }
+  };
+
+  for (const [field, rules] of Object.entries(textFields)) {
+    const value = input[field];
+    if (value === undefined) {
+      if (rules.required) return { error: 'প্রয়োজনীয় প্রোডাক্ট তথ্য পূরণ করুন' };
+      continue;
+    }
+    if (value === null && !rules.required) {
+      data[field] = '';
+      continue;
+    }
+    if (typeof value !== 'string') return { error: 'প্রোডাক্টের লেখার তথ্য সঠিক নয়' };
+    const clean = value.trim();
+    if ((rules.required && !clean) || clean.length > rules.max) {
+      return { error: 'প্রোডাক্টের লেখা খালি রাখা যাবে না এবং নির্ধারিত সীমার মধ্যে দিন' };
+    }
+    data[field] = clean;
+  }
+
+  if (!/^[A-Z0-9][A-Z0-9_-]{1,39}$/.test(data.sku || '')) {
+    return { error: 'SKU-তে ২ থেকে ৪০টি ইংরেজি অক্ষর, সংখ্যা, হাইফেন বা আন্ডারস্কোর দিন' };
+  }
+  if (!PRODUCT_BRANDS.has(data.brand)) return { error: 'প্রোডাক্টের ব্র্যান্ড নির্বাচন সঠিক নয়' };
+
+  for (const [field, options] of Object.entries({
+    regular_price: { required: true, min: 1, max: 50000000 },
+    reseller_commission: { required: true, min: 0, max: 50000000 },
+    stock: { required: true, min: 0, max: 1000000 },
+    is_active: { required: true, min: 0, max: 1 }
+  })) {
+    const value = input[field];
+    if (value === undefined) {
+      if (options.required) {
+        if (field === 'reseller_commission') data[field] = 50;
+        else if (field === 'stock') data[field] = 50;
+        else if (field === 'is_active') data[field] = 1;
+        else return { error: 'বিক্রয় মূল্য সঠিকভাবে দিন' };
+      }
+      continue;
+    }
+    if (value === '' || value === null || !Number.isSafeInteger(Number(value))) {
+      return { error: 'মূল্য, কমিশন, স্টক ও সক্রিয়তার তথ্য পূর্ণসংখ্যায় দিন' };
+    }
+    const number = Number(value);
+    if (number < options.min || number > options.max) return { error: 'মূল্য, কমিশন, স্টক বা সক্রিয়তার মান সীমার বাইরে' };
+    data[field] = number;
+  }
+  if (data.reseller_commission > data.regular_price) return { error: 'কমিশন বিক্রয় মূল্যের চেয়ে বেশি হতে পারবে না' };
+
+  if (input.commission_tab !== undefined) {
+    if (typeof input.commission_tab !== 'string' || !COMMISSION_TABS.has(input.commission_tab)) {
+      return { error: 'কমিশন ট্যাব থেকে একটি সঠিক মান নির্বাচন করুন' };
+    }
+    data.commission_tab = input.commission_tab;
+  } else {
+    data.commission_tab = `${data.reseller_commission}tk`;
+    if (!COMMISSION_TABS.has(data.commission_tab)) data.commission_tab = '50tk';
+  }
+
+  if (input.image_url !== undefined && typeof input.image_url !== 'string') {
+    return { error: 'ছবির ঠিকানা সঠিক নয়' };
+  }
+  const imageUrl = typeof input.image_url === 'string' ? input.image_url.trim() : '';
+  if (imageUrl.length > 2048) return { error: 'ছবির ঠিকানা অনেক বড়' };
+  if (!imageUrl) {
+    data.image_url = PRODUCT_DEFAULT_IMAGE;
+  } else if (imageUrl.startsWith('/') && !imageUrl.startsWith('//')) {
+    data.image_url = imageUrl;
+  } else {
+    try {
+      const parsed = new URL(imageUrl);
+      if (parsed.protocol !== 'https:' || !parsed.hostname || parsed.username || parsed.password) {
+        return { error: 'ছবির জন্য HTTPS ঠিকানা দিন' };
+      }
+      data.image_url = parsed.href;
+    } catch (error) {
+      return { error: 'ছবির ঠিকানা সঠিক HTTPS URL হতে হবে' };
+    }
+  }
+
+  if (input.vendor_phone !== undefined && input.vendor_phone !== null && typeof input.vendor_phone !== 'string') {
+    return { error: 'ভেন্ডরের ফোন নম্বর সঠিক নয়' };
+  }
+  let vendorPhone = typeof input.vendor_phone === 'string' ? input.vendor_phone.replace(/\D/g, '') : '';
+  if (vendorPhone.startsWith('00880')) vendorPhone = `0${vendorPhone.slice(5)}`;
+  else if (vendorPhone.startsWith('880')) vendorPhone = `0${vendorPhone.slice(3)}`;
+  if (vendorPhone && !/^01[3-9]\d{8}$/.test(vendorPhone)) return { error: 'ভেন্ডরের ১১ সংখ্যার বাংলাদেশি মোবাইল নম্বর দিন' };
+  data.vendor_phone = vendorPhone || null;
+
+  data.shop_name = data.shop_name || data.brand;
+  data.vendor_badge = data.vendor_badge || null;
+  data.vendor_address = data.vendor_address || null;
+  data.description = data.description || '';
+  data.materials = data.materials || '';
+  data.finish = data.finish || '';
+  return { data };
+}
+
+function validateAnnouncementPayload(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return { error: 'ঘোষণার তথ্য সঠিকভাবে পাঠান' };
+  const title = input.title;
+  const message = input.message;
+  const type = input.type === undefined ? 'flash_deal' : input.type;
+  const active = input.is_active === undefined ? 1 : Number(input.is_active);
+  if (typeof title !== 'string' || !title.trim() || title.trim().length > 120) return { error: 'শিরোনাম ১২০ অক্ষরের মধ্যে দিন' };
+  if (typeof message !== 'string' || !message.trim() || message.trim().length > 2000) return { error: 'বার্তা ২০০০ অক্ষরের মধ্যে দিন' };
+  if (typeof type !== 'string' || !['flash_deal', 'general'].includes(type)) return { error: 'ঘোষণার ধরন সঠিক নয়' };
+  if (![0, 1].includes(active) || (typeof input.is_active === 'string' && !/^[01]$/.test(input.is_active))) {
+    return { error: 'ঘোষণার সক্রিয়তার মান ০ অথবা ১ দিন' };
+  }
+  return { data: { title: title.trim(), message: message.trim(), type, is_active: active } };
+}
+
 // Require Admin Role for all routes in this router
 router.use(verifyToken, requireRole('admin'));
 
@@ -196,71 +331,6 @@ router.put('/orders/:id/status', async (req, res) => {
             [orderId, order.reseller_id]
           );
 
-          // Check if reseller has an upstream referrer
-          const reseller = await txGet('SELECT * FROM users WHERE id = ?', [order.reseller_id]);
-          if (reseller && reseller.referred_by_id) {
-            const referrerId = reseller.referred_by_id;
-
-            // Check if this reseller's first sale bonus was already awarded
-            const existingRefBonus = await txGet(
-              "SELECT id FROM wallet_transactions WHERE user_id = ? AND type = 'referral_bonus' AND (order_id = ? OR notes LIKE ?)",
-              [referrerId, orderId, `%${reseller.name}%`]
-            );
-
-            if (!existingRefBonus) {
-              const deliveredCountRow = await txGet(
-                "SELECT COUNT(*) as count FROM orders WHERE reseller_id = ? AND status = 'delivered'",
-                [order.reseller_id]
-              );
-
-              if (deliveredCountRow && deliveredCountRow.count === 1) {
-                await txRun(
-                  `INSERT INTO wallet_transactions (
-                    user_id, order_id, amount, type, status, notes
-                  ) VALUES (?, ?, ?, 'referral_bonus', 'available', ?)`,
-                  [
-                    referrerId,
-                    orderId,
-                    config.REFERRAL.FIRST_SALE_BONUS,
-                    `ডাউনলাইন সদস্য (${reseller.name})-এর প্রথম সফল সেল বোনাস!`
-                  ]
-                );
-              }
-            } else {
-              await txRun(
-                "UPDATE wallet_transactions SET status = 'available' WHERE order_id = ? AND type = 'referral_bonus'",
-                [orderId]
-              );
-            }
-
-            // Lifetime team sales bonus (3%) - Idempotent check
-            const existingTeamBonus = await txGet(
-              "SELECT id FROM wallet_transactions WHERE order_id = ? AND user_id = ? AND type = 'team_bonus'",
-              [orderId, referrerId]
-            );
-
-            if (!existingTeamBonus) {
-              const teamBonus = Math.round((order.subtotal_amount * config.REFERRAL.LIFETIME_COMMISSION_PERCENT) / 100);
-              if (teamBonus > 0) {
-                await txRun(
-                  `INSERT INTO wallet_transactions (
-                    user_id, order_id, amount, type, status, notes
-                  ) VALUES (?, ?, ?, 'team_bonus', 'available', ?)`,
-                  [
-                    referrerId,
-                    orderId,
-                    teamBonus,
-                    `ডাউনলাইন সদস্য (${reseller.name})-এর অর্ডার থেকে ${config.REFERRAL.LIFETIME_COMMISSION_PERCENT}% টিম বোনাস`
-                  ]
-                );
-              }
-            } else {
-              await txRun(
-                "UPDATE wallet_transactions SET status = 'available' WHERE order_id = ? AND type = 'team_bonus'",
-                [orderId]
-              );
-            }
-          }
         }
       } else if (status === 'cancelled' && previousStatus !== 'cancelled') {
         // If cancelled, cancel all wallet transactions associated with this order
@@ -351,11 +421,23 @@ router.get('/payouts', async (req, res) => {
 // Update Payout Status (Approve / Reject)
 router.put('/payouts/:id', async (req, res) => {
   try {
-    const payoutId = parseInt(req.params.id, 10);
+    const payoutId = Number(req.params.id);
     const { status, admin_trx_id, notes } = req.body;
 
+    if (!Number.isSafeInteger(payoutId) || payoutId < 1) {
+      return res.status(400).json({ success: false, message: 'ক্যাশআউট আইডি সঠিক নয়' });
+    }
     if (!['approved', 'rejected'].includes(status)) {
       return res.status(400).json({ success: false, message: 'অবৈধ পেআউট স্ট্যাটাস (approved বা rejected হতে হবে)' });
+    }
+    if (admin_trx_id !== undefined && admin_trx_id !== null && (typeof admin_trx_id !== 'string' || admin_trx_id.trim().length > 80)) {
+      return res.status(400).json({ success: false, message: 'TrxID ৮০ অক্ষরের মধ্যে দিন' });
+    }
+    if (status === 'approved' && (!admin_trx_id || admin_trx_id.trim().length < 4)) {
+      return res.status(400).json({ success: false, message: 'পেআউট অনুমোদনের আগে পাঠানো টাকার TrxID দিন' });
+    }
+    if (notes !== undefined && notes !== null && (typeof notes !== 'string' || notes.length > 500)) {
+      return res.status(400).json({ success: false, message: 'নোট ৫০০ অক্ষরের মধ্যে দিন' });
     }
 
     const payout = await get('SELECT * FROM payout_requests WHERE id = ?', [payoutId]);
@@ -363,13 +445,30 @@ router.put('/payouts/:id', async (req, res) => {
       return res.status(404).json({ success: false, message: 'ক্যাশআউট রিকোয়েস্ট পাওয়া যায়নি' });
     }
 
-    await withTransaction(async ({ run: txRun }) => {
-      await txRun(
+    await withTransaction(async ({ get: txGet, run: txRun }) => {
+      const currentPayout = await txGet('SELECT * FROM payout_requests WHERE id = ?', [payoutId]);
+      if (!currentPayout) {
+        const notFoundError = new Error('ক্যাশআউট রিকোয়েস্ট পাওয়া যায়নি');
+        notFoundError.statusCode = 404;
+        throw notFoundError;
+      }
+      if (currentPayout.status !== 'pending') {
+        const conflictError = new Error('এই ক্যাশআউট রিকোয়েস্ট আগে থেকেই প্রক্রিয়া করা হয়েছে');
+        conflictError.statusCode = 409;
+        throw conflictError;
+      }
+
+      const updateResult = await txRun(
         `UPDATE payout_requests 
          SET status = ?, admin_trx_id = ?, notes = ?, updated_at = CURRENT_TIMESTAMP 
-         WHERE id = ?`,
-        [status, admin_trx_id || null, notes || null, payoutId]
+         WHERE id = ? AND status = 'pending'`,
+        [status, admin_trx_id ? admin_trx_id.trim() : null, notes ? notes.trim() : null, payoutId]
       );
+      if (updateResult.changes !== 1) {
+        const conflictError = new Error('এই ক্যাশআউট রিকোয়েস্ট আগে থেকেই প্রক্রিয়া করা হয়েছে');
+        conflictError.statusCode = 409;
+        throw conflictError;
+      }
 
       // Update corresponding wallet_transactions record accurately using payout_id
       const targetStatus = status === 'approved' ? 'completed' : 'cancelled';
@@ -382,20 +481,20 @@ router.put('/payouts/:id', async (req, res) => {
           targetStatus,
           suffixNote,
           payoutId,
-          payout.user_id,
-          payout.amount
+          currentPayout.user_id,
+          currentPayout.amount
         ]
       );
 
       // Notify reseller about payout approval or rejection
       const notifTitle = status === 'approved' ? 'ক্যাশআউট অনুমোদন সম্পন্ন!' : 'ক্যাশআউট রিকোয়েস্ট বাতিল';
       const notifMsg = status === 'approved'
-        ? `আপনার ${payout.amount}৳ ক্যাশআউট (${payout.payment_method.toUpperCase()}: ${payout.account_number}) সফল হয়েছে। TrxID: ${admin_trx_id || 'প্রদান করা হয়েছে'}`
-        : `আপনার ${payout.amount}৳ ক্যাশআউট রিকোয়েস্ট বাতিল করা হয়েছে। কারণ: ${notes || 'অ্যাকাউন্ট তথ্যে অসঙ্গতি'}`;
+        ? `আপনার ${currentPayout.amount}৳ ক্যাশআউট (${currentPayout.payment_method.toUpperCase()}: ${currentPayout.account_number}) সফল হয়েছে। TrxID: ${admin_trx_id.trim()}`
+        : `আপনার ${currentPayout.amount}৳ ক্যাশআউট রিকোয়েস্ট বাতিল করা হয়েছে। কারণ: ${notes || 'অ্যাকাউন্ট তথ্যে অসঙ্গতি'}`;
 
       await txRun(
         `INSERT INTO notifications (user_id, title, message) VALUES (?, ?, ?)`,
-        [payout.user_id, notifTitle, notifMsg]
+        [currentPayout.user_id, notifTitle, notifMsg]
       );
     });
 
@@ -404,6 +503,9 @@ router.put('/payouts/:id', async (req, res) => {
       message: status === 'approved' ? 'ক্যাশআউট অনুমোদন সম্পন্ন হয়েছে!' : 'ক্যাশআউট বাতিল করা হয়েছে'
     });
   } catch (error) {
+    if (error.statusCode === 404 || error.statusCode === 409) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
     console.error('Update Payout Error:', error);
     return res.status(500).json({ success: false, message: 'ক্যাশআউট আপডেট ব্যর্থ হয়েছে' });
   }
@@ -463,36 +565,15 @@ router.get('/products', async (req, res) => {
 // Product Management: Create Product
 router.post('/products', async (req, res) => {
   try {
-    const {
-      title,
-      sku,
-      brand,
-      category,
-      regular_price,
-      reseller_commission,
-      commission_tab,
-      image_url,
-      description,
-      materials,
-      finish,
-      stock,
-      shop_name,
-      vendor_phone,
-      vendor_badge,
-      vendor_address
-    } = req.body;
-
-    if (!title || !sku || !brand || !category || !regular_price) {
-      return res.status(400).json({ success: false, message: 'প্রয়োজনীয় ফিল্ডগুলো পূরণ করুন' });
-    }
+    const validation = validateProductPayload(req.body);
+    if (validation.error) return res.status(400).json({ success: false, message: validation.error });
+    const product = validation.data;
 
     // Check SKU duplicate
-    const existing = await get('SELECT id FROM products WHERE sku = ?', [sku.trim()]);
+    const existing = await get('SELECT id FROM products WHERE sku = ?', [product.sku]);
     if (existing) {
       return res.status(400).json({ success: false, message: 'এই SKU কোডটি ইতিমধ্যে ব্যবহৃত হচ্ছে' });
     }
-
-    const resolvedShopName = (shop_name && shop_name.trim()) ? shop_name.trim() : brand.trim();
 
     const result = await run(
       `INSERT INTO products (
@@ -501,22 +582,22 @@ router.post('/products', async (req, res) => {
         shop_name, vendor_phone, vendor_badge, vendor_address
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)`,
       [
-        title.trim(),
-        sku.trim().toUpperCase(),
-        brand.trim(),
-        category.trim(),
-        parseFloat(regular_price),
-        parseFloat(reseller_commission) || 50,
-        commission_tab || '50tk',
-        image_url || 'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?auto=format&fit=crop&w=800&q=80',
-        description || '',
-        materials || '',
-        finish || '',
-        parseInt(stock, 10) || 50,
-        resolvedShopName,
-        vendor_phone ? vendor_phone.trim() : null,
-        vendor_badge ? vendor_badge.trim() : null,
-        vendor_address ? vendor_address.trim() : null
+        product.title,
+        product.sku,
+        product.brand,
+        product.category,
+        product.regular_price,
+        product.reseller_commission,
+        product.commission_tab,
+        product.image_url,
+        product.description,
+        product.materials,
+        product.finish,
+        product.stock,
+        product.shop_name,
+        product.vendor_phone,
+        product.vendor_badge,
+        product.vendor_address
       ]
     );
 
@@ -534,61 +615,32 @@ router.post('/products', async (req, res) => {
 // Product Management: Update Product
 router.put('/products/:id', async (req, res) => {
   try {
-    const productId = parseInt(req.params.id, 10);
-    const {
-      title,
-      sku,
-      brand,
-      category,
-      regular_price,
-      reseller_commission,
-      commission_tab,
-      image_url,
-      description,
-      materials,
-      finish,
-      stock,
-      is_active,
-      shop_name,
-      vendor_phone,
-      vendor_badge,
-      vendor_address
-    } = req.body;
+    const productId = Number(req.params.id);
+    if (!Number.isSafeInteger(productId) || productId < 1) {
+      return res.status(400).json({ success: false, message: 'প্রোডাক্ট আইডি সঠিক নয়' });
+    }
 
     const product = await get('SELECT * FROM products WHERE id = ?', [productId]);
     if (!product) {
       return res.status(404).json({ success: false, message: 'প্রোডাক্ট পাওয়া যায়নি' });
     }
 
-    if (sku && sku.trim()) {
-      const cleanSku = sku.trim().toUpperCase();
-      const duplicateSku = await get('SELECT id FROM products WHERE sku = ? AND id != ?', [cleanSku, productId]);
-      if (duplicateSku) {
-        return res.status(400).json({ success: false, message: 'এই SKU কোডটি অন্য একটি পণ্যে ব্যবহৃত হচ্ছে' });
-      }
-      await run('UPDATE products SET sku = ? WHERE id = ?', [cleanSku, productId]);
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+      return res.status(400).json({ success: false, message: 'প্রোডাক্টের তথ্য সঠিকভাবে পাঠান' });
     }
+    const validation = validateProductPayload({ ...product, ...req.body });
+    if (validation.error) return res.status(400).json({ success: false, message: validation.error });
+    const updated = validation.data;
 
-    const updatedTitle = title !== undefined ? title.trim() : product.title;
-    const updatedBrand = brand !== undefined ? brand.trim() : product.brand;
-    const updatedCategory = category !== undefined ? category.trim() : product.category;
-    const updatedPrice = regular_price !== undefined ? parseFloat(regular_price) : product.regular_price;
-    const updatedCommission = reseller_commission !== undefined ? parseFloat(reseller_commission) : product.reseller_commission;
-    const updatedCommTab = commission_tab !== undefined ? commission_tab : product.commission_tab;
-    const updatedImage = image_url !== undefined ? image_url.trim() : product.image_url;
-    const updatedDesc = description !== undefined ? description.trim() : product.description;
-    const updatedMaterials = materials !== undefined ? materials.trim() : product.materials;
-    const updatedFinish = finish !== undefined ? finish.trim() : product.finish;
-    const updatedStock = stock !== undefined ? parseInt(stock, 10) : product.stock;
-    const updatedIsActive = is_active !== undefined ? parseInt(is_active, 10) : product.is_active;
-    const updatedShopName = shop_name !== undefined ? (shop_name.trim() || updatedBrand) : product.shop_name;
-    const updatedVendorPhone = vendor_phone !== undefined ? (vendor_phone.trim() || null) : product.vendor_phone;
-    const updatedVendorBadge = vendor_badge !== undefined ? (vendor_badge.trim() || null) : product.vendor_badge;
-    const updatedVendorAddress = vendor_address !== undefined ? (vendor_address.trim() || null) : product.vendor_address;
+    const duplicateSku = await get('SELECT id FROM products WHERE sku = ? AND id != ?', [updated.sku, productId]);
+    if (duplicateSku) {
+      return res.status(400).json({ success: false, message: 'এই SKU কোডটি অন্য একটি পণ্যে ব্যবহৃত হচ্ছে' });
+    }
 
     await run(
       `UPDATE products SET
         title = ?,
+        sku = ?,
         brand = ?,
         category = ?,
         regular_price = ?,
@@ -607,22 +659,23 @@ router.put('/products/:id', async (req, res) => {
         updated_at = CURRENT_TIMESTAMP
        WHERE id = ?`,
       [
-        updatedTitle,
-        updatedBrand,
-        updatedCategory,
-        updatedPrice,
-        updatedCommission,
-        updatedCommTab,
-        updatedImage,
-        updatedDesc,
-        updatedMaterials,
-        updatedFinish,
-        updatedStock,
-        updatedIsActive,
-        updatedShopName,
-        updatedVendorPhone,
-        updatedVendorBadge,
-        updatedVendorAddress,
+        updated.title,
+        updated.sku,
+        updated.brand,
+        updated.category,
+        updated.regular_price,
+        updated.reseller_commission,
+        updated.commission_tab,
+        updated.image_url,
+        updated.description,
+        updated.materials,
+        updated.finish,
+        updated.stock,
+        updated.is_active,
+        updated.shop_name,
+        updated.vendor_phone,
+        updated.vendor_badge,
+        updated.vendor_address,
         productId
       ]
     );
@@ -664,14 +717,13 @@ router.get('/announcements', async (req, res) => {
 // Create announcement
 router.post('/announcements', async (req, res) => {
   try {
-    const { title, message, type, is_active } = req.body;
-    if (!title || !message) {
-      return res.status(400).json({ success: false, message: 'শিরোনাম ও বার্তা আবশ্যক' });
-    }
+    const validation = validateAnnouncementPayload(req.body);
+    if (validation.error) return res.status(400).json({ success: false, message: validation.error });
+    const announcement = validation.data;
 
     const result = await run(
       'INSERT INTO announcements (title, message, type, is_active) VALUES (?, ?, ?, ?)',
-      [title.trim(), message.trim(), type || 'flash_deal', is_active !== undefined ? parseInt(is_active, 10) : 1]
+      [announcement.title, announcement.message, announcement.type, announcement.is_active]
     );
 
     return res.status(201).json({
@@ -688,21 +740,28 @@ router.post('/announcements', async (req, res) => {
 // Update announcement
 router.put('/announcements/:id', async (req, res) => {
   try {
-    const id = parseInt(req.params.id, 10);
-    const { title, message, type, is_active } = req.body;
+    const id = Number(req.params.id);
+    if (!Number.isSafeInteger(id) || id < 1) return res.status(400).json({ success: false, message: 'ঘোষণার আইডি সঠিক নয়' });
 
     const ann = await get('SELECT * FROM announcements WHERE id = ?', [id]);
     if (!ann) {
       return res.status(404).json({ success: false, message: 'ঘোষণাটি পাওয়া যায়নি' });
     }
 
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+      return res.status(400).json({ success: false, message: 'ঘোষণার তথ্য সঠিকভাবে পাঠান' });
+    }
+    const validation = validateAnnouncementPayload({ ...ann, ...req.body });
+    if (validation.error) return res.status(400).json({ success: false, message: validation.error });
+    const announcement = validation.data;
+
     await run(
       'UPDATE announcements SET title = ?, message = ?, type = ?, is_active = ? WHERE id = ?',
       [
-        title !== undefined ? title.trim() : ann.title,
-        message !== undefined ? message.trim() : ann.message,
-        type !== undefined ? type : ann.type,
-        is_active !== undefined ? parseInt(is_active, 10) : ann.is_active,
+        announcement.title,
+        announcement.message,
+        announcement.type,
+        announcement.is_active,
         id
       ]
     );

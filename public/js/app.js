@@ -2,11 +2,30 @@
 // SB Furniture & SB POWER — Core App & Reseller Wallet Controller
 // ============================================================
 
-let cart = JSON.parse(localStorage.getItem('sb_cart') || '[]');
-let currentUser = JSON.parse(localStorage.getItem('sb_user') || 'null');
+const readStoredJson = (key, fallback) => {
+  try {
+    const value = JSON.parse(localStorage.getItem(key) || 'null');
+    return value === null ? fallback : value;
+  } catch (error) {
+    return fallback;
+  }
+};
+
+const storedCart = readStoredJson('sb_cart', []);
+let cart = (Array.isArray(storedCart) ? storedCart : []).filter((item) =>
+  item && item.product && Number.isSafeInteger(Number(item.product.id)) &&
+  Number.isSafeInteger(Number(item.quantity)) && Number(item.quantity) > 0 && Number(item.quantity) <= 100
+).map((item) => ({
+  product: item.product,
+  quantity: Number(item.quantity),
+  selected_color: typeof item.selected_color === 'string' ? item.selected_color.slice(0, 80) : ''
+}));
+let currentUser = readStoredJson('sb_user', null);
+if (!currentUser || typeof currentUser !== 'object' || typeof currentUser.name !== 'string') currentUser = null;
 let authToken = localStorage.getItem('sb_token') || null;
 
 const api = (path) => (typeof window.apiUrl === 'function' ? window.apiUrl(path) : path);
+const escapeAppHtml = (value) => window.sbEscapeHtml(value);
 
 // Initialize Application
 document.addEventListener('DOMContentLoaded', () => {
@@ -156,12 +175,12 @@ function renderCartModal() {
   container.innerHTML = cart.map((item, index) => `
     <div style="display: flex; align-items: center; justify-content: space-between; background: #292524; padding: 10px; border-radius: var(--radius-sm); margin-bottom: 8px;">
       <div style="flex: 1; margin-right: 10px;">
-        <div style="font-size: 0.88rem; font-weight: 600; color: #fff;">${item.product.title}</div>
+        <div style="font-size: 0.88rem; font-weight: 600; color: #fff;">${escapeAppHtml(item.product.title)}</div>
         <div style="font-size: 0.75rem; color: var(--sbf-text-muted);">
-          SKU: ${item.product.sku} ${item.selected_color ? `• কালার: ${item.selected_color}` : ''}
+          SKU: ${escapeAppHtml(item.product.sku)} ${item.selected_color ? `• কালার: ${escapeAppHtml(item.selected_color)}` : ''}
         </div>
         <div style="font-size: 0.85rem; color: var(--sbp-yellow); font-weight: 700;">
-          ${item.product.regular_price} ৳ × ${item.quantity} = ${item.product.regular_price * item.quantity} ৳
+          ${escapeAppHtml(item.product.regular_price)} ৳ × ${escapeAppHtml(item.quantity)} = ${escapeAppHtml(item.product.regular_price * item.quantity)} ৳
         </div>
       </div>
       <div style="display: flex; align-items: center; gap: 6px;">
@@ -178,6 +197,9 @@ function renderCartModal() {
 
 function changeCartQty(index, delta) {
   if (cart[index]) {
+    if (delta > 0 && cart[index].quantity >= 100) {
+      return showToast('একটি পণ্যের সর্বোচ্চ অর্ডার ১০০টি');
+    }
     cart[index].quantity += delta;
     if (cart[index].quantity <= 0) {
       cart.splice(index, 1);
@@ -203,15 +225,13 @@ function calculateCartTotals() {
     : (city === 'inside_dhaka' ? 80 : 150);
 
   const grandTotal = subtotal + deliveryFee;
+  const advancePanel = document.getElementById('advanceProtection');
+  if (advancePanel) advancePanel.style.display = 'block';
 
   document.getElementById('cartSubtotal').textContent = `${subtotal} ৳`;
   document.getElementById('cartDeliveryFee').textContent = `${deliveryFee} ৳`;
   document.getElementById('cartGrandTotal').textContent = `${grandTotal} ৳`;
 
-  const advInput = document.getElementById('orderAdvancePaid');
-  if (advInput && (parseFloat(advInput.value) === 0 || !advInput.dataset.userEdited)) {
-    advInput.value = deliveryFee;
-  }
 }
 
 // Anti-Fraud Order Submission
@@ -224,11 +244,13 @@ async function submitOrder() {
   const advancePaid = parseFloat(document.getElementById('orderAdvancePaid').value) || 0;
 
   if (!custName) return alert('অনুগ্রহ করে আপনার নাম দিন');
-  if (!custPhone || custPhone.length < 11) return alert('সঠিক ১১ ডিজিটের মোবাইল নম্বর দিন');
+  if (!/^01[3-9]\d{8}$/.test(custPhone.replace(/\D/g, ''))) return alert('সঠিক ১১ ডিজিটের বাংলাদেশি মোবাইল নম্বর দিন');
   if (!custAddress) return alert('সম্পূর্ণ ডেলিভারি ঠিকানা দিন');
-  if (!trxId) return alert('ডেলিভারি চার্জ বুকিংয়ের অগ্রিম বিকাশ/নগদ TrxID দিন');
 
-  const refCode = currentUser ? currentUser.referral_code : localStorage.getItem('sb_ref_code');
+  // Keep the share link that brought this shopper here, including after login.
+  // If there is no incoming link, an authenticated reseller can enter a sale
+  // for a separate customer using their own code.
+  const refCode = localStorage.getItem('sb_ref_code') || (currentUser ? currentUser.referral_code : '');
 
   const payload = {
     items: cart.map((c) => ({
@@ -269,7 +291,7 @@ async function submitOrder() {
       closeModal('cartModal');
 
       alert(`🎉 ধন্যবাদ! আপনার অর্ডারটি সফলভাবে গ্রহণ করা হয়েছে।\nঅর্ডার নম্বর: ${data.order.order_number}\n\nআপনার সাথে দ্রুত যোগাযোগ করে ডেলিভারি কনফার্ম করা হবে।`);
-      trackSpecificOrder(data.order.order_number);
+      trackSpecificOrder(data.order.order_number, custPhone);
     } else {
       alert(`ত্রুটি: ${data.message}`);
     }
@@ -310,8 +332,8 @@ function renderResellerAuthForms() {
     <div id="resellerRegisterForm" style="display: none;">
       <div class="form-group"><label class="form-label">আপনার পূর্ণ নাম *</label><input type="text" id="regName" class="form-control" placeholder="যেমন: মো: রফিকুল ইসলাম"></div>
       <div class="form-group"><label class="form-label">মোবাইল নম্বর (১১ ডিজিট) *</label><input type="tel" id="regPhone" class="form-control" placeholder="01XXXXXXXXX"></div>
-      <div class="form-group"><label class="form-label">পাসওয়ার্ড (ন্যূনতম ৬ অক্ষর) *</label><input type="password" id="regPassword" class="form-control" placeholder="পাসওয়ার্ড তৈরি করুন"></div>
-      <div class="form-group"><label class="form-label">রেফারেল কোড (যদি থাকে)</label><input type="text" id="regRefCode" class="form-control" value="${storedRef}" placeholder="যেমন: SB1234ABC"></div>
+      <div class="form-group"><label class="form-label">পাসওয়ার্ড (৮ থেকে ৭২ বাইট) *</label><input type="password" id="regPassword" class="form-control" placeholder="পাসওয়ার্ড তৈরি করুন"></div>
+      <div class="form-group"><label class="form-label">রেফারেল কোড (যদি থাকে)</label><input type="text" id="regRefCode" class="form-control" value="${escapeAppHtml(storedRef)}" placeholder="যেমন: SB1234ABC"></div>
       <button class="btn-submit" onclick="submitResellerRegister()">রেজিস্ট্রেশন সম্পন্ন করুন</button>
     </div>
   `;
@@ -361,7 +383,10 @@ async function submitResellerRegister() {
   const password = document.getElementById('regPassword').value;
   const referral_code = document.getElementById('regRefCode').value.trim();
 
-  if (!name || !phone || !password) return alert('সকল প্রয়োজনীয় তথ্য পূরণ করুন');
+  if (!name || name.length < 2 || name.length > 100) return alert('সঠিক পূর্ণ নাম দিন (২ থেকে ১০০ অক্ষর)');
+  if (!/^01[3-9]\d{8}$/.test(phone.replace(/\D/g, ''))) return alert('সঠিক ১১ ডিজিটের বাংলাদেশি মোবাইল নম্বর দিন');
+  const passwordBytes = new TextEncoder().encode(password).length;
+  if (passwordBytes < 8 || passwordBytes > 72) return alert('পাসওয়ার্ড ৮ থেকে ৭২ বাইটের মধ্যে হতে হবে');
 
   try {
     const res = await fetch(api('/api/auth/register'), {
@@ -400,7 +425,7 @@ async function renderResellerDashboard() {
     const data = await res.json();
 
     if (!data.success) {
-      body.innerHTML = `<div style="color: var(--sbp-red);">${data.message}</div>`;
+      body.innerHTML = `<div style="color: var(--sbp-red);">${escapeAppHtml(data.message)}</div>`;
       return;
     }
 
@@ -409,23 +434,23 @@ async function renderResellerDashboard() {
 
     body.innerHTML = `
       <div class="referral-share-box">
-        <div style="font-size: 0.88rem; font-weight: 700; color: #fde68a;">🚀 ভাইরাল রেফারেল লিংক (প্রথম সেলে ৫০৳ বোনাস + ৩% আজীবন কমিশন)</div>
+        <div style="font-size: 0.88rem; font-weight: 700; color: #fde68a;">🛍️ পণ্য শেয়ার লিংক — সফল বিক্রিতে পণ্যভিত্তিক কমিশন</div>
         <div class="ref-link-row">
-          <input type="text" readonly value="${refLink}" class="ref-link-input" id="myRefLinkInput">
-          <button class="btn-nav" style="background: var(--sbf-amber); padding: 4px 10px;" onclick="copyReferralLink('${refLink}')">কপি</button>
+          <input type="text" readonly value="${escapeAppHtml(refLink)}" class="ref-link-input" id="myRefLinkInput">
+          <button class="btn-nav" style="background: var(--sbf-amber); padding: 4px 10px;" onclick="copyReferralLink()">কপি</button>
         </div>
-        <div style="font-size: 0.75rem; color: #a8a29e; margin-top: 6px;">রেফারেল কোড: <strong style="color: #fff;">${s.referral_code}</strong> | আপনার টিমে: <strong style="color: var(--sbp-yellow);">${s.referred_count} জন</strong></div>
+        <div style="font-size: 0.75rem; color: #a8a29e; margin-top: 6px;">আপনার শেয়ার কোড: <strong style="color: #fff;">${escapeAppHtml(s.referral_code)}</strong></div>
       </div>
       <div class="wallet-cards-grid">
-        <div class="wallet-stat-card"><div class="wallet-stat-title">উত্তোলনযোগ্য ব্যালেন্স</div><div class="wallet-stat-amount green">${s.available_balance} ৳</div></div>
-        <div class="wallet-stat-card"><div class="wallet-stat-title">পেন্ডিং কমিশন</div><div class="wallet-stat-amount">${s.pending_commission} ৳</div></div>
-        <div class="wallet-stat-card"><div class="wallet-stat-title">মোট অর্জিত আয়</div><div class="wallet-stat-amount">${s.total_earned} ৳</div></div>
-        <div class="wallet-stat-card"><div class="wallet-stat-title">মোট ক্যাশআউট সম্পন্ন</div><div class="wallet-stat-amount">${s.total_withdrawn} ৳</div></div>
+        <div class="wallet-stat-card"><div class="wallet-stat-title">উত্তোলনযোগ্য ব্যালেন্স</div><div class="wallet-stat-amount green">${escapeAppHtml(s.available_balance)} ৳</div></div>
+        <div class="wallet-stat-card"><div class="wallet-stat-title">পেন্ডিং কমিশন</div><div class="wallet-stat-amount">${escapeAppHtml(s.pending_commission)} ৳</div></div>
+        <div class="wallet-stat-card"><div class="wallet-stat-title">মোট অর্জিত আয়</div><div class="wallet-stat-amount">${escapeAppHtml(s.total_earned)} ৳</div></div>
+        <div class="wallet-stat-card"><div class="wallet-stat-title">মোট ক্যাশআউট সম্পন্ন</div><div class="wallet-stat-amount">${escapeAppHtml(s.total_withdrawn)} ৳</div></div>
       </div>
       <div style="background: #292524; padding: 14px; border-radius: var(--radius-sm); margin-bottom: 14px;">
         <h4 style="font-size: 0.95rem; color: #fff; margin-bottom: 8px;">💸 বিকাশ / নগদ / রকেট ক্যাশআউট</h4>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
-          <div><label class="form-label" style="font-size: 0.75rem;">টাকার পরিমাণ (মিনিমাম ${s.min_cashout}৳)</label><input type="number" id="payoutAmount" class="form-control" placeholder="যেমন: 500"></div>
+          <div><label class="form-label" style="font-size: 0.75rem;">টাকার পরিমাণ (মিনিমাম ${escapeAppHtml(s.min_cashout)}৳)</label><input type="number" id="payoutAmount" class="form-control" placeholder="যেমন: 500"></div>
           <div><label class="form-label" style="font-size: 0.75rem;">পেমেন্ট মেথড</label><select id="payoutMethod" class="form-control"><option value="bkash">bKash (বিকাশ)</option><option value="nagad">Nagad (নগদ)</option><option value="rocket">Rocket (রকেট)</option></select></div>
         </div>
         <div class="form-group"><label class="form-label" style="font-size: 0.75rem;">অ্যাকাউন্ট মোবাইল নম্বর</label><input type="tel" id="payoutAccount" class="form-control" placeholder="01XXXXXXXXX"></div>
@@ -434,7 +459,6 @@ async function renderResellerDashboard() {
 
       <div style="display: flex; gap: 6px; flex-wrap: wrap; justify-content: space-between; align-items: center; margin-top: 10px;">
         <button class="btn-nav" style="padding: 6px 10px; font-size: 0.8rem;" onclick="showMyOrders()">📦 সেলস ও অর্ডার</button>
-        <button class="btn-nav" style="padding: 6px 10px; font-size: 0.8rem;" onclick="showDownlineTeam()">👥 ডাউনলাইন টিম</button>
         <button class="btn-nav" style="padding: 6px 10px; font-size: 0.8rem;" onclick="showResellerNotifications()">🔔 নোটিশ <span id="resellerNotifBadge" class="badge" style="display:none; position:static; margin-left:2px; font-size:0.7rem;">0</span></button>
         <button class="btn-nav" style="padding: 6px 10px; font-size: 0.8rem;" onclick="showChangePasswordForm()">🔑 পাসওয়ার্ড</button>
         <button class="btn-nav" style="padding: 6px 10px; font-size: 0.8rem; color: var(--sbp-red);" onclick="resellerLogout()">লগআউট</button>
@@ -451,8 +475,10 @@ async function renderResellerDashboard() {
   }
 }
 
-function copyReferralLink(link) {
-  navigator.clipboard.writeText(link);
+function copyReferralLink() {
+  const linkInput = document.getElementById('myRefLinkInput');
+  if (!linkInput) return;
+  navigator.clipboard.writeText(linkInput.value);
   showToast('✅ রেফারেল লিংক কপি হয়েছে!');
 }
 
@@ -506,16 +532,16 @@ async function showMyOrders() {
       ${data.orders.map((o) => `
         <div style="background: #1c1917; border: 1px solid var(--sbf-border); padding: 8px 10px; border-radius: var(--radius-sm); margin-bottom: 6px; font-size: 0.8rem;">
           <div style="display: flex; justify-content: space-between;">
-            <strong>#${o.order_number}</strong>
+            <strong>#${escapeAppHtml(o.order_number)}</strong>
             <span style="color: ${o.status === 'delivered' ? '#10b981' : '#f59e0b'}; font-weight: 700;">
-              ${getStatusInBangla(o.status)}
+              ${escapeAppHtml(getStatusInBangla(o.status))}
             </span>
           </div>
-          <div style="color: var(--sbf-text-muted);">ক্রেতা: ${o.customer_name} (${o.customer_phone})</div>
-          ${(o.items && o.items.length) ? `<div style="font-size: 0.74rem; color: #a8a29e; margin-top: 2px;">পণ্য: ${o.items.map(it => it.title + ' × ' + it.quantity).join(', ')}</div>` : ''}
+          <div style="color: var(--sbf-text-muted);">ক্রেতা: ${escapeAppHtml(o.customer_name)} (${escapeAppHtml(o.customer_phone)})</div>
+          ${(o.items && o.items.length) ? `<div style="font-size: 0.74rem; color: #a8a29e; margin-top: 2px;">পণ্য: ${o.items.map(it => `${escapeAppHtml(it.title)} × ${escapeAppHtml(it.quantity)}`).join(', ')}</div>` : ''}
           <div style="display: flex; justify-content: space-between; margin-top: 4px;">
-            <span>মোট: ${o.total_amount}৳</span>
-            <span style="color: #10b981; font-weight: 700;">কমিশন: ${o.reseller_commission || 0}৳</span>
+            <span>মোট: ${escapeAppHtml(o.total_amount)}৳</span>
+            <span style="color: #10b981; font-weight: 700;">কমিশন: ${escapeAppHtml(o.reseller_commission || 0)}৳</span>
           </div>
         </div>
       `).join('')}
@@ -523,38 +549,6 @@ async function showMyOrders() {
   } catch (err) {
     console.error(err);
     subContent.innerHTML = '<div style="color: var(--sbp-red); font-size: 0.85rem;">লোড ব্যর্থ হয়েছে</div>';
-  }
-}
-
-async function showDownlineTeam() {
-  const subContent = document.getElementById('resellerSubContent');
-  subContent.innerHTML = '<div style="text-align: center; font-size: 0.85rem;"><span class="spinner"></span> টিম মেম্বার লোড হচ্ছে...</div>';
-  try {
-    const res = await fetch(api('/api/wallet/downline'), {
-      headers: { Authorization: `Bearer ${authToken}` }
-    });
-    const data = await res.json();
-    if (!data.success || !data.team || data.team.length === 0) {
-      subContent.innerHTML = '<div style="text-align: center; color: var(--sbf-text-muted); font-size: 0.85rem; padding: 12px;">আপনার টিমে এখনও কোনো সদস্য যুক্ত হয়নি। রেফারেল লিংক শেয়ার করে টিম তৈরি করুন!</div>';
-      return;
-    }
-    subContent.innerHTML = `
-      <h4 style="font-size: 0.9rem; color: #fff; margin-bottom: 8px;">আপনার টিম মেম্বার (${data.count} জন):</h4>
-      ${data.team.map((m) => `
-        <div style="background: #1c1917; border: 1px solid var(--sbf-border); padding: 8px 10px; border-radius: var(--radius-sm); margin-bottom: 6px; font-size: 0.8rem;">
-          <div style="display: flex; justify-content: space-between;">
-            <strong>${m.name}</strong>
-            <span style="color: var(--sbp-yellow); font-weight: 700;">${m.delivered_orders_count}টি সেল</span>
-          </div>
-          <div style="color: var(--sbf-text-muted); display: flex; justify-content: space-between; margin-top: 2px;">
-            <span>ফোন: ${m.masked_phone}</span>
-            <span>ভলিউম: ${m.total_sales_volume}৳</span>
-          </div>
-        </div>
-      `).join('')}
-    `;
-  } catch (err) {
-    subContent.innerHTML = '<div style="color: var(--sbp-red); font-size: 0.85rem;">টিম লোড ব্যর্থ হয়েছে</div>';
   }
 }
 
@@ -568,7 +562,7 @@ function showChangePasswordForm() {
         <input type="password" id="oldPassInput" class="form-control" placeholder="পুরাতন পাসওয়ার্ড দিন">
       </div>
       <div class="form-group" style="margin-bottom: 8px;">
-        <label class="form-label" style="font-size: 0.75rem;">নতুন পাসওয়ার্ড (ন্যূনতম ৬ অক্ষর) *</label>
+        <label class="form-label" style="font-size: 0.75rem;">নতুন পাসওয়ার্ড (৮ থেকে ৭২ বাইট) *</label>
         <input type="password" id="newPassInput" class="form-control" placeholder="নতুন পাসওয়ার্ড দিন">
       </div>
       <button class="btn-submit" style="padding: 8px;" onclick="submitChangePassword()">পাসওয়ার্ড পরিবর্তন করুন</button>
@@ -580,7 +574,8 @@ async function submitChangePassword() {
   const old_password = document.getElementById('oldPassInput').value;
   const new_password = document.getElementById('newPassInput').value;
   if (!old_password || !new_password) return alert('সকল ফিল্ড পূরণ করুন');
-  if (new_password.length < 6) return alert('নতুন পাসওয়ার্ড অন্তত ৬ অক্ষরের হতে হবে');
+  const newPasswordBytes = new TextEncoder().encode(new_password).length;
+  if (newPasswordBytes < 8 || newPasswordBytes > 72) return alert('নতুন পাসওয়ার্ড ৮ থেকে ৭২ বাইটের মধ্যে হতে হবে');
 
   try {
     const res = await fetch(api('/api/auth/change-password'), {
@@ -632,8 +627,8 @@ async function showResellerNotifications() {
       </div>
       ${data.notifications.map((n) => `
         <div style="background: ${n.is_read ? '#1c1917' : 'rgba(180, 83, 9, 0.15)'}; border: 1px solid ${n.is_read ? 'var(--sbf-border)' : 'var(--sbf-amber)'}; padding: 8px 10px; border-radius: var(--radius-sm); margin-bottom: 6px; font-size: 0.8rem; cursor: pointer;" onclick="markNotificationRead(${n.id}, this)">
-          <div style="display: flex; justify-content: space-between;"><strong style="color: ${n.is_read ? '#d6d3d1' : '#fde68a'};">${n.title}</strong><span style="font-size: 0.7rem; color: #a8a29e;">${new Date(n.created_at).toLocaleDateString('bn-BD')}</span></div>
-          <div style="color: ${n.is_read ? 'var(--sbf-text-muted)' : '#fff'}; margin-top: 3px; font-size: 0.76rem;">${n.message}</div>
+          <div style="display: flex; justify-content: space-between;"><strong style="color: ${n.is_read ? '#d6d3d1' : '#fde68a'};">${escapeAppHtml(n.title)}</strong><span style="font-size: 0.7rem; color: #a8a29e;">${new Date(n.created_at).toLocaleDateString('bn-BD')}</span></div>
+          <div style="color: ${n.is_read ? 'var(--sbf-text-muted)' : '#fff'}; margin-top: 3px; font-size: 0.76rem;">${escapeAppHtml(n.message)}</div>
         </div>
       `).join('')}
     `;
@@ -665,25 +660,31 @@ function updateNotificationBadge(count) {
   }
 }
 
-async function loadCustomerOrderHistory(phone) {
-  const qPhone = phone || (document.getElementById('trackOrderInput') ? document.getElementById('trackOrderInput').value.trim() : '');
-  if (!qPhone || qPhone.length < 11) return alert('সঠিক ১১ ডিজিটের মোবাইল নম্বর দিন');
+async function loadCustomerOrderHistory() {
   const resultDiv = document.getElementById('trackOrderResult');
+  if (!authToken) {
+    resultDiv.innerHTML = '<div style="text-align:center; padding:14px;">নিজের অর্ডার ইতিহাস দেখতে আগে লগইন করুন।</div>';
+    closeModal('trackModal');
+    openResellerModal();
+    return;
+  }
   resultDiv.innerHTML = '<div style="text-align: center;"><span class="spinner"></span> আপনার সকল অর্ডার লোড হচ্ছে...</div>';
   try {
-    const res = await fetch(api(`/api/orders/my-orders?phone=${encodeURIComponent(qPhone)}`));
+    const res = await fetch(api('/api/orders/my-orders'), {
+      headers: { Authorization: `Bearer ${authToken}` }
+    });
     const data = await res.json();
     if (!data.success || !data.orders || data.orders.length === 0) {
-      resultDiv.innerHTML = `<div style="color: var(--sbf-text-muted); text-align: center; padding: 14px;">এই নম্বরে কোনো পূর্ববর্তী অর্ডার নেই।</div>`;
+      resultDiv.innerHTML = '<div style="color: var(--sbf-text-muted); text-align: center; padding: 14px;">আপনার কোনো পূর্ববর্তী অর্ডার নেই।</div>';
       return;
     }
     window._lastTrackOrders = data.orders;
     resultDiv.innerHTML = `
-      <div style="font-size: 0.88rem; color: #fff; margin-bottom: 8px;">আপনার নম্বরে মোট ${data.orders.length}টি অর্ডার পাওয়া গেছে:</div>
+      <div style="font-size: 0.88rem; color: #fff; margin-bottom: 8px;">আপনার মোট ${data.orders.length}টি অর্ডার পাওয়া গেছে:</div>
       ${data.orders.map((o) => `
         <div style="background: #292524; padding: 10px; border-radius: var(--radius-sm); border: 1px solid var(--sbf-border); margin-bottom: 8px; cursor: pointer;" onclick="renderSingleOrderTrackingFromData(${o.id})">
-          <div style="display: flex; justify-content: space-between;"><strong>#${o.order_number}</strong><span style="color: ${getStatusBadgeBg(o.status)}; font-weight: 700; font-size: 0.8rem;">${getStatusInBangla(o.status)}</span></div>
-          <div style="font-size: 0.78rem; color: var(--sbf-text-muted); margin-top: 4px;">মোট: ${o.total_amount}৳ • তারিখ: ${new Date(o.created_at).toLocaleDateString('bn-BD')}</div>
+          <div style="display: flex; justify-content: space-between;"><strong>#${escapeAppHtml(o.order_number)}</strong><span style="color: ${getStatusBadgeBg(o.status)}; font-weight: 700; font-size: 0.8rem;">${escapeAppHtml(getStatusInBangla(o.status))}</span></div>
+          <div style="font-size: 0.78rem; color: var(--sbf-text-muted); margin-top: 4px;">মোট: ${escapeAppHtml(o.total_amount)}৳ • তারিখ: ${new Date(o.created_at).toLocaleDateString('bn-BD')}</div>
         </div>
       `).join('')}
     `;
@@ -698,43 +699,35 @@ function openTrackModal() {
 }
 
 async function trackOrder() {
-  const num = document.getElementById('trackOrderInput').value.trim();
-  if (!num) return alert('অর্ডার নম্বর অথবা মোবাইল নম্বর লিখুন');
-  trackSpecificOrder(num);
+  const orderNumber = document.getElementById('trackOrderInput').value.trim();
+  const phone = document.getElementById('trackCustomerPhone').value.trim();
+  if (!orderNumber) return alert('অর্ডার নম্বর লিখুন');
+  if (!phone) return alert('অর্ডারের সময় দেওয়া মোবাইল নম্বর লিখুন');
+  trackSpecificOrder(orderNumber, phone);
 }
 
-async function trackSpecificOrder(queryInput) {
+async function trackSpecificOrder(orderNumber, customerPhone = '') {
   openModal('trackModal');
-  document.getElementById('trackOrderInput').value = queryInput;
+  document.getElementById('trackOrderInput').value = orderNumber;
+  const phoneInput = document.getElementById('trackCustomerPhone');
+  const phone = customerPhone || (phoneInput ? phoneInput.value.trim() : '');
+  if (phoneInput && customerPhone) phoneInput.value = customerPhone;
   const resultDiv = document.getElementById('trackOrderResult');
   resultDiv.innerHTML = '<div style="text-align: center; color: var(--sbf-text-muted);"><span class="spinner"></span> অর্ডার খোঁজ করা হচ্ছে...</div>';
 
   try {
-    const res = await fetch(api(`/api/orders/track/search?query=${encodeURIComponent(queryInput)}`));
+    const res = await fetch(api('/api/orders/track'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ order_number: orderNumber, phone })
+    });
     const data = await res.json();
 
-    if (!data.success || !data.orders || data.orders.length === 0) {
-      resultDiv.innerHTML = `<div style="color: var(--sbp-red); text-align: center;">${data.message || 'কোনো অর্ডার খুঁজে পাওয়া যায়নি'}</div>`;
+    if (!data.success || !data.order) {
+      resultDiv.innerHTML = `<div style="color: var(--sbp-red); text-align: center;">${escapeAppHtml(data.message || 'কোনো অর্ডার খুঁজে পাওয়া যায়নি')}</div>`;
       return;
     }
-
-    if (data.orders.length === 1) {
-      renderSingleOrderTracking(data.orders[0], resultDiv);
-    } else {
-      window._lastTrackOrders = data.orders;
-      resultDiv.innerHTML = `
-        <div style="font-size: 0.88rem; color: #fff; margin-bottom: 8px;">আপনার নম্বরে ${data.orders.length}টি অর্ডার পাওয়া গেছে:</div>
-        ${data.orders.map((o) => `
-          <div style="background: #292524; padding: 10px; border-radius: var(--radius-sm); border: 1px solid var(--sbf-border); margin-bottom: 8px; cursor: pointer;" onclick="renderSingleOrderTrackingFromData(${o.id})">
-            <div style="display: flex; justify-content: space-between;">
-              <strong>#${o.order_number}</strong>
-              <span style="color: ${getStatusBadgeBg(o.status)}; font-weight: 700; font-size: 0.8rem;">${getStatusInBangla(o.status)}</span>
-            </div>
-            <div style="font-size: 0.78rem; color: var(--sbf-text-muted); margin-top: 4px;">মোট: ${o.total_amount}৳ • তারিখ: ${new Date(o.created_at).toLocaleDateString('bn-BD')}</div>
-          </div>
-        `).join('')}
-      `;
-    }
+    renderSingleOrderTracking(data.order, resultDiv);
   } catch (err) {
     console.error(err);
     resultDiv.innerHTML = '<div style="color: var(--sbp-red); text-align: center;">অর্ডার ট্র্যাকিং ব্যর্থ হয়েছে।</div>';
@@ -753,24 +746,24 @@ function renderSingleOrderTracking(o, container) {
   container.innerHTML = `
     <div style="background: #292524; padding: 14px; border-radius: var(--radius-sm); border: 1px solid var(--sbf-border);">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-        <h4 style="color: #fff;">অর্ডার #${o.order_number}</h4>
+        <h4 style="color: #fff;">অর্ডার #${escapeAppHtml(o.order_number)}</h4>
         <span style="background: ${getStatusBadgeBg(o.status)}; color: #fff; padding: 3px 10px; border-radius: 20px; font-size: 0.78rem; font-weight: 700;">
-          ${getStatusInBangla(o.status)}
+          ${escapeAppHtml(getStatusInBangla(o.status))}
         </span>
       </div>
       <div style="font-size: 0.85rem; line-height: 1.6; color: #d6d3d1;">
-        <div><strong>গ্রাহকের নাম:</strong> ${o.customer_name}</div>
-        <div><strong>মোবাইল:</strong> ${o.customer_phone}</div>
-        <div><strong>ঠিকানা:</strong> ${o.delivery_address} (${o.delivery_city === 'inside_dhaka' ? 'ঢাকা ভেতরে' : 'ঢাকা বাইরে'})</div>
-        <div><strong>সর্বমোট:</strong> ${o.total_amount} ৳ (অগ্রিম: ${o.advance_paid} ৳)</div>
-        ${o.advance_trx_id ? `<div><strong>অগ্রিম TrxID:</strong> ${o.advance_trx_id}</div>` : ''}
+        <div><strong>গ্রাহকের নাম:</strong> ${escapeAppHtml(o.customer_name)}</div>
+        <div><strong>মোবাইল:</strong> ${escapeAppHtml(o.customer_phone)}</div>
+        <div><strong>ঠিকানা:</strong> ${escapeAppHtml(o.delivery_address)} (${o.delivery_city === 'inside_dhaka' ? 'ঢাকা ভেতরে' : 'ঢাকা বাইরে'})</div>
+        <div><strong>সর্বমোট:</strong> ${escapeAppHtml(o.total_amount)} ৳ (অগ্রিম: ${escapeAppHtml(o.advance_paid)} ৳)</div>
+        ${o.advance_trx_id ? `<div><strong>অগ্রিম TrxID:</strong> ${escapeAppHtml(o.advance_trx_id)}</div>` : ''}
       </div>
       <div style="margin-top: 12px; border-top: 1px solid var(--sbf-border); padding-top: 8px;">
         <strong style="font-size: 0.82rem; color: #fff;">পণ্যসমূহ:</strong>
         ${(o.items || []).map((it) => `
           <div style="font-size: 0.8rem; color: var(--sbf-text-muted); display: flex; justify-content: space-between; margin-top: 4px;">
-            <span>${it.title} × ${it.quantity}</span>
-            <span>${it.total_price} ৳</span>
+            <span>${escapeAppHtml(it.title)} × ${escapeAppHtml(it.quantity)}</span>
+            <span>${escapeAppHtml(it.total_price)} ৳</span>
           </div>
         `).join('')}
       </div>

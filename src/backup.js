@@ -3,19 +3,38 @@ const path = require('path');
 const config = require('./config');
 const { db } = require('./db');
 
-const BACKUP_DIR = path.join(__dirname, '..', 'data', 'backups');
+const BACKUP_DIR = process.env.BACKUP_DIR || path.join(path.dirname(config.DATABASE_FILE), 'backups');
 const MAX_BACKUPS_TO_KEEP = 30;
+let activeBackup = null;
+
+function secureBackupDirectory() {
+  fs.mkdirSync(BACKUP_DIR, { recursive: true, mode: 0o700 });
+  if (process.platform === 'win32') return;
+
+  fs.chmodSync(BACKUP_DIR, 0o700);
+  for (const entry of fs.readdirSync(BACKUP_DIR, { withFileTypes: true })) {
+    if (!entry.isFile() || !entry.name.endsWith('.sqlite')) continue;
+    fs.chmodSync(path.join(BACKUP_DIR, entry.name), 0o600);
+  }
+}
 
 /**
  * Creates an atomic SQLite snapshot using VACUUM INTO.
  * Safe to run while the server is accepting live traffic.
  */
 function performBackup() {
+  if (activeBackup) return activeBackup;
+
+  activeBackup = createBackup().finally(() => {
+    activeBackup = null;
+  });
+  return activeBackup;
+}
+
+function createBackup() {
   return new Promise((resolve, reject) => {
     try {
-      if (!fs.existsSync(BACKUP_DIR)) {
-        fs.mkdirSync(BACKUP_DIR, { recursive: true });
-      }
+      secureBackupDirectory();
 
       const now = new Date();
       const pad = (n) => String(n).padStart(2, '0');
@@ -34,6 +53,7 @@ function performBackup() {
           return reject(err);
         }
 
+        if (process.platform !== 'win32') fs.chmodSync(targetFilePath, 0o600);
         const stats = fs.statSync(targetFilePath);
         console.log(`✅ Database Backup Created Successfully:`);
         console.log(`   📁 File: ${targetFilePath}`);

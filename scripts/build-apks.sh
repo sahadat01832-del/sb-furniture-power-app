@@ -10,7 +10,38 @@ set -e
 
 TARGET="${1:-all}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+BUILT_TARGETS=""
+CAP_CONFIG_SWITCHED_BY_SCRIPT=0
 cd "$ROOT_DIR"
+
+require_release_signing_credentials() {
+    local variable_name
+    for variable_name in ANDROID_KEYSTORE_PATH ANDROID_KEYSTORE_ALIAS ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_PASSWORD; do
+        if [ -z "${!variable_name:-}" ]; then
+            echo "❌ Set $variable_name in .env before building a release APK." >&2
+            return 1
+        fi
+    done
+    if [ ! -f "$ANDROID_KEYSTORE_PATH" ]; then
+        echo "❌ The configured external Android release keystore was not found." >&2
+        return 1
+    fi
+    case "$ANDROID_KEYSTORE_PATH" in
+        /*) ;;
+        *)
+            echo "❌ ANDROID_KEYSTORE_PATH must be an absolute path outside the project." >&2
+            return 1
+            ;;
+    esac
+    case "$ANDROID_KEYSTORE_PATH" in
+        "$ROOT_DIR"/*)
+            echo "❌ Keep the Android release keystore outside the project directory." >&2
+            return 1
+            ;;
+    esac
+}
+
+require_release_signing_credentials || exit 1
 
 echo "=========================================================="
 echo "📱 SB Furniture & SB POWER — Dual APK Build System"
@@ -48,20 +79,36 @@ fi
 # Step 1: Sync and prepare public-admin assets
 prepare_admin_web_assets() {
     echo "1. Preparing web assets for Admin APK (public-admin/)..."
-    mkdir -p public-admin/css public-admin/js public-admin/icons
-    cp -r public/css/* public-admin/css/ 2>/dev/null || true
-    cp -r public/js/* public-admin/js/ 2>/dev/null || true
-    cp -r public/icons/* public-admin/icons/ 2>/dev/null || true
-    cp public/admin.html public-admin/index.html
-    cp public/manifest-admin.json public-admin/manifest.json 2>/dev/null || true
+    sync_admin_file() {
+        local source_file="$1"
+        local target_file="$2"
+        if [ -n "$(git status --porcelain -- "$target_file")" ]; then
+            echo "ℹ️ Preserving local admin asset: $target_file"
+            return 0
+        fi
+        mkdir -p "$(dirname "$target_file")"
+        if [ "$target_file" = "public-admin/index.html" ]; then
+            sed 's|href="/manifest-admin.json"|href="/manifest.json"|' "$source_file" > "$target_file"
+        else
+            cp "$source_file" "$target_file"
+        fi
+    }
+
+    while IFS= read -r -d '' source_file; do
+        target_file="public-admin/${source_file#public/}"
+        sync_admin_file "$source_file" "$target_file"
+    done < <(find public/css public/js public/icons -type f -print0)
+    sync_admin_file public/admin.html public-admin/index.html
+    if [ -f public/manifest-admin.json ]; then
+        sync_admin_file public/manifest-admin.json public-admin/manifest.json
+    fi
 }
 
 # Step 2: Ensure Capacitor CLI is available
 ensure_capacitor() {
-    if ! npx cap --version &> /dev/null; then
-        echo "📦 Installing @capacitor/core, @capacitor/cli, @capacitor/android..."
-        npm install --save @capacitor/core
-        npm install --save-dev @capacitor/cli @capacitor/android
+    if [ ! -x "node_modules/.bin/cap" ]; then
+        echo "❌ Capacitor dependencies are missing. Run npm install before building APKs." >&2
+        return 1
     fi
 }
 
@@ -81,7 +128,10 @@ activate_target_dir() {
 
         if [ -n "$current" ] && [ "$current" != "$target_type" ]; then
             echo "📦 Stashing active $current Android project to android-$current..."
-            rm -rf "android-$current"
+            if [ -e "android-$current" ]; then
+                echo "❌ android-$current already exists. Move or review it before switching targets." >&2
+                return 1
+            fi
             mv android "android-$current"
         fi
     fi
@@ -89,6 +139,16 @@ activate_target_dir() {
     if [ ! -d "android" ] && [ -d "android-$target_type" ]; then
         echo "📂 Restoring previously configured $target_type Android project..."
         mv "android-$target_type" android
+    fi
+}
+
+check_config_is_safe_to_switch() {
+    if [ "$CAP_CONFIG_SWITCHED_BY_SCRIPT" -eq 1 ]; then
+        return 0
+    fi
+    if ! git diff --quiet -- capacitor.config.json || ! git diff --cached --quiet -- capacitor.config.json; then
+        echo "❌ capacitor.config.json has local changes. Review them before switching APK targets." >&2
+        return 1
     fi
 }
 
@@ -123,12 +183,17 @@ build_client() {
     echo "   Web Dir:  public (entry: index.html)"
     echo "=========================================================="
 
+    check_config_is_safe_to_switch
     activate_target_dir "client"
     cp capacitor.client.json capacitor.config.json
+    CAP_CONFIG_SWITCHED_BY_SCRIPT=1
 
-    if [ ! -d "android" ] || [ ! -f "android/app/build.gradle" ]; then
+    if [ -d "android" ] && [ ! -f "android/app/build.gradle" ]; then
+        echo "❌ android/ exists but is incomplete. Review it before replacing or recreating it." >&2
+        return 1
+    fi
+    if [ ! -d "android" ]; then
         echo "⚙️ Initializing Android platform for Client app..."
-        rm -rf android
         npx cap add android
     fi
     echo "client" > android/.sb_target
@@ -142,13 +207,15 @@ build_client() {
         (cd android && ./gradlew clean assembleRelease)
         if [ -f "android/app/build/outputs/apk/release/app-release.apk" ]; then
             cp android/app/build/outputs/apk/release/app-release.apk dist-apk/sb-power-reseller.apk
+            BUILT_TARGETS="$BUILT_TARGETS client"
             echo "🎉 Client Release APK compiled: dist-apk/sb-power-reseller.apk"
         elif [ -f "android/app/build/outputs/apk/release/app-release-unsigned.apk" ]; then
             cp android/app/build/outputs/apk/release/app-release-unsigned.apk dist-apk/sb-power-reseller.apk
+            BUILT_TARGETS="$BUILT_TARGETS client"
             echo "🎉 Client Release APK copied: dist-apk/sb-power-reseller.apk"
-        elif [ -f "android/app/build/outputs/apk/debug/app-debug.apk" ]; then
-            cp android/app/build/outputs/apk/debug/app-debug.apk dist-apk/sb-power-reseller.apk
-            echo "⚠️ Fallback: Client Debug APK copied: dist-apk/sb-power-reseller.apk"
+        else
+            echo "❌ Gradle did not produce a release APK for the client app." >&2
+            return 1
         fi
     else
         echo "ℹ️ Android SDK not configured in this terminal. Client Android project is generated & synced!"
@@ -168,13 +235,18 @@ build_admin() {
     echo "   Web Dir:  public-admin (entry: index.html -> admin.html)"
     echo "=========================================================="
 
+    check_config_is_safe_to_switch
     prepare_admin_web_assets
     activate_target_dir "admin"
     cp capacitor.admin.json capacitor.config.json
+    CAP_CONFIG_SWITCHED_BY_SCRIPT=1
 
-    if [ ! -d "android" ] || [ ! -f "android/app/build.gradle" ]; then
+    if [ -d "android" ] && [ ! -f "android/app/build.gradle" ]; then
+        echo "❌ android/ exists but is incomplete. Review it before replacing or recreating it." >&2
+        return 1
+    fi
+    if [ ! -d "android" ]; then
         echo "⚙️ Initializing Android platform for Admin app..."
-        rm -rf android
         npx cap add android
     fi
     echo "admin" > android/.sb_target
@@ -188,13 +260,15 @@ build_admin() {
         (cd android && ./gradlew clean assembleRelease)
         if [ -f "android/app/build/outputs/apk/release/app-release.apk" ]; then
             cp android/app/build/outputs/apk/release/app-release.apk dist-apk/sb-power-admin.apk
+            BUILT_TARGETS="$BUILT_TARGETS admin"
             echo "🎉 Admin Release APK compiled: dist-apk/sb-power-admin.apk"
         elif [ -f "android/app/build/outputs/apk/release/app-release-unsigned.apk" ]; then
             cp android/app/build/outputs/apk/release/app-release-unsigned.apk dist-apk/sb-power-admin.apk
+            BUILT_TARGETS="$BUILT_TARGETS admin"
             echo "🎉 Admin Release APK copied: dist-apk/sb-power-admin.apk"
-        elif [ -f "android/app/build/outputs/apk/debug/app-debug.apk" ]; then
-            cp android/app/build/outputs/apk/debug/app-debug.apk dist-apk/sb-power-admin.apk
-            echo "⚠️ Fallback: Admin Debug APK copied: dist-apk/sb-power-admin.apk"
+        else
+            echo "❌ Gradle did not produce a release APK for the admin app." >&2
+            return 1
         fi
     else
         echo "ℹ️ Android SDK not configured in this terminal. Admin Android project is generated & synced!"
@@ -205,7 +279,6 @@ build_admin() {
 }
 
 ensure_capacitor
-prepare_admin_web_assets
 
 case "$TARGET" in
     client)
@@ -225,13 +298,21 @@ case "$TARGET" in
 esac
 
 if [ -f "scripts/generate_app_icons.py" ]; then
-    echo "🎨 Injecting custom brand icons and signing APKs..."
-    python3 scripts/generate_app_icons.py || true
+    echo "🎨 Generating custom brand icons..."
+    if [ -n "$BUILT_TARGETS" ]; then
+        python3 scripts/generate_app_icons.py $BUILT_TARGETS
+    else
+        python3 scripts/generate_app_icons.py
+    fi
 fi
 
 echo ""
 echo "=========================================================="
-echo "🎉 APK Build & Configuration Complete!"
+if [ -n "$BUILT_TARGETS" ]; then
+    echo "🎉 APK Build & Signing Complete!"
+else
+    echo "✅ Android project configuration complete. No new APK was built because the Android SDK is unavailable."
+fi
 echo "Target: $TARGET"
 echo "Client Project: com.sbfurniture.powerapp (webDir: public)"
 echo "Admin Project:  com.sbfurniture.admin   (webDir: public-admin)"

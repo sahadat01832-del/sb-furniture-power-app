@@ -5,7 +5,9 @@ const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
 const config = require('./config');
-const { initDb, get, query } = require('./db');
+const { get, query } = require('./db');
+const { seedData } = require('./seed');
+const { performBackup } = require('./backup');
 
 const authRoutes = require('./routes/authRoutes');
 const productRoutes = require('./routes/productRoutes');
@@ -15,6 +17,23 @@ const adminRoutes = require('./routes/adminRoutes');
 const leaderboardRoutes = require('./routes/leaderboardRoutes');
 
 const app = express();
+const DAILY_BACKUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+function startDailyBackups() {
+  const runBackup = () => {
+    performBackup().catch((error) => {
+      console.error('Scheduled database backup failed:', error.message);
+    });
+  };
+
+  runBackup();
+  const timer = setInterval(runBackup, DAILY_BACKUP_INTERVAL_MS);
+  timer.unref();
+}
+
+if (config.NODE_ENV === 'production') {
+  app.set('trust proxy', 1);
+}
 
 // Security Middlewares
 app.use(
@@ -23,17 +42,47 @@ app.use(
     crossOriginEmbedderPolicy: false
   })
 );
-app.use(cors({ origin: true, credentials: true }));
+const allowedCorsOrigins = new Set(config.CORS_ORIGINS);
+app.use(cors({
+  origin(origin, callback) {
+    callback(null, Boolean(origin && allowedCorsOrigins.has(origin)));
+  },
+  credentials: true,
+  optionsSuccessStatus: 204
+}));
 app.use(cookieParser());
-app.use(express.json({ limit: '5mb' }));
-app.use(express.urlencoded({ extended: true, limit: '5mb' }));
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+app.use((req, res, next) => {
+  if (req.body === undefined) req.body = {};
+  next();
+});
 
 // Rate Limiting (Protects public APIs against abuse)
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
   message: { success: false, message: 'অনেক বেশি রিকোয়েস্ট পাঠানো হয়েছে, কিছুক্ষণ পর চেষ্টা করুন।' }
 });
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'অনেকবার চেষ্টা করা হয়েছে। ১৫ মিনিট পর আবার চেষ্টা করুন।' }
+});
+const trackingLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'অনেকবার অর্ডার খোঁজা হয়েছে। কিছুক্ষণ পর আবার চেষ্টা করুন।' }
+});
+app.use('/api/auth/login', authLimiter);
+app.use('/api/auth/register', authLimiter);
+app.use('/api/orders/track', trackingLimiter);
 app.use('/api/', limiter);
 
 // Uptime & Health Check Endpoint (Commercial Readiness Rule)
@@ -50,7 +99,11 @@ app.get('/health', (req, res) => {
 app.get('/api/config', async (req, res) => {
   try {
     const activeAnns = await query("SELECT * FROM announcements WHERE is_active = 1 ORDER BY id DESC");
-    const activeAnn = activeAnns.length > 0 ? activeAnns[0] : null;
+    const latestAnnouncement = activeAnns.length > 0 ? activeAnns[0] : null;
+    const activeAnn = latestAnnouncement && !(
+      latestAnnouncement.title === '🔥 মেগা অফার: আজই প্রথম সফল অর্ডারে ৫০৳ ইনস্ট্যান্ট বোনাস! প্রতি সপ্তাহে বিকাশ ও নগদে দ্রুত ক্যাশআউট!' &&
+      latestAnnouncement.message === '🏆 চলতি মাসের শীর্ষ ৩ জন সফল রিসেলারের জন্য রয়েছে স্মার্টফোন, স্মার্টওয়াচ ও ক্যাশ প্রাইজ!'
+    ) ? latestAnnouncement : null;
     res.json({
       success: true,
       furniture: config.SB_FURNITURE,
@@ -59,8 +112,8 @@ app.get('/api/config', async (req, res) => {
       referral: config.REFERRAL,
       announcement: {
         flash_deal_active: activeAnn ? true : false,
-        headline: activeAnn ? activeAnn.title : '🔥 মেগা অফার: আজই প্রথম সফল অর্ডারে ৫০৳ ইনস্ট্যান্ট বোনাস! প্রতি সপ্তাহে বিকাশ ও নগদে দ্রুত ক্যাশআউট!',
-        subtext: activeAnn ? activeAnn.message : '🏆 চলতি মাসের শীর্ষ ৩ জন সফল রিসেলারের জন্য রয়েছে স্মার্টফোন, স্মার্টওয়াচ ও ক্যাশ প্রাইজ!'
+        headline: activeAnn ? activeAnn.title : 'পণ্য শেয়ার করুন; সফল বিক্রিতে পণ্যভিত্তিক কমিশন পান।',
+        subtext: activeAnn ? activeAnn.message : 'প্রতিটি পণ্যের কমিশন ও ডেলিভারির নিয়ম অর্ডারের আগে দেখে নিন।'
       },
       announcements: activeAnns
     });
@@ -73,8 +126,8 @@ app.get('/api/config', async (req, res) => {
       referral: config.REFERRAL,
       announcement: {
         flash_deal_active: true,
-        headline: '🔥 মেগা অফার: আজই প্রথম সফল অর্ডারে ৫০৳ ইনস্ট্যান্ট বোনাস! প্রতি সপ্তাহে বিকাশ ও নগদে দ্রুত ক্যাশআউট!',
-        subtext: '🏆 চলতি মাসের শীর্ষ ৩ জন সফল রিসেলারের জন্য রয়েছে স্মার্টফোন, স্মার্টওয়াচ ও ক্যাশ প্রাইজ!'
+        headline: 'পণ্য শেয়ার করুন; সফল বিক্রিতে পণ্যভিত্তিক কমিশন পান।',
+        subtext: 'প্রতিটি পণ্যের কমিশন ও ডেলিভারির নিয়ম অর্ডারের আগে দেখে নিন।'
       },
       announcements: []
     });
@@ -132,17 +185,19 @@ app.use((req, res, next) => {
 // Global Error Handler
 app.use((err, req, res, next) => {
   console.error('Unhandled Application Error:', err);
-  res.status(500).json({
+  const status = err.status === 413 ? 413 : (err instanceof SyntaxError && err.status === 400 && Object.prototype.hasOwnProperty.call(err, 'body') ? 400 : 500);
+  res.status(status).json({
     success: false,
-    message: 'অভ্যন্তরীণ সার্ভার ত্রুটি ঘটেছে'
+    message: status === 413 ? 'অনুরোধের তথ্য অনেক বড়' : (status === 400 ? 'অনুরোধের তথ্য সঠিক JSON নয়' : 'অভ্যন্তরীণ সার্ভার ত্রুটি ঘটেছে')
   });
 });
 
 // Start Server after DB initialization
 if (require.main === module) {
-  initDb()
+  seedData()
     .then(() => {
-      app.listen(config.PORT, () => {
+      app.listen(config.PORT, '0.0.0.0', () => {
+        if (config.NODE_ENV === 'production') startDailyBackups();
         console.log(`===============================================`);
         console.log(`🚀 SB Furniture & SB POWER Server running on port ${config.PORT}`);
         console.log(`📡 URL: http://localhost:${config.PORT}`);

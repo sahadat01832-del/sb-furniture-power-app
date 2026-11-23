@@ -2,13 +2,17 @@ const { initDb, query, run, get } = require('./db');
 const { hashPassword } = require('./auth');
 const config = require('./config');
 
-const seedData = async () => {
+const seedData = async ({ includeDemoProducts = false } = {}) => {
   console.log('--- Initializing Database & Seeding Data ---');
   await initDb();
 
   // 1. Seed Admin User
-  const existingAdmin = await get('SELECT * FROM users WHERE phone = ?', [config.ADMIN.phone]);
-  if (!existingAdmin) {
+  const existingAdmin = config.ADMIN.phone
+    ? await get('SELECT * FROM users WHERE phone = ?', [config.ADMIN.phone])
+    : null;
+  if (!config.ADMIN.phone || !config.ADMIN.password) {
+    console.log('Admin setup skipped. Configure ADMIN_PHONE and ADMIN_PASSWORD to create the first admin account.');
+  } else if (!existingAdmin) {
     const passwordHash = await hashPassword(config.ADMIN.password);
     await run(
       `INSERT INTO users (name, phone, password_hash, role, referral_code) 
@@ -19,14 +23,16 @@ const seedData = async () => {
   }
 
   // 2. Check if products already exist
-  const countRow = await get('SELECT COUNT(*) as count FROM products');
-  if (countRow.count >= 30) {
-    console.log(`Database already has ${countRow.count} products. Skipping product seed.`);
+  if (!includeDemoProducts) {
+    console.log('Demo catalog seed skipped. Add real products from the admin panel.');
     return;
   }
 
-  // Clean existing sample products to avoid duplicates during re-seeding
-  await run('DELETE FROM products');
+  const countRow = await get('SELECT COUNT(*) as count FROM products');
+  if (countRow.count > 0) {
+    console.log(`Database already has ${countRow.count} products. Preserving the existing catalog.`);
+    return;
+  }
 
   const products = [
     // ==========================================
@@ -322,14 +328,14 @@ const seedData = async () => {
     // ==========================================
     // SECTION C: SB POWER GADGETS & AUDIO
     // SBP-101 to SBP-110
-    // STRICT VERIFIED PRICES AND COLOR OPTIONS!
+    // Demo fixtures only; these are not supplier quotes or verified market prices.
     // ==========================================
     {
       title: 'এয়ারপডস প্রো ২ ব্ল্যাক এডিশন (AirPods Pro 2 Black) — Code: SBP-101',
       sku: 'SBP-101',
       brand: 'SB POWER',
       category: 'ওয়্যারলেস অডিও ও গ্যাজেটস',
-      regular_price: 500, // Strictly 500 TK verified
+      regular_price: 500, // Demo fixture value
       reseller_commission: 50,
       commission_tab: '50tk',
       image_url: 'https://images.unsplash.com/photo-1590658268037-6bf12165a8df?auto=format&fit=crop&w=800&q=80',
@@ -343,7 +349,7 @@ const seedData = async () => {
       sku: 'SBP-102',
       brand: 'SB POWER',
       category: 'ওয়্যারলেস অডিও ও গ্যাজেটস',
-      regular_price: 450, // Strictly 450 TK verified
+      regular_price: 450, // Demo fixture value
       reseller_commission: 50,
       commission_tab: '50tk',
       image_url: 'https://images.unsplash.com/photo-1600294037681-c80b4cb5b434?auto=format&fit=crop&w=800&q=80',
@@ -357,7 +363,7 @@ const seedData = async () => {
       sku: 'SBP-103',
       brand: 'SB POWER',
       category: 'ওয়্যারলেস অডিও ও গ্যাজেটস',
-      regular_price: 420, // Strictly 420 TK verified
+      regular_price: 420, // Demo fixture value
       reseller_commission: 50,
       commission_tab: '50tk',
       image_url: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=crop&w=800&q=80',
@@ -468,7 +474,7 @@ const seedData = async () => {
 
   for (const item of products) {
     await run(
-      `INSERT INTO products (
+      `INSERT OR IGNORE INTO products (
         title, sku, brand, category, regular_price, reseller_commission, commission_tab,
         image_url, description, materials, finish, stock, is_active
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
@@ -489,7 +495,8 @@ const seedData = async () => {
     );
   }
 
-  console.log(`Successfully seeded ${products.length} products across 3 sections.`);
+  const seededCount = await get('SELECT COUNT(*) as count FROM products');
+  console.log(`Successfully seeded ${seededCount.count} starter products across 3 sections.`);
 };
 
 if (require.main === module) {

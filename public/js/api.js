@@ -76,5 +76,25 @@
     }
   };
 
+  window.sbEscapeHtml = function (value) {
+    return String(value == null ? '' : value).replace(/[&<>"']/g, (character) => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;'
+    })[character]);
+  };
+
+  window.sbSafeImageUrl = function (value) {
+    try {
+      const parsed = new URL(String(value || ''), window.location.origin);
+      if (parsed.protocol === 'https:' || parsed.origin === window.location.origin) {
+        return parsed.href;
+      }
+    } catch (e) {}
+    return '/icons/icon-512.png';
+  };
+
   window.apiUrl = apiUrl;
 })(window);
