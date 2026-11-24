@@ -55,10 +55,10 @@ async function openLeaderboardModal() {
         <tr class="${index < 3 ? 'top-leader-row' : ''}">
           <td style="text-align: center;"><span class="rank-circle ${rankBadgeClass}">${rankIcon}</span></td>
           <td>
-            <div style="font-weight: 700; color: #fff;">${escapeLeaderboardHtml(l.name)}</div>
-            <div style="font-size: 0.75rem; color: var(--sbf-text-muted);">${escapeLeaderboardHtml(l.city || l.phone || '')}</div>
+            <div style="font-weight: 700; color: var(--text-primary);">${escapeLeaderboardHtml(l.name)}</div>
+            <div style="font-size: 0.75rem; color: var(--text-muted);">${escapeLeaderboardHtml(l.city || l.phone || '')}</div>
           </td>
-          <td style="text-align: center; font-weight: 700; color: var(--sbp-yellow);">
+          <td style="text-align: center; font-weight: 700; color: var(--brand-primary-hv);">
             ${escapeLeaderboardHtml(l.total_sales)} টি সেল
           </td>
           <td style="text-align: right;">
@@ -75,15 +75,15 @@ async function openLeaderboardModal() {
       </div>
 
       <div style="margin-top: 20px;">
-        <h4 style="color: #fff; font-size: 1rem; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between;">
+        <h4 style="color: var(--text-primary); font-size: 1rem; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between;">
           <span>📊 শীর্ষ রিসেলারদের লাইভ তালিকা</span>
-          <span style="font-size: 0.75rem; color: #10b981;">● লাইভ আপডেট</span>
+          <span style="font-size: 0.75rem; color: var(--brand-success); font-weight: 700;">● লাইভ আপডেট</span>
         </h4>
-        <div class="table-responsive" style="border-radius: var(--radius-sm);">
-          <table style="width: 100%;">
+        <div class="table-responsive">
+          <table>
             <thead>
-              <tr style="background: #1c1917; color: var(--sbf-text-muted);">
-                <th style="text-align: center; width: 50px;">র‌্যাংক</th>
+              <tr>
+                <th style="text-align: center; width: 56px;">র‌্যাংক</th>
                 <th>রিসেলার নাম</th>
                 <th style="text-align: center;">সফল সেল</th>
                 <th style="text-align: right;">অর্জন</th>

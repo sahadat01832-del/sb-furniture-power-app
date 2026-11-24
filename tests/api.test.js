@@ -4,9 +4,10 @@ const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
 const app = require('../src/server');
-const { initDb, run, get, query } = require('../src/db');
+const { initDb, run, get, query, closeDb } = require('../src/db');
 const { seedData } = require('../src/seed');
 const config = require('../src/config');
+const { promoteToReseller, registerReseller } = require('./resellerTestHelpers');
 
 let server;
 let baseUrl;
@@ -76,13 +77,24 @@ after(async () => {
   if (server) {
     await new Promise((resolve) => server.close(resolve));
   }
+  await closeDb();
 });
 
-test('1. Health check endpoint responds healthy', async () => {
+test('1. Health check endpoint reports the phone API health', async () => {
   const res = await request('/health');
   assert.equal(res.status, 200);
-  assert.equal(res.body.status, 'healthy');
+  assert.equal(res.body.status, 'ok');
   assert.ok(res.body.uptime >= 0);
+  assert.equal(typeof res.body.memoryMB, 'number');
+});
+
+test('CORS allows Firebase Hosting and rejects unconfigured website origins', async () => {
+  const firebaseOrigin = 'https://sb-power-demo.web.app';
+  const firebaseResponse = await request('/health', { headers: { Origin: firebaseOrigin } });
+  assert.equal(firebaseResponse.headers['access-control-allow-origin'], firebaseOrigin);
+
+  const unconfiguredResponse = await request('/health', { headers: { Origin: 'https://untrusted.example' } });
+  assert.equal(unconfiguredResponse.headers['access-control-allow-origin'], undefined);
 });
 
 test('2. Public brand config returns contacts and delivery rules', async () => {
@@ -130,9 +142,17 @@ test('3. Explicit demo catalog seed has 30 sample items and fixture prices', asy
 });
 
 test('4. Reseller Commission Tabs filtering works correctly', async () => {
+  const reseller = await registerReseller(request, {
+    name: 'কমিশন পরীক্ষা',
+    phone: '01712340001',
+    password: 'password123'
+  });
+  assert.equal(reseller.status, 201);
   const tabs = ['50tk', '100tk', '500tk', '1000tk'];
   for (const tab of tabs) {
-    const res = await request(`/api/products?tab=${tab}`);
+    const res = await request(`/api/products?tab=${tab}`, {
+      headers: { Authorization: `Bearer ${reseller.body.token}` }
+    });
     assert.equal(res.status, 200);
     assert.ok(res.body.products.length > 0, `Tab ${tab} should contain products`);
     res.body.products.forEach((p) => {
@@ -269,6 +289,11 @@ test('7. Direct Reseller Commission and Payout Workflow', async () => {
     body: { phone: config.ADMIN.phone, password: config.ADMIN.password }
   });
   const adminToken = adminLogin.body.token;
+
+  const registeredReseller = await get('SELECT id FROM users WHERE phone = ?', ['01711000002']);
+  await promoteToReseller(request, registeredReseller.id);
+  const registeredReferrer = await get('SELECT id FROM users WHERE phone = ?', ['01711000001']);
+  await promoteToReseller(request, registeredReferrer.id);
 
   // Login as Reseller 2 (who was referred by User 1)
   const resellerLogin = await request('/api/auth/login', {
@@ -466,12 +491,13 @@ test('9. Payout Isolation: Multiple payouts of the same amount remain distinct',
     method: 'POST',
     body: { name: 'পেআউট টেস্ট ইউজার', phone: pUserPhone, password: 'password123' }
   });
+  await promoteToReseller(request, regRes.body.user.id);
   const pUserToken = regRes.body.token;
   const pUserId = regRes.body.user.id;
 
   // Credit 2000 TK directly to wallet
   await run(
-    "INSERT INTO wallet_transactions (user_id, amount, type, status, notes) VALUES (?, 2000, 'commission', 'available', 'Manual credit for test')",
+    "INSERT INTO wallet_transactions (user_id, amount, type, status, notes) VALUES (?, 200000, 'commission', 'available', 'Manual credit for test')",
     [pUserId]
   );
 
@@ -530,23 +556,14 @@ test('10. Multi-tier Downline Referral Chain & Single Product SKU Fetch', async 
   const phoneB = '01711888002';
   const phoneC = '01711888003';
 
-  const regA = await request('/api/auth/register', {
-    method: 'POST',
-    body: { name: 'লিডার আলম', phone: phoneA, password: 'password123' }
-  });
+  const regA = await registerReseller(request, { name: 'লিডার আলম', phone: phoneA, password: 'password123' });
   const codeA = regA.body.user.referral_code;
 
-  const regB = await request('/api/auth/register', {
-    method: 'POST',
-    body: { name: 'রিসেলার বাবুল', phone: phoneB, password: 'password123', referral_code: codeA }
-  });
+  const regB = await registerReseller(request, { name: 'রিসেলার বাবুল', phone: phoneB, password: 'password123', referral_code: codeA });
   assert.equal(regB.body.user.referred_by_id, regA.body.user.id);
   const codeB = regB.body.user.referral_code;
 
-  const regC = await request('/api/auth/register', {
-    method: 'POST',
-    body: { name: 'রিসেলার চন্দন', phone: phoneC, password: 'password123', referral_code: codeB }
-  });
+  const regC = await registerReseller(request, { name: 'রিসেলার চন্দন', phone: phoneC, password: 'password123', referral_code: codeB });
   assert.equal(regC.body.user.referred_by_id, regB.body.user.id);
 
   // Single product fetch by SKU with ref query parameter
@@ -643,7 +660,7 @@ test('11. Dynamic Cloud Catalog: Admin Product CRUD & Single Item Retrieval', as
   await run('DELETE FROM products WHERE id = ?', [createdProdId]);
 });
 
-test('12. Multi-Vendor / Partner Shop Promotion: Admin Creation, Filtering & WhatsApp Copy Generation', async () => {
+test('12. Partner products appear without partner shop identity in the customer catalog', async () => {
   const adminLogin = await request('/api/auth/login', {
     method: 'POST',
     body: { phone: config.ADMIN.phone, password: config.ADMIN.password }
@@ -676,36 +693,27 @@ test('12. Multi-Vendor / Partner Shop Promotion: Admin Creation, Filtering & Wha
   assert.equal(partnerProductRes.status, 201);
   const createdId = partnerProductRes.body.product_id;
 
-  // 2. Filter products by partner shops
-  const partnerFilterRes = await request('/api/products?shop=partner');
+  // Partner items are searchable in the general catalog without vendor identity.
+  const partnerFilterRes = await request('/api/products?search=VND-101');
   assert.equal(partnerFilterRes.status, 200);
-  assert.equal(partnerFilterRes.body.success, true);
   const foundPartnerItem = partnerFilterRes.body.products.find((p) => p.sku === 'VND-101');
-  assert.ok(foundPartnerItem, 'Partner product should be returned when shop=partner');
-  assert.equal(foundPartnerItem.shop_name, 'ভাই ভাই ফার্নিচার');
-  assert.equal(foundPartnerItem.vendor_phone, '01811223344');
+  assert.ok(foundPartnerItem, 'Partner product should appear in the general catalog');
+  for (const field of ['shop_name', 'shop_type', 'shop_id', 'vendor_phone', 'vendor_badge', 'vendor_address']) {
+    assert.equal(foundPartnerItem[field], undefined, `${field} must stay private`);
+  }
+  assert.equal(partnerFilterRes.body.shops, undefined);
+  assert.equal((await request('/api/products?shop=partner')).status, 400);
 
-  // Verify all items under shop=partner are NOT SB Furniture / SB POWER
-  partnerFilterRes.body.products.forEach((p) => {
-    assert.ok(!['SB Furniture', 'SB POWER'].includes(p.shop_name));
-  });
-
-  // 3. Filter by exact shop name
-  const exactShopRes = await request(`/api/products?shop=${encodeURIComponent('ভাই ভাই ফার্নিচার')}`);
-  assert.equal(exactShopRes.status, 200);
-  assert.ok(exactShopRes.body.products.some((p) => p.sku === 'VND-101'));
-
-  // 4. Fetch single product by SKU and check dynamic vendor copy
+  // The product detail page and share copy use SB contact details only.
   const singleProdRes = await request('/api/products/VND-101?ref=SBPROMO');
   assert.equal(singleProdRes.status, 200);
   const prod = singleProdRes.body.product;
-  assert.equal(prod.shop_name, 'ভাই ভাই ফার্নিচার');
-  assert.equal(prod.vendor_phone, '01811223344');
-  assert.equal(prod.contact_phone, '01811223344');
-  assert.ok(prod.share_copy.includes('ভাই ভাই ফার্নিচার'), 'Share copy should highlight partner shop name');
-  assert.ok(prod.share_copy.includes('পার্টনার শপ'), 'Share copy should include vendor badge');
+  assert.equal(prod.shop_name, undefined);
+  assert.equal(prod.vendor_phone, undefined);
+  assert.equal(prod.contact_phone, '01929621855');
+  assert.ok(!prod.share_copy.includes('ভাই ভাই ফার্নিচার'));
+  assert.ok(!prod.share_copy.includes('01811223344'));
   assert.ok(!prod.share_copy.includes('100% অরিজিনাল'), 'Share copy should not claim unverified product authenticity');
-  assert.ok(prod.share_copy.includes('01811223344'), 'Share copy should direct customer calls to vendor phone');
   assert.ok(prod.share_copy.includes('ref=SBPROMO'), 'Share copy should embed reseller referral code');
 
   // 5. Admin updates vendor badge and clears vendor phone
@@ -720,8 +728,8 @@ test('12. Multi-Vendor / Partner Shop Promotion: Admin Creation, Filtering & Wha
   assert.equal(updateRes.status, 200);
 
   const updatedProdRes = await request(`/api/products/${createdId}`);
-  assert.equal(updatedProdRes.body.product.vendor_badge, 'Super Verified Partner');
-  assert.equal(updatedProdRes.body.product.vendor_phone, null, 'Vendor phone should be cleared to null when updated with empty string');
+  assert.equal(updatedProdRes.body.product.vendor_badge, undefined);
+  assert.equal(updatedProdRes.body.product.vendor_phone, undefined);
 
   // Cleanup
   await run('DELETE FROM products WHERE id = ?', [createdId]);

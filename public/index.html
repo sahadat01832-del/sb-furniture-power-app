@@ -2,19 +2,20 @@
 <html lang="bn">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>SB Furniture & SB POWER — ফার্নিচার, গ্যাজেট ও অনলাইন অর্ডার</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>SB Furniture &amp; SB POWER — ফার্নিচার, গ্যাজেট ও অনলাইন অর্ডার</title>
   <meta name="description" content="SB Furniture ও SB POWER-এর পণ্য দেখুন ও অর্ডার করুন। অ্যাডমিন অনুমোদিত রিসেলাররা পণ্যভিত্তিক কমিশন পাবেন।">
-  <meta name="theme-color" content="#ea580c">
+  <meta name="theme-color" content="#c2410c">
 
   <!-- PWA & Mobile Icons -->
   <link rel="manifest" href="/manifest.json">
   <link rel="icon" type="image/svg+xml" href="/icons/icon.svg">
   <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
   <link rel="apple-touch-icon" href="/icons/icon-192.png">
-  <link rel="stylesheet" href="/css/style.css?v=3.2.2">
-  <link rel="stylesheet" href="/css/pwa-splash.css?v=1.0.0">
-  <link rel="stylesheet" href="/css/pwa-install.css?v=3.2.1">
+  <link rel="stylesheet" href="/css/style.css?v=4.0.1">
+  <link rel="stylesheet" href="/css/pwa-splash.css?v=4.0.1">
+  <link rel="stylesheet" href="/css/pwa-install.css?v=4.0.1">
+  <link rel="stylesheet" href="/css/animations.css?v=4.0.1">
 </head>
 <body>
 
@@ -29,12 +30,14 @@
     </div>
   </div>
 
-  <!-- Top Announcement & Customize Order Call Bar -->
+  <!-- Top Contact Strip -->
   <div class="custom-order-bar">
-    <div>কালীগঞ্জ, গাজীপুর থেকে অর্ডার • ক্যাশ অন ডেলিভারি • বড় অর্ডারে অগ্রিম লাগতে পারে</div>
-    <div class="links">
-      <span>🪑 ফার্নিচার ও দোকান ডেকোরেশন: <a href="tel:01929621855">📞 01929621855</a> | <a href="https://wa.me/8801929621855" target="_blank">💬 WhatsApp</a></span>
-      <span>⚡ SB POWER গ্যাজেটস: <a href="tel:01634664224">📞 01634664224</a> | <a href="https://wa.me/8801634664224" target="_blank">💬 WhatsApp</a></span>
+    <div class="container custom-order-inner">
+      <span>কালীগঞ্জ, গাজীপুর থেকে অর্ডার • ক্যাশ অন ডেলিভারি</span>
+      <div class="links">
+        <span>🪑 ফার্নিচার: <a href="tel:01929621855">01929621855</a> · <a href="https://wa.me/8801929621855" target="_blank" rel="noopener">WhatsApp</a></span>
+        <span>⚡ SB POWER গ্যাজেটস: <a href="tel:01634664224">01634664224</a> · <a href="https://wa.me/8801634664224" target="_blank" rel="noopener">WhatsApp</a></span>
+      </div>
     </div>
   </div>
 
@@ -44,26 +47,26 @@
       <a href="/" class="brand-logo">
         <div class="logo-icon">SB</div>
         <div class="logo-text">
-          <h1>SB Furniture & POWER</h1>
-          <span>পণ্য দেখুন ও অর্ডার করুন</span>
+          <h1>SB Furniture &amp; POWER</h1>
+          <span>নিজস্ব ওয়ার্কশপ ও স্মার্ট গ্যাজেট শপ</span>
         </div>
       </a>
 
       <div class="nav-actions">
-        <button class="btn-nav" id="btnNavInstall" onclick="triggerPwaInstall()" title="ফোনে অ্যাপ ইনস্টল করুন" style="display: none; background: rgba(245, 158, 11, 0.15); border: 1px solid var(--sbf-amber); color: var(--sbp-yellow); font-weight: 600;">
-          <span>📲</span> <span>ইনস্টল</span>
+        <button type="button" class="btn-nav btn-nav-install" id="btnNavInstall" onclick="triggerPwaInstall()" title="ফোনে অ্যাপ ইনস্টল করুন" aria-label="ফোনে অ্যাপ ইনস্টল করুন" style="display: none;">
+          <span aria-hidden="true">📲</span> <span class="nav-label">ইনস্টল</span>
         </button>
-        <button class="btn-nav" id="btnLeaderboardModal" onclick="openLeaderboardModal()" title="সফল অর্ডারের ভিত্তিতে রিসেলার তালিকা">
-          <span>🏆</span> <span class="hide-mobile">লিডারবোর্ড</span>
+        <button type="button" class="btn-nav" id="btnLeaderboardModal" onclick="openLeaderboardModal()" title="সফল অর্ডারের ভিত্তিতে রিসেলার তালিকা" aria-label="লিডারবোর্ড">
+          <span aria-hidden="true">🏆</span> <span class="hide-mobile">লিডারবোর্ড</span>
         </button>
-        <button class="btn-nav" id="btnTrackModal" onclick="openTrackModal()">
-          <span>🔍</span> <span class="hide-mobile">ট্র্যাক</span>
+        <button type="button" class="btn-nav" id="btnTrackModal" onclick="openTrackModal()" aria-label="অর্ডার ট্র্যাক করুন">
+          <span aria-hidden="true">🔍</span> <span class="hide-mobile">ট্র্যাক</span>
         </button>
-        <button class="btn-nav" id="btnResellerModal" onclick="openResellerModal()">
-          <span>👤</span> <span id="navResellerText">আমার অ্যাকাউন্ট</span>
+        <button type="button" class="btn-nav" id="btnResellerModal" onclick="openResellerModal()" aria-label="আমার অ্যাকাউন্ট">
+          <span aria-hidden="true">👤</span> <span id="navResellerText" class="nav-label">আমার অ্যাকাউন্ট</span>
         </button>
-        <button class="btn-nav" id="btnCartModal" onclick="openCartModal()">
-          <span>🛒</span> <span class="badge" id="cartBadge">0</span>
+        <button type="button" class="btn-nav" id="btnCartModal" onclick="openCartModal()" aria-label="শপিং কার্ট দেখুন">
+          <span aria-hidden="true">🛒</span> <span class="badge" id="cartBadge">0</span>
         </button>
       </div>
     </div>
@@ -72,24 +75,44 @@
   <!-- Admin-managed announcement ticker -->
   <div class="flash-deals-banner">
     <div class="container flash-deals-inner">
-      <span class="flash-badge">⚡ অফার ব্যানার</span>
-          <span class="flash-marquee">পছন্দের পণ্য দেখুন, অর্ডার করুন।</span>
+      <span class="flash-badge">⚡ অফার</span>
+      <div class="flash-marquee-track">
+        <span class="flash-marquee">পছন্দের পণ্য দেখুন, অর্ডার করুন।</span>
+      </div>
     </div>
   </div>
 
   <main class="container">
     <!-- View 1: Shop View (Catalog) -->
     <div id="viewShop" class="main-view-panel active">
-      <!-- Simple introduction and the two main actions -->
+      <!-- Editorial Showroom Hero -->
       <section class="hero-section">
         <div class="hero-banner">
           <div class="hero-content">
-            <p class="hero-eyebrow">SB Furniture • SB POWER</p>
-          <h2>পছন্দের পণ্য <span>কিনুন</span></h2>
-            <p>নিজের জন্য অর্ডার করুন। অ্যাডমিন অনুমতি দিলে রিসেলার হিসেবে পণ্য শেয়ার করে সফল ডেলিভারির পর কমিশন পাবেন।</p>
+            <span class="hero-eyebrow">কালীগঞ্জ, গাজীপুর · নিজস্ব ওয়ার্কশপ ও গ্যাজেট</span>
+            <h2>মানসম্মত ফার্নিচার ও <span>স্মার্ট গ্যাজেট</span> এক ঠিকানায়</h2>
+            <p>ঘর, অফিস ও দোকান ডেকোরেশনের মজবুত ফার্নিচার এবং যাচাইকৃত SB POWER গ্যাজেটস সহজেই অর্ডার করুন। অ্যাডমিন অনুমোদিত রিসেলাররা সফল ডেলিভারির পর কমিশন পাবেন।</p>
             <div class="hero-actions">
-              <a class="hero-primary" href="#productGrid">পণ্য দেখুন</a>
-              <button class="hero-secondary" type="button" onclick="switchMainTab('profile')">অ্যাকাউন্ট খুলুন / লগইন</button>
+              <a class="hero-primary" href="#productGrid">ক্যাটালগ দেখুন ↓</a>
+              <button class="hero-secondary" type="button" onclick="switchMainTab('profile')">অ্যাকাউন্ট / রিসেলার লগইন</button>
+            </div>
+          </div>
+          <div class="hero-highlights" aria-label="আমাদের বৈশিষ্ট্য">
+            <div class="hero-highlight-chip">
+              <strong>🪑 নিজস্ব ওয়ার্কশপ</strong>
+              <span>কাস্টম সাইজ ও রঙের অর্ডার</span>
+            </div>
+            <div class="hero-highlight-chip">
+              <strong>⚡ ভেরিফায়েড গ্যাজেট</strong>
+              <span>ওয়াচ, অডিও ও আনুষঙ্গিক</span>
+            </div>
+            <div class="hero-highlight-chip">
+              <strong>🚚 ক্যাশ অন ডেলিভারি</strong>
+              <span>বড় বা কাস্টম অর্ডারে অগ্রিম প্রযোজ্য</span>
+            </div>
+            <div class="hero-highlight-chip">
+              <strong>💼 রিসেলার সাপোর্ট</strong>
+              <span>১-ক্লিকে শেয়ার ও লাইভ ওয়ালেট</span>
             </div>
           </div>
         </div>
@@ -98,18 +121,18 @@
       <!-- Quick Shop Filter Bar -->
       <div class="quick-shop-filter-bar" aria-label="দ্রুত ব্র্যান্ড বাছাই">
         <button type="button" class="quick-shop-pill active" data-brand="all" onclick="filterByBrand('all')">সব পণ্য</button>
-        <button type="button" class="quick-shop-pill" data-brand="SB Furniture" onclick="filterByBrand('SB Furniture')">🪑 ফার্নিচার</button>
-        <button type="button" class="quick-shop-pill" data-brand="SB POWER" onclick="filterByBrand('SB POWER')">⚡ গ্যাজেট</button>
+        <button type="button" class="quick-shop-pill" data-brand="SB Furniture" onclick="filterByBrand('SB Furniture')">🪑 SB Furniture</button>
+        <button type="button" class="quick-shop-pill" data-brand="SB POWER" onclick="filterByBrand('SB POWER')">⚡ SB POWER</button>
       </div>
 
       <!-- Search first; optional filters stay closed until requested -->
       <section class="catalog-controls" aria-label="পণ্য খুঁজুন ও ফিল্টার করুন">
         <label class="sr-only" for="searchInput">পণ্যের নাম বা কোড দিয়ে খুঁজুন</label>
-        <input type="search" id="searchInput" class="search-input" aria-label="পণ্যের নাম বা কোড দিয়ে খুঁজুন" placeholder="পণ্যের নাম বা কোড লিখুন — যেমন SBF-101" oninput="handleSearch()">
+        <input type="search" id="searchInput" class="search-input" aria-label="পণ্যের নাম বা কোড দিয়ে খুঁজুন" placeholder="পণ্যের নাম বা কোড লিখুন — যেমন আলমারি, ডেস্ক, স্মার্টওয়াচ বা SBF-101" oninput="handleSearch()">
         <p class="product-result-count" id="productResultCount" aria-live="polite">পণ্য লোড হচ্ছে…</p>
 
         <details class="catalog-filter-panel" id="catalogFilterPanel">
-          <summary>ফিল্টার ও সাজানো <span>ক্যাটাগরি, বাজেট</span></summary>
+          <summary>ফিল্টার ও সাজানো <span>ক্যাটাগরি, দাম ও কমিশন</span></summary>
           <div class="catalog-filter-content">
             <div class="filter-control">
               <label for="sortSelect">যেভাবে সাজাবেন</label>
@@ -124,20 +147,20 @@
             <div class="filter-control" data-reseller-only hidden>
               <span class="filter-label">পণ্যভিত্তিক কমিশন</span>
               <div class="tabs-scroll commission-tabs-wrap" aria-label="কমিশন বাছাই">
-                <button class="tab-btn active" data-tab="all" onclick="filterByTab('all')">সব</button>
-                <button class="tab-btn" data-tab="50tk" onclick="filterByTab('50tk')">৳৫০</button>
-                <button class="tab-btn" data-tab="100tk" onclick="filterByTab('100tk')">৳১০০</button>
-                <button class="tab-btn" data-tab="500tk" onclick="filterByTab('500tk')">৳৫০০</button>
-                <button class="tab-btn" data-tab="1000tk" onclick="filterByTab('1000tk')">৳১০০০</button>
+                <button type="button" class="tab-btn active" data-tab="all" onclick="filterByTab('all')">সব</button>
+                <button type="button" class="tab-btn" data-tab="50tk" onclick="filterByTab('50tk')">৳৫০</button>
+                <button type="button" class="tab-btn" data-tab="100tk" onclick="filterByTab('100tk')">৳১০০</button>
+                <button type="button" class="tab-btn" data-tab="500tk" onclick="filterByTab('500tk')">৳৫০০</button>
+                <button type="button" class="tab-btn" data-tab="1000tk" onclick="filterByTab('1000tk')">৳১০০০</button>
               </div>
             </div>
             <div class="filter-control">
               <span class="filter-label">ক্যাটাগরি</span>
               <div class="category-pills">
-                <button class="cat-pill active" data-cat="all" onclick="filterByCategory('all')">সব ক্যাটাগরি</button>
-                <button class="cat-pill" data-cat="দোকান ডেকোরেশন" onclick="filterByCategory('দোকান ডেকোরেশন')">দোকান সাজানো</button>
-                <button class="cat-pill" data-cat="হোম ও অফিস ফার্নিচার" onclick="filterByCategory('হোম ও অফিস ফার্নিচার')">হোম ও অফিস</button>
-                <button class="cat-pill" data-cat="ওয়্যারলেস অডিও ও গ্যাজেটস" onclick="filterByCategory('ওয়্যারলেস অডিও ও গ্যাজেটস')">গ্যাজেট</button>
+                <button type="button" class="cat-pill active" data-cat="all" onclick="filterByCategory('all')">সব ক্যাটাগরি</button>
+                <button type="button" class="cat-pill" data-cat="দোকান ডেকোরেশন" onclick="filterByCategory('দোকান ডেকোরেশন')">দোকান সাজানো</button>
+                <button type="button" class="cat-pill" data-cat="হোম ও অফিস ফার্নিচার" onclick="filterByCategory('হোম ও অফিস ফার্নিচার')">হোম ও অফিস</button>
+                <button type="button" class="cat-pill" data-cat="ওয়্যারলেস অডিও ও গ্যাজেটস" onclick="filterByCategory('ওয়্যারলেস অডিও ও গ্যাজেটস')">গ্যাজেট</button>
               </div>
             </div>
             <div class="filter-control filter-budget">
@@ -155,9 +178,9 @@
       <!-- Product Grid -->
       <section class="catalog-products" aria-label="পণ্যের তালিকা">
         <div id="productGrid" class="product-grid">
-          <!-- Dynamically rendered via app.js -->
-          <div style="grid-column: 1 / -1; text-align: center; padding: 40px; color: var(--sbf-text-muted);">
-            পণ্য লোড হচ্ছে, অনুগ্রহ করে অপেক্ষা করুন...
+          <div style="grid-column: 1 / -1; text-align: center; padding: 48px 16px; color: var(--text-muted);">
+            <span class="spinner"></span>
+            <div style="margin-top: 10px;">পণ্য লোড হচ্ছে, অনুগ্রহ করে অপেক্ষা করুন...</div>
           </div>
         </div>
       </section>
@@ -165,80 +188,74 @@
 
     <!-- View 2: Orders View (My Orders & Tracking) -->
     <div id="viewOrders" class="main-view-panel">
-      <div style="padding: 16px 0;">
-        <h2 style="color: #fff; font-size: 1.2rem; margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
-          <span>📦</span> <span>আমার অর্ডার</span>
+      <div class="view-section-wrap">
+        <h2 class="view-heading">
+          <span aria-hidden="true">📦</span> <span>আমার অর্ডার</span>
         </h2>
         <div id="ordersViewContent">
-          <div style="text-align: center; padding: 30px; color: var(--sbf-text-muted);">লোড হচ্ছে…</div>
+          <div style="text-align: center; padding: 36px; color: var(--text-muted);">লোড হচ্ছে…</div>
         </div>
       </div>
     </div>
 
     <!-- View 3: Wallet View (Reseller Balances & Payouts) -->
     <div id="viewWallet" class="main-view-panel">
-      <div style="padding: 16px 0;">
-        <h2 style="color: #fff; font-size: 1.2rem; margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
-          <span>💰</span> <span>রিসেলার ওয়ালেট ও ক্যাশআউট</span>
+      <div class="view-section-wrap">
+        <h2 class="view-heading">
+          <span aria-hidden="true">💰</span> <span>রিসেলার ওয়ালেট ও ক্যাশআউট</span>
         </h2>
         <div id="walletViewContent">
-          <div style="text-align: center; padding: 30px; color: var(--sbf-text-muted);">লোড হচ্ছে…</div>
+          <div style="text-align: center; padding: 36px; color: var(--text-muted);">লোড হচ্ছে…</div>
         </div>
       </div>
     </div>
 
     <!-- View 4: Profile View (Account, Settings, Downline) -->
     <div id="viewProfile" class="main-view-panel">
-      <div style="padding: 16px 0;">
-        <h2 style="color: #fff; font-size: 1.2rem; margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
-          <span>👤</span> <span>আমার অ্যাকাউন্ট</span>
+      <div class="view-section-wrap">
+        <h2 class="view-heading">
+          <span aria-hidden="true">👤</span> <span>আমার অ্যাকাউন্ট</span>
         </h2>
         <div id="profileViewContent">
-          <div style="text-align: center; padding: 30px; color: var(--sbf-text-muted);">লোড হচ্ছে…</div>
+          <div style="text-align: center; padding: 36px; color: var(--text-muted);">লোড হচ্ছে…</div>
         </div>
       </div>
     </div>
   </main>
 
   <!-- Brand & Mobile App Footer -->
-  <footer style="background: #1c1917; border-top: 1px solid var(--sbf-border); padding: 30px 16px 80px; margin-top: 40px;">
-    <div class="container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px;">
+  <footer class="site-footer">
+    <div class="container footer-grid">
       <div>
-        <h4 style="color: var(--sbf-amber-light); font-size: 1rem; margin-bottom: 8px;">🪑 SB Furniture (এসবি ফার্নিচার)</h4>
-        <p style="font-size: 0.8rem; color: #a8a29e; line-height: 1.5; margin: 0 0 6px;">
-          হোম ও অফিস ফার্নিচার এবং দোকান সাজানোর পণ্য।
-        </p>
-        <div style="font-size: 0.8rem; color: #d6d3d1;">📍 অবস্থান: বাঙাল হাওলা, কালীগঞ্জ, গাজীপুর</div>
-        <div style="font-size: 0.8rem; color: #d6d3d1; margin-top: 4px;">📞 কল/হোয়াটসঅ্যাপ: <a href="tel:01929621855" style="color: var(--sbp-yellow);">01929621855</a></div>
+        <h4>🪑 SB Furniture (এসবি ফার্নিচার)</h4>
+        <p>হোম ও অফিস ফার্নিচার এবং দোকান সাজানোর টেকসই পণ্য। কাস্টম সাইজ ও কালার অর্ডার গ্রহণ করা হয়।</p>
+        <div class="footer-meta">📍 অবস্থান: বাঙাল হাওলা, কালীগঞ্জ, গাজীপুর</div>
+        <div class="footer-meta">📞 কল / WhatsApp: <a href="tel:01929621855">01929621855</a></div>
       </div>
       <div>
-        <h4 style="color: var(--sbp-cyan); font-size: 1rem; margin-bottom: 8px;">⚡ SB POWER গ্যাজেটস</h4>
-        <p style="font-size: 0.8rem; color: #a8a29e; line-height: 1.5; margin: 0 0 6px;">
-          SB POWER-এর গ্যাজেট পণ্য; মডেল, বৈশিষ্ট্য ও শর্ত দেখে অর্ডার করুন।
-        </p>
-        <div style="font-size: 0.8rem; color: #d6d3d1;">📞 হটলাইন: <a href="tel:01634664224" style="color: var(--sbp-cyan);">01634664224</a></div>
-        <div style="font-size: 0.8rem; color: #d6d3d1; margin-top: 4px;">🎵 TikTok: <span style="color: #a8a29e;">@sb.power.official</span></div>
+        <h4>⚡ SB POWER গ্যাজেটস</h4>
+        <p>SB POWER-এর স্মার্টওয়াচ, অডিও ও টেক গ্যাজেটস; মডেল, বৈশিষ্ট্য ও শর্ত দেখে অর্ডার করুন।</p>
+        <div class="footer-meta">📞 হটলাইন: <a href="tel:01634664224">01634664224</a></div>
+        <div class="footer-meta">🎵 TikTok: <span>@sb.power.official</span></div>
       </div>
       <div>
-        <h4 style="color: #fff; font-size: 1rem; margin-bottom: 8px;">📱 ফোনে অ্যাপ ইনস্টল</h4>
-        <p style="font-size: 0.8rem; color: #a8a29e; line-height: 1.5; margin: 0 0 10px;">
-          Chrome-এর ইনস্টল সুবিধা দিয়ে এই ওয়েবসাইটটি ফোনে অ্যাপ হিসেবে যোগ করুন।
-        </p>
-        <button type="button" class="btn-pwa-primary" onclick="triggerPwaInstall()">📱 অ্যাপ ইনস্টল করুন</button>
+        <h4>📱 ফোনে অ্যাপ ইনস্টল</h4>
+        <p>অ্যাপের মতো দ্রুত অভিজ্ঞতার জন্য ব্রাউজার থেকে সরাসরি হোম স্ক্রিনে যুক্ত করুন।</p>
+        <button type="button" class="btn-pwa-primary" onclick="triggerPwaInstall()">📲 অ্যাপ ইনস্টল করুন</button>
       </div>
     </div>
-    <div style="text-align: center; border-top: 1px solid rgba(255,255,255,0.06); margin-top: 24px; padding-top: 16px; font-size: 0.75rem; color: var(--sbf-text-muted);">
-      © ২০২৬ SB Furniture & SB POWER Platform • সর্বস্বত্ব সংরক্ষিত
+    <div class="footer-copy">
+      © ২০২৬ SB Furniture &amp; SB POWER Platform • সর্বস্বত্ব সংরক্ষিত
     </div>
   </footer>
 
   <!-- Floating Actions (Customize Order Call & Cart) -->
   <div class="floating-actions">
-    <button class="floating-btn btn-call-float" onclick="openCustomOrderModal()" title="কাস্টমাইজড অর্ডার ও সরাসরি কল" aria-label="কাস্টম অর্ডার ও সরাসরি যোগাযোগ">
+    <button type="button" class="floating-btn btn-call-float" onclick="openCustomOrderModal()" title="কাস্টমাইজড অর্ডার ও সরাসরি কল" aria-label="কাস্টম অর্ডার ও সরাসরি যোগাযোগ">
       <span aria-hidden="true">📞</span><span class="floating-call-text">কাস্টম অর্ডার</span>
     </button>
-    <button class="floating-btn btn-cart-float" onclick="openCartModal()" title="কার্ট দেখুন">
-      🛒
+    <button type="button" class="floating-btn btn-cart-float" onclick="openCartModal()" title="কার্ট দেখুন" aria-label="শপিং কার্ট দেখুন">
+      <span aria-hidden="true">🛒</span>
       <span class="float-badge" id="floatCartBadge">0</span>
     </button>
   </div>
@@ -250,90 +267,72 @@
     <div class="modal-dialog">
       <div class="modal-header">
         <h3 id="customOrderModalTitle">📞 কাস্টমাইজড অর্ডার ও সরাসরি হটলাইন</h3>
-        <button class="btn-close" onclick="closeModal('customOrderModal')">&times;</button>
+        <button type="button" class="btn-close" onclick="closeModal('customOrderModal')" aria-label="বন্ধ করুন">&times;</button>
       </div>
-      <div class="modal-body" style="padding: 16px;">
-        <div style="background: rgba(180, 83, 9, 0.15); border: 1px solid var(--sbf-amber); border-radius: var(--radius-sm); padding: 14px; margin-bottom: 14px;">
-          <h4 style="color: var(--sbf-amber-light); font-size: 1rem; margin-bottom: 6px;">🪑 SB Furniture (এসবি ফার্নিচার)</h4>
-          <p style="font-size: 0.8rem; color: #d6d3d1; margin-bottom: 8px;">
-            দোকান ডেকোরেশন বা কাস্টম সাইজের ফার্নিচার সম্পর্কে জানতে সরাসরি যোগাযোগ করুন:
-          </p>
-          <div style="display: flex; gap: 8px;">
-            <a href="tel:01929621855" class="btn-nav" style="flex: 1; justify-content: center; background: var(--sbf-amber); color: #fff; text-decoration: none;">
-              📞 Call: 01929621855
-            </a>
-            <a href="https://wa.me/8801929621855?text=%E0%A6%86%E0%A6%AE%E0%A6%BF%20%E0%A6%95%E0%A6%BE%E0%A6%B8%E0%A7%8D%E0%A6%9F%E0%A6%AE%20%E0%A6%AB%E0%A6%BE%E0%A6%B0%E0%A7%8D%E0%A6%A8%E0%A6%BF%E0%A6%9a%E0%A6%BE%E0%A6%B0%20%E0%A6%A8%E0%A6%BF%E0%A6%AF%E0%A6%BC%E0%A7%87%20%E0%A6%95%E0%A6%A5%E0%A6%BE%20%E0%A6%AC%E0%A6%B2%E0%A6%A4%E0%A7%87%20%E0%A6%9a%E0%A6%BE%E0%A6%87" target="_blank" class="btn-nav" style="flex: 1; justify-content: center; background: #059669; color: #fff; text-decoration: none;">
-              💬 WhatsApp
-            </a>
+      <div class="modal-body">
+        <div class="hotline-card">
+          <h4>🪑 SB Furniture (এসবি ফার্নিচার)</h4>
+          <p>দোকান ডেকোরেশন বা কাস্টম সাইজের ফার্নিচার সম্পর্কে জানতে সরাসরি যোগাযোগ করুন:</p>
+          <div class="hotline-actions">
+            <a href="tel:01929621855" class="hotline-btn is-furniture">📞 Call: 01929621855</a>
+            <a href="https://wa.me/8801929621855?text=%E0%A6%86%E0%A6%AE%E0%A6%BF%20%E0%A6%95%E0%A6%BE%E0%A6%B8%E0%A7%8D%E0%A6%9F%E0%A6%AE%20%E0%A6%AB%E0%A6%BE%E0%A6%B0%E0%A7%8D%E0%A6%A8%E0%A6%BF%E0%A6%9A%E0%A6%BE%E0%A6%B0%20%E0%A6%A8%E0%A6%BF%E0%A6%AF%E0%A6%BC%E0%A7%87%20%E0%A6%95%E0%A6%A5%E0%A6%BE%20%E0%A6%AC%E0%A6%B2%E0%A6%A4%E0%A7%87%20%E0%A6%9a%E0%A6%BE%E0%A6%87" target="_blank" rel="noopener" class="hotline-btn is-wa">💬 WhatsApp</a>
           </div>
         </div>
 
-        <div style="background: rgba(6, 182, 212, 0.12); border: 1px solid var(--sbp-cyan); border-radius: var(--radius-sm); padding: 14px;">
-          <h4 style="color: var(--sbp-cyan); font-size: 1rem; margin-bottom: 6px;">⚡ SB POWER গ্যাজেটস</h4>
-          <p style="font-size: 0.8rem; color: #d6d3d1; margin-bottom: 8px;">
-            ওয়্যারলেস অডিও ও টেক গ্যাজেটের পাইকারি ও সরাসরি অর্ডারের জন্য যোগাযোগ করুন:
-          </p>
-          <div style="display: flex; gap: 8px;">
-            <a href="tel:01634664224" class="btn-nav" style="flex: 1; justify-content: center; background: var(--sbp-blue); color: #fff; text-decoration: none;">
-              📞 Call: 01634664224
-            </a>
-            <a href="https://wa.me/8801634664224?text=%E0%A6%86%E0%A6%AE%E0%A6%BF%20SB%20POWER%20%E0%A6%97%E0%A7%8D%E0%A6%AF%E0%A6%BE%E0%A6%9C%E0%A7%87%E0%A6%9F%20%E0%A6%85%E0%A6%B0%E0%A7%8D%E0%A6%A1%E0%A6%BE%E0%A6%B0%20%E0%A6%95%E0%A6%B0%E0%A6%A4%E0%A7%87%20%E0%A6%9a%E0%A6%BE%E0%A6%87" target="_blank" class="btn-nav" style="flex: 1; justify-content: center; background: #059669; color: #fff; text-decoration: none;">
-              💬 WhatsApp
-            </a>
+        <div class="hotline-card">
+          <h4>⚡ SB POWER গ্যাজেটস</h4>
+          <p>ওয়্যারলেস অডিও ও টেক গ্যাজেটের পাইকারি ও সরাসরি অর্ডারের জন্য যোগাযোগ করুন:</p>
+          <div class="hotline-actions">
+            <a href="tel:01634664224" class="hotline-btn is-power">📞 Call: 01634664224</a>
+            <a href="https://wa.me/8801634664224?text=%E0%A6%86%E0%A6%AE%E0%A6%BF%20SB%20POWER%20%E0%A6%97%E0%A7%8D%E0%A6%AF%E0%A6%BE%E0%A6%9C%E0%A7%87%E0%A6%9F%20%E0%A6%85%E0%A6%B0%E0%A7%8D%E0%A6%A1%E0%A6%BE%E0%A6%B0%20%E0%A6%95%E0%A6%B0%E0%A6%A4%E0%A7%87%20%E0%A6%9a%E0%A6%BE%E0%A6%87" target="_blank" rel="noopener" class="hotline-btn is-wa">💬 WhatsApp</a>
           </div>
         </div>
       </div>
     </div>
   </div>
-
-  <!-- ================= MODALS ================= -->
 
   <!-- 1. Product Detail Modal -->
   <div class="modal-overlay" id="productDetailModal" role="dialog" aria-modal="true" aria-labelledby="modalProductTitle">
     <div class="modal-dialog">
       <div class="modal-header">
         <h3 id="modalProductTitle">প্রোডাক্ট বিবরণ</h3>
-        <button class="btn-close" onclick="closeModal('productDetailModal')">&times;</button>
+        <button type="button" class="btn-close" onclick="closeModal('productDetailModal')" aria-label="বন্ধ করুন">&times;</button>
       </div>
-      <div class="modal-body" id="modalProductBody">
-        <!-- Rendered via app.js -->
-      </div>
+      <div class="modal-body" id="modalProductBody"></div>
     </div>
   </div>
 
-  <!-- 2. Cart & Anti-Fraud Checkout Modal -->
+  <!-- 2. Cart & Checkout Modal -->
   <div class="modal-overlay" id="cartModal" role="dialog" aria-modal="true" aria-labelledby="cartModalTitle">
     <div class="modal-dialog">
       <div class="modal-header">
         <h3 id="cartModalTitle">🛒 আপনার শপিং কার্ট ও অর্ডার</h3>
-        <button class="btn-close" onclick="closeModal('cartModal')">&times;</button>
+        <button type="button" class="btn-close" onclick="closeModal('cartModal')" aria-label="বন্ধ করুন">&times;</button>
       </div>
       <div class="modal-body">
-        <div id="cartItemsContainer">
-          <!-- Cart items list -->
-        </div>
+        <div id="cartItemsContainer"></div>
 
         <div id="checkoutFormWrap" style="display: none; margin-top: 16px;">
-          <hr style="border-color: var(--sbf-border); margin: 16px 0;">
-          <h4 style="color: var(--sbp-yellow); margin-bottom: 12px;">📦 ডেলিভারি ও অর্ডার তথ্য</h4>
+          <hr style="border: 0; border-top: 1px solid var(--border-subtle); margin: 16px 0;">
+          <h4 style="color: var(--text-primary); font-size: 1rem; margin-bottom: 12px;">📦 ডেলিভারি ও অর্ডার তথ্য</h4>
 
           <div class="form-group">
-            <label class="form-label">আপনার পূর্ণ নাম *</label>
+            <label class="form-label" for="orderCustName">আপনার পূর্ণ নাম *</label>
             <input type="text" id="orderCustName" class="form-control" placeholder="যেমন: মোহাম্মদ শাকিল">
           </div>
 
           <div class="form-group">
-            <label class="form-label">মোবাইল নম্বর (১১ ডিজিট) *</label>
-            <input type="tel" id="orderCustPhone" class="form-control" placeholder="01XXXXXXXXX" oninput="syncReferralCreditCheckout()">
+            <label class="form-label" for="orderCustPhone">মোবাইল নম্বর (১১ ডিজিট) *</label>
+            <input type="tel" id="orderCustPhone" class="form-control" inputmode="tel" placeholder="01XXXXXXXXX" oninput="syncReferralCreditCheckout()">
           </div>
 
           <div class="form-group">
-            <label class="form-label">সম্পূর্ণ ডেলিভারি ঠিকানা *</label>
+            <label class="form-label" for="orderCustAddress">সম্পূর্ণ ডেলিভারি ঠিকানা *</label>
             <textarea id="orderCustAddress" class="form-control" rows="2" placeholder="বাড়ি/রোড/এলাকা/উপজেলা/জেলা"></textarea>
           </div>
 
           <div class="form-group">
-            <label class="form-label">ডেলিভারি এরিয়া *</label>
+            <label class="form-label" for="orderDeliveryCity">ডেলিভারি এরিয়া *</label>
             <select id="orderDeliveryCity" class="form-control" onchange="calculateCartTotals()">
               <option value="inside_dhaka">ঢাকা ভেতরে (ফার্নিচার ৫০০৳ / গ্যাজেট ৮০৳)</option>
               <option value="outside_dhaka">ঢাকার বাইরে (ফার্নিচার ১০০০৳ / গ্যাজেট ১৫০৳)</option>
@@ -346,51 +345,51 @@
           </div>
 
           <!-- Optional advance for large or custom orders -->
-          <div id="advanceProtection" style="background: rgba(180, 83, 9, 0.15); border: 1px solid var(--sbf-amber); border-radius: var(--radius-sm); padding: 12px; margin-bottom: 14px;">
-            <div style="font-size: 0.85rem; font-weight: 700; color: #fde68a; margin-bottom: 4px;">
+          <div id="advanceProtection" class="advance-box">
+            <div style="font-size: 0.86rem; font-weight: 700; color: #92400e; margin-bottom: 4px;">
               💳 বড় বা কাস্টম অর্ডারে অগ্রিম (ঐচ্ছিক)
             </div>
-            <p style="font-size: 0.78rem; color: #d6d3d1; margin-bottom: 8px;">
-              সাধারণ অর্ডারে ক্যাশ অন ডেলিভারি। বড় বা কাস্টম অর্ডারে আগে অগ্রিম ঠিক করা হলে পরিমাণ ও TrxID দিন; অগ্রিম না থাকলে ০ রাখুন। পেমেন্ট admin যাচাই করবেন।
+            <p style="font-size: 0.78rem; color: #78350f; margin-bottom: 8px;">
+              সাধারণ অর্ডারে ক্যাশ অন ডেলিভারি। বড় বা কাস্টম অর্ডারে আগে অগ্রিম ঠিক করা হলে পরিমাণ ও TrxID দিন; অগ্রিম না থাকলে ০ রাখুন।
             </p>
-            <div style="font-size: 0.82rem; color: #fff; font-weight: 600;">
-              বিকাশ (Personal): <strong style="color: var(--sbp-yellow);">01929621855</strong><br>
-              নগদ (Personal): <strong style="color: var(--sbp-yellow);">01634664224</strong>
+            <div style="font-size: 0.82rem; color: var(--text-primary); font-weight: 600;">
+              বিকাশ (Personal): <strong style="color: var(--brand-primary-hv);">01929621855</strong> ·
+              নগদ (Personal): <strong style="color: var(--brand-primary-hv);">01634664224</strong>
             </div>
 
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px;">
               <div>
-                <label class="form-label" style="font-size: 0.75rem;">অগ্রিম পেমেন্ট TrxID (অগ্রিম দিলে)</label>
-                <input type="text" id="orderTrxId" class="form-control" placeholder="অগ্রিম দিলে TrxID লিখুন">
+                <label class="form-label" style="font-size: 0.75rem;" for="orderTrxId">অগ্রিম TrxID</label>
+                <input type="text" id="orderTrxId" class="form-control" placeholder="অগ্রিম দিলে লিখুন">
               </div>
               <div>
-                <label class="form-label" style="font-size: 0.75rem;">অগ্রিম টাকার পরিমাণ</label>
+                <label class="form-label" style="font-size: 0.75rem;" for="orderAdvancePaid">অগ্রিম টাকার পরিমাণ</label>
                 <input type="number" id="orderAdvancePaid" class="form-control" value="0" min="0" step="1" oninput="this.dataset.userEdited='true'">
               </div>
             </div>
           </div>
 
           <!-- Summary Breakdown -->
-          <div style="background: #292524; padding: 12px; border-radius: var(--radius-sm); font-size: 0.88rem;">
-            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+          <div class="cart-summary">
+            <div class="cart-summary-row">
               <span>সাবটোটাল:</span>
               <strong id="cartSubtotal">০ ৳</strong>
             </div>
-            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+            <div class="cart-summary-row">
               <span>ডেলিভারি চার্জ:</span>
               <strong id="cartDeliveryFee">০ ৳</strong>
             </div>
-            <div id="cartReferralDiscountRow" style="display: none; justify-content: space-between; margin-bottom: 4px; color: #10b981;">
+            <div id="cartReferralDiscountRow" class="cart-summary-row" style="display: none; color: var(--brand-success);">
               <span>রেফারেল ছাড়:</span>
               <strong id="cartReferralDiscount">০ ৳</strong>
             </div>
-            <div style="display: flex; justify-content: space-between; font-size: 1.05rem; color: var(--sbp-yellow); font-weight: 700; border-top: 1px solid var(--sbf-border); padding-top: 6px; margin-top: 6px;">
+            <div class="cart-summary-total">
               <span>সর্বমোট:</span>
               <span id="cartGrandTotal">০ ৳</span>
             </div>
           </div>
 
-          <button class="btn-submit" onclick="submitOrder()">নিশ্চিত করুন ও অর্ডার প্লেস করুন</button>
+          <button type="button" class="btn-submit" onclick="submitOrder()">নিশ্চিত করুন ও অর্ডার প্লেস করুন</button>
         </div>
       </div>
     </div>
@@ -401,11 +400,9 @@
     <div class="modal-dialog reseller-dialog">
       <div class="modal-header">
         <h3 id="resellerModalTitle">💼 রিসেলার ড্যাশবোর্ড ও ওয়ালেট</h3>
-        <button class="btn-close" onclick="closeModal('resellerModal')">&times;</button>
+        <button type="button" class="btn-close" onclick="closeModal('resellerModal')" aria-label="বন্ধ করুন">&times;</button>
       </div>
-      <div class="modal-body" id="resellerModalBody">
-        <!-- Filled dynamically: Auth forms or Wallet Dashboard -->
-      </div>
+      <div class="modal-body" id="resellerModalBody"></div>
     </div>
   </div>
 
@@ -414,19 +411,19 @@
     <div class="modal-dialog">
       <div class="modal-header">
         <h3 id="trackModalTitle">🔍 অর্ডার ট্র্যাক ও হিস্ট্রি</h3>
-        <button class="btn-close" onclick="closeModal('trackModal')">&times;</button>
+        <button type="button" class="btn-close" onclick="closeModal('trackModal')" aria-label="বন্ধ করুন">&times;</button>
       </div>
       <div class="modal-body">
         <div class="form-group">
           <label class="form-label" for="trackOrderInput">অর্ডার নম্বর লিখুন</label>
           <div style="display: flex; gap: 8px;">
             <input type="text" id="trackOrderInput" class="form-control" placeholder="যেমন: SB-123456-789" autocomplete="off">
-            <button class="btn-nav" style="background: var(--sbf-amber); white-space: nowrap; padding: 8px 16px;" onclick="trackOrder()">খুঁজুন</button>
+            <button type="button" class="btn-submit" style="width: auto; padding: 0 18px; min-height: 46px;" onclick="trackOrder()">খুঁজুন</button>
           </div>
           <label class="form-label" for="trackCustomerPhone" style="margin-top: 10px;">অর্ডারের সময় দেওয়া মোবাইল নম্বর</label>
           <input type="tel" id="trackCustomerPhone" class="form-control" inputmode="tel" autocomplete="tel" placeholder="01XXXXXXXXX">
-          <div style="margin-top: 8px; display: flex; gap: 6px;">
-            <button class="btn-nav" style="padding: 4px 10px; font-size: 0.78rem;" onclick="loadCustomerOrderHistory()">📦 লগইন করে নিজের অর্ডার ইতিহাস দেখুন</button>
+          <div style="margin-top: 10px;">
+            <button type="button" class="btn-nav" onclick="loadCustomerOrderHistory()">📦 লগইন করে নিজের অর্ডার ইতিহাস দেখুন</button>
           </div>
         </div>
         <div id="trackOrderResult" style="margin-top: 16px;"></div>
@@ -439,37 +436,35 @@
     <div class="modal-dialog modal-dialog-lg">
       <div class="modal-header">
         <h3 id="leaderboardModalTitle">📊 সফল অর্ডারের রিসেলার তালিকা</h3>
-        <button class="btn-close" onclick="closeModal('leaderboardModal')">&times;</button>
+        <button type="button" class="btn-close" onclick="closeModal('leaderboardModal')" aria-label="বন্ধ করুন">&times;</button>
       </div>
-      <div class="modal-body" id="leaderboardContent">
-        <!-- Filled dynamically by leaderboard.js -->
-      </div>
+      <div class="modal-body" id="leaderboardContent"></div>
     </div>
   </div>
 
-  <!-- Modern Sticky Bottom Navigation Bar -->
+  <!-- Sticky Bottom Navigation Bar -->
   <nav class="bottom-nav-bar" id="bottomNavBar" aria-label="কাস্টমার অ্যাপ নেভিগেশন">
     <button type="button" class="bottom-nav-item active" id="bnavShop" onclick="switchMainTab('shop')">
-      <span class="bnav-icon">🛍️</span>
+      <span class="bnav-icon" aria-hidden="true">🛍️</span>
       <span class="bnav-label">শপ</span>
     </button>
     <button type="button" class="bottom-nav-item" id="bnavOrders" onclick="switchMainTab('orders')">
-      <span class="bnav-icon">📦</span>
+      <span class="bnav-icon" aria-hidden="true">📦</span>
       <span class="bnav-label">অর্ডার</span>
     </button>
     <button type="button" class="bottom-nav-item" id="bnavWallet" onclick="switchMainTab('wallet')">
-      <span class="bnav-icon">💰</span>
+      <span class="bnav-icon" aria-hidden="true">💰</span>
       <span class="bnav-label">ওয়ালেট</span>
     </button>
     <button type="button" class="bottom-nav-item" id="bnavProfile" onclick="switchMainTab('profile')">
-      <span class="bnav-icon">👤</span>
+      <span class="bnav-icon" aria-hidden="true">👤</span>
       <span class="bnav-label">প্রোফাইল</span>
     </button>
   </nav>
 
   <!-- PWA 1-Click Install Fixed Bottom Banner -->
   <div id="pwaInstallBanner" class="pwa-install-banner" style="display: none;">
-    <div class="pwa-banner-icon">📱</div>
+    <div class="pwa-banner-icon" aria-hidden="true">📱</div>
     <div class="pwa-banner-info">
       <div class="pwa-banner-title">
         <span>📲 ১-ক্লিকে অ্যাপ ইনস্টল</span>
@@ -478,25 +473,24 @@
       <div class="pwa-banner-desc">কোনো ফাইল ডাউনলোড ছাড়াই ফোনের স্ক্রিনে যুক্ত করুন</div>
     </div>
     <div class="pwa-banner-actions">
-      <button class="btn-pwa-install" onclick="triggerPwaInstall()">ইনস্টল করুন</button>
-      <button class="btn-pwa-dismiss" onclick="dismissPwaBanner()" aria-label="বন্ধ করুন">✕</button>
+      <button type="button" class="btn-pwa-install" onclick="triggerPwaInstall()">ইনস্টল করুন</button>
+      <button type="button" class="btn-pwa-dismiss" onclick="dismissPwaBanner()" aria-label="বন্ধ করুন">✕</button>
     </div>
   </div>
 
   <!-- Toast Notification -->
-  <div id="toast" class="toast-msg"></div>
+  <div id="toast" class="toast-msg" role="status" aria-live="polite"></div>
 
   <!-- JavaScript Modules -->
-  <script src="/js/app-config.js?v=3.2.0"></script>
-  <script src="/js/api.js?v=3.2.0"></script>
-  <script src="/js/catalog.js?v=3.2.1"></script>
-  <script src="/js/leaderboard.js?v=3.2.0"></script>
-  <script src="/js/app.js?v=3.2.2"></script>
-  <script src="/js/referrals.js?v=1.0.1"></script>
+  <script src="/js/app-config.js?v=4.0.0"></script>
+  <script src="/js/api.js?v=4.0.0"></script>
+  <script src="/js/catalog.js?v=4.0.1"></script>
+  <script src="/js/leaderboard.js?v=4.0.0"></script>
+  <script src="/js/app.js?v=4.0.1"></script>
+  <script src="/js/referrals.js?v=1.0.2"></script>
   <script src="/js/pwa-install.js?v=3.2.2" defer></script>
   <script src="/js/pwa-splash.js?v=1.0.0"></script>
   <script>
-    // Register PWA Service Worker
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('/sw.js').catch(() => {});

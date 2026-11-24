@@ -2,7 +2,9 @@ const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
 const { query, get, run } = require('../db');
-const { hashPassword, comparePassword } = require('../auth');
+const { hashPassword, comparePassword, generateToken } = require('../auth');
+const { takaFields } = require('../money');
+const config = require('../config');
 
 // Generate collision-resistant unique referral code
 const generateReferralCode = async (phone) => {
@@ -60,6 +62,7 @@ router.get('/users', async (req, res) => {
         u.name,
         u.phone,
         u.role,
+        u.status,
         u.referral_code,
         u.referred_by_id,
         u.created_at,
@@ -76,7 +79,7 @@ router.get('/users', async (req, res) => {
       ) ord ON u.id = ord.reseller_id
       LEFT JOIN (
         SELECT user_id,
-          SUM(CASE WHEN status IN ('available', 'completed') AND type IN ('commission', 'referral_bonus', 'team_bonus') THEN amount ELSE 0 END) as earned,
+          SUM(CASE WHEN status IN ('available', 'completed') AND type IN ('commission', 'referral_commission', 'referral_bonus', 'team_bonus') THEN amount ELSE 0 END) as earned,
           SUM(CASE WHEN type = 'payout' AND status IN ('pending', 'approved', 'completed') THEN amount ELSE 0 END) as payout_committed
         FROM wallet_transactions
         GROUP BY user_id
@@ -90,7 +93,7 @@ router.get('/users', async (req, res) => {
 
     return res.json({
       success: true,
-      users,
+      users: users.map((user) => takaFields(user, ['total_sales', 'balance'])),
       pagination: {
         page,
         limit,
@@ -130,7 +133,7 @@ router.post('/users', async (req, res) => {
       return res.status(400).json({ success: false, message: 'পাসওয়ার্ড ৮ থেকে ৭২ বাইটের মধ্যে হতে হবে' });
     }
 
-    const targetRole = (role || 'reseller').toLowerCase().trim();
+    const targetRole = (role || 'customer').toLowerCase().trim();
     const validRoles = ['admin', 'reseller', 'customer'];
     if (!validRoles.includes(targetRole)) {
       return res.status(400).json({ success: false, message: 'অবৈধ পদবি/রোল। অনুমোদিত: admin, reseller, customer' });
@@ -221,6 +224,44 @@ router.put('/users/:id/role', async (req, res) => {
 });
 
 // ==========================================
+// 3b. PUT /api/admin/users/:id/status
+// Toggle user account status (active vs suspended)
+// ==========================================
+router.put('/users/:id/status', async (req, res) => {
+  try {
+    const userId = Number(req.params.id);
+    const { status } = req.body;
+    if (!Number.isSafeInteger(userId) || userId < 1) {
+      return res.status(400).json({ success: false, message: 'ইউজার আইডি সঠিক নয়' });
+    }
+    if (!['active', 'suspended'].includes(status)) {
+      return res.status(400).json({ success: false, message: 'অবৈধ স্ট্যাটাস (active বা suspended হতে হবে)' });
+    }
+
+    const targetUser = await get('SELECT id, name, role FROM users WHERE id = ?', [userId]);
+    if (!targetUser) {
+      return res.status(404).json({ success: false, message: 'ইউজার খুঁজে পাওয়া যায়নি' });
+    }
+
+    if (targetUser.id === req.user.id && status === 'suspended') {
+      return res.status(400).json({ success: false, message: 'নিজের অ্যাকাউন্ট স্থগিত করা যাবে না' });
+    }
+
+    await run('UPDATE users SET status = ? WHERE id = ?', [status, userId]);
+
+    return res.json({
+      success: true,
+      message: `${targetUser.name}-এর অ্যাকাউন্ট সফলভাবে ${status === 'active' ? 'সক্রিয়' : 'স্থগিত'} করা হয়েছে!`,
+      userId,
+      status
+    });
+  } catch (error) {
+    console.error('Admin Update User Status Error:', error);
+    return res.status(500).json({ success: false, message: 'ইউজার স্ট্যাটাস পরিবর্তন করতে ব্যর্থ হয়েছে' });
+  }
+});
+
+// ==========================================
 // 4. PUT /api/admin/profile/password
 // Easy password update for logged-in admin
 // ==========================================
@@ -246,11 +287,27 @@ router.put('/profile/password', async (req, res) => {
     }
 
     const newHash = await hashPassword(new_password);
-    await run('UPDATE users SET password_hash = ? WHERE id = ?', [newHash, req.user.id]);
+    await run(
+      'UPDATE users SET password_hash = ?, token_version = token_version + 1 WHERE id = ?',
+      [newHash, req.user.id]
+    );
+
+    const refreshedUser = await get(
+      'SELECT id, name, phone, role, referral_code, token_version FROM users WHERE id = ?',
+      [req.user.id]
+    );
+    const token = generateToken(refreshedUser);
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: config.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 30 * 24 * 60 * 60 * 1000
+    });
 
     return res.json({
       success: true,
-      message: 'এডমিন পাসওয়ার্ড সফলভাবে আপডেট হয়েছে!'
+      message: 'এডমিন পাসওয়ার্ড সফলভাবে আপডেট হয়েছে! অন্যান্য ডিভাইস থেকে লগআউট হয়ে গেছে।',
+      token
     });
   } catch (error) {
     console.error('Admin Change Password Error:', error);

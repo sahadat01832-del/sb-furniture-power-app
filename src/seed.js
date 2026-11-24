@@ -1,8 +1,11 @@
 const { initDb, query, run, get } = require('./db');
 const { hashPassword } = require('./auth');
 const config = require('./config');
+const { toPaisa } = require('./money');
 
-const seedData = async ({ includeDemoProducts = false } = {}) => {
+const seedData = async ({
+  includeDemoProducts = process.argv.includes('--demo') || process.env.SEED_DEMO_PRODUCTS === 'true'
+} = {}) => {
   console.log('--- Initializing Database & Seeding Data ---');
   await initDb();
 
@@ -483,8 +486,8 @@ const seedData = async ({ includeDemoProducts = false } = {}) => {
         item.sku,
         item.brand,
         item.category,
-        item.regular_price,
-        item.reseller_commission,
+        toPaisa(item.regular_price),
+        toPaisa(item.reseller_commission),
         item.commission_tab,
         item.image_url,
         item.description,

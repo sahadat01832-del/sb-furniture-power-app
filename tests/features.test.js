@@ -6,10 +6,11 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const app = require('../src/server');
-const { initDb, run, get, query, withTransaction } = require('../src/db');
+const { initDb, run, get, query, withTransaction, closeDb } = require('../src/db');
 const { seedData } = require('../src/seed');
 const { BACKUP_DIR } = require('../src/backup');
 const config = require('../src/config');
+const { registerReseller } = require('./resellerTestHelpers');
 
 let server;
 let baseUrl;
@@ -45,7 +46,11 @@ const request = (path, options = {}) => {
 
     req.on('error', reject);
     if (options.body) {
-      req.write(JSON.stringify(options.body));
+      if (typeof options.body === 'string' || Buffer.isBuffer(options.body)) {
+        req.write(options.body);
+      } else {
+        req.write(JSON.stringify(options.body));
+      }
     }
     req.end();
   });
@@ -68,6 +73,7 @@ after(async () => {
   if (server) {
     await new Promise((resolve) => server.close(resolve));
   }
+  await closeDb();
 });
 
 test('Features 1: Auth - Session, Profile Update, and Password Change', async () => {
@@ -137,6 +143,25 @@ test('Features 1: Auth - Session, Profile Update, and Password Change', async ()
   });
   assert.equal(goodPassRes.status, 200);
   assert.equal(goodPassRes.body.success, true);
+  assert.ok(goodPassRes.body.token, 'Password change must return a fresh token');
+
+  // 6a. The pre-change token is revoked, so a stolen session cannot keep using it.
+  const staleSession = await request('/api/auth/me', {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  assert.equal(staleSession.status, 401);
+
+  const staleCookieCheck = await request('/api/auth/session', {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  assert.equal(staleCookieCheck.body.authenticated, false);
+
+  // 6b. The token issued by the change keeps this device signed in.
+  const refreshedSession = await request('/api/auth/me', {
+    headers: { Authorization: `Bearer ${goodPassRes.body.token}` }
+  });
+  assert.equal(refreshedSession.status, 200);
+  assert.equal(refreshedSession.body.user.phone, phone);
 
   // 7. Verify login works with new password
   const newLoginRes = await request('/api/auth/login', {
@@ -173,7 +198,14 @@ test('Features 2: Product Catalog - Price Range, Sorting, Categories Meta & Pagi
   }
 
   // 4. Sorting by commission desc
-  const commDescRes = await request('/api/products?sort=commission_desc&limit=10');
+  const reseller = await registerReseller(request, {
+    name: 'কমিশন সাজানোর পরীক্ষা',
+    phone: '01712340002',
+    password: 'password123'
+  });
+  const commDescRes = await request('/api/products?sort=commission_desc&limit=10', {
+    headers: { Authorization: `Bearer ${reseller.body.token}` }
+  });
   assert.equal(commDescRes.status, 200);
   for (let i = 0; i < commDescRes.body.products.length - 1; i++) {
     assert.ok(commDescRes.body.products[i].reseller_commission >= commDescRes.body.products[i + 1].reseller_commission);
@@ -197,10 +229,7 @@ test('Features 3: Order History, Phone-Based Search, and Reseller Sales List', a
 
   // 2. Register reseller
   const resPhone = '01799223344';
-  const reg = await request('/api/auth/register', {
-    method: 'POST',
-    body: { name: 'আসিফ ইকবাল', phone: resPhone, password: 'password123' }
-  });
+  const reg = await registerReseller(request, { name: 'আসিফ ইকবাল', phone: resPhone, password: 'password123' });
   const resToken = reg.body.token;
 
   // 3. Place order with reseller referral
@@ -271,10 +300,7 @@ test('Features 3: Order History, Phone-Based Search, and Reseller Sales List', a
 test('Features 4: Order Audit Trail & Real-Time Reseller Notification on Status Transition', async () => {
   const prods = await query('SELECT * FROM products LIMIT 1');
   const resPhone = '01799334455';
-  const reg = await request('/api/auth/register', {
-    method: 'POST',
-    body: { name: 'সুমাইয়া জাহান', phone: resPhone, password: 'password123' }
-  });
+  const reg = await registerReseller(request, { name: 'সুমাইয়া জাহান', phone: resPhone, password: 'password123' });
   const resToken = reg.body.token;
 
   const orderRes = await request('/api/orders', {
@@ -351,23 +377,17 @@ test('Features 4: Order Audit Trail & Real-Time Reseller Notification on Status 
 test('Features 5: Downline Team Breakdown & Admin Analytics', async () => {
   // 1. Parent reseller registers
   const parentPhone = '01799445566';
-  const parentReg = await request('/api/auth/register', {
-    method: 'POST',
-    body: { name: 'টিম লিডার তানভীর', phone: parentPhone, password: 'password123' }
-  });
+  const parentReg = await registerReseller(request, { name: 'টিম লিডার তানভীর', phone: parentPhone, password: 'password123' });
   const parentToken = parentReg.body.token;
   const parentRefCode = parentReg.body.user.referral_code;
 
   // 2. Child reseller registers using parent's referral code
   const childPhone = '01799556677';
-  const childReg = await request('/api/auth/register', {
-    method: 'POST',
-    body: {
-      name: 'সদস্য কামরুল',
-      phone: childPhone,
-      password: 'password123',
-      referral_code: parentRefCode
-    }
+  const childReg = await registerReseller(request, {
+    name: 'সদস্য কামরুল',
+    phone: childPhone,
+    password: 'password123',
+    referral_code: parentRefCode
   });
   assert.equal(childReg.status, 201);
 
@@ -541,10 +561,7 @@ test('Features 8: Admin Products Filter (Active vs Inactive) & Status Update', a
 test('Features 9: Admin Payout Approval/Rejection with Atomic Notifications & Balance Reconciliation', async () => {
   // 1. Register a reseller with available balance
   const phone = `0188${Math.floor(1000000 + Math.random() * 9000000)}`;
-  const regRes = await request('/api/auth/register', {
-    method: 'POST',
-    body: { name: 'রিসেলার জামিল', phone, password: 'Password123' }
-  });
+  const regRes = await registerReseller(request, { name: 'রিসেলার জামিল', phone, password: 'Password123' });
   assert.equal(regRes.status, 201);
   const resellerToken = regRes.body.token;
   const user = await get('SELECT id FROM users WHERE phone = ?', [phone]);
@@ -552,7 +569,7 @@ test('Features 9: Admin Payout Approval/Rejection with Atomic Notifications & Ba
   // Give reseller 1000 TK available balance directly in wallet_transactions
   await run(
     `INSERT INTO wallet_transactions (user_id, amount, type, status, notes)
-     VALUES (?, 1000, 'commission', 'available', 'সরাসরি টেস্ট কমিশন')`,
+     VALUES (?, 100000, 'commission', 'available', 'সরাসরি টেস্ট কমিশন')`,
     [user.id]
   );
 
@@ -759,15 +776,12 @@ test('Features 11: Anti-Fraud Advance Paid Validation', async () => {
 
 test('Features 11a: Concurrent cashouts cannot exceed the available balance', async () => {
   const phone = '01844000001';
-  const registration = await request('/api/auth/register', {
-    method: 'POST',
-    body: { name: 'নিরাপদ ক্যাশআউট পরীক্ষা', phone, password: 'Password123' }
-  });
+  const registration = await registerReseller(request, { name: 'নিরাপদ ক্যাশআউট পরীক্ষা', phone, password: 'Password123' });
   assert.equal(registration.status, 201);
   const user = await get('SELECT id FROM users WHERE phone = ?', [phone]);
   await run(
     `INSERT INTO wallet_transactions (user_id, amount, type, status, notes)
-     VALUES (?, 1000, 'commission', 'available', 'সমান্তরাল ক্যাশআউট পরীক্ষা')`,
+     VALUES (?, 100000, 'commission', 'available', 'সমান্তরাল ক্যাশআউট পরীক্ষা')`,
     [user.id]
   );
 
@@ -871,20 +885,14 @@ test('Features 13: Direct APK Distribution Routes & Service Worker Cache Safety'
 test('Features 14: Reseller commissions follow incoming share links and exclude self-orders', async () => {
   const referrerPhone = '01799000001';
   const shopperPhone = '01799000002';
-  const referrerReg = await request('/api/auth/register', {
-    method: 'POST',
-    body: { name: 'শেয়ারকারী', phone: referrerPhone, password: 'password123' }
-  });
+  const referrerReg = await registerReseller(request, { name: 'শেয়ারকারী', phone: referrerPhone, password: 'password123' });
   assert.equal(referrerReg.status, 201);
 
-  const shopperReg = await request('/api/auth/register', {
-    method: 'POST',
-    body: {
-      name: 'ক্রেতা ও রিসেলার',
-      phone: shopperPhone,
-      password: 'password123',
-      referral_code: referrerReg.body.user.referral_code
-    }
+  const shopperReg = await registerReseller(request, {
+    name: 'ক্রেতা ও রিসেলার',
+    phone: shopperPhone,
+    password: 'password123',
+    referral_code: referrerReg.body.user.referral_code
   });
   assert.equal(shopperReg.status, 201);
 
@@ -936,6 +944,232 @@ test('Features 14: Reseller commissions follow incoming share links and exclude 
   assert.equal(resellerOrderRes.status, 201);
   const resellerOrder = await get('SELECT reseller_id FROM orders WHERE id = ?', [resellerOrderRes.body.order.id]);
   assert.equal(resellerOrder.reseller_id, shopperReg.body.user.id);
+});
+
+test('Features 15: Stock is reserved atomically and decimal prices stay exact', async () => {
+  const adminLogin = await request('/api/auth/login', {
+    method: 'POST',
+    body: { phone: config.ADMIN.phone, password: config.ADMIN.password }
+  });
+  const adminToken = adminLogin.body.token;
+  assert.ok(adminToken);
+
+  const createRes = await request('/api/admin/products', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${adminToken}` },
+    body: {
+      sku: `TEST-PAISA-${Date.now()}`,
+      title: 'দশমিক দামের টেস্ট পণ্য',
+      brand: 'SB POWER',
+      category: 'ওয়্যারলেস অডিও ও গ্যাজেটস',
+      regular_price: 1999.99,
+      reseller_commission: 100.5,
+      stock: 2,
+      is_active: 1
+    }
+  });
+  assert.equal(createRes.status, 201, JSON.stringify(createRes.body));
+  const productId = createRes.body.product_id;
+  assert.ok(productId);
+
+  // Money is stored as exact integer paisa, not a float.
+  const stored = await get('SELECT regular_price, reseller_commission, stock FROM products WHERE id = ?', [productId]);
+  assert.equal(stored.regular_price, 199999);
+  assert.equal(stored.reseller_commission, 10050);
+  assert.equal(Number.isInteger(stored.regular_price), true);
+
+  // The HTTP API still speaks taka, including the decimal places.
+  const listed = await request(`/api/products/${productId}`);
+  assert.equal(listed.body.product.regular_price, 1999.99);
+  assert.equal(listed.body.product.reseller_commission, undefined);
+  const resellerCatalog = await request(`/api/products/${productId}`, {
+    headers: { Authorization: `Bearer ${(await registerReseller(request, {
+      name: 'দশমিক কমিশন পরীক্ষা',
+      phone: '01712340003',
+      password: 'password123'
+    })).body.token}` }
+  });
+  assert.equal(resellerCatalog.body.product.regular_price, 1999.99);
+  assert.equal(resellerCatalog.body.product.reseller_commission, 100.5);
+
+  const orderBody = {
+    customer_name: 'স্টক টেস্ট ক্রেতা',
+    customer_phone: '01712345679',
+    delivery_address: 'কালীগঞ্জ, গাজীপুর',
+    delivery_city: 'outside_dhaka'
+  };
+
+  // Two units: 2 × 1999.99 plus 150 delivery (gadget, outside Dhaka).
+  const orderRes = await request('/api/orders', {
+    method: 'POST',
+    body: { ...orderBody, items: [{ product_id: productId, quantity: 2 }] }
+  });
+  assert.equal(orderRes.status, 201);
+  assert.equal(orderRes.body.order.subtotal_amount, 3999.98);
+  assert.equal(orderRes.body.order.delivery_fee, 150);
+  assert.equal(orderRes.body.order.total_amount, 4149.98);
+
+  const afterOrder = await get('SELECT stock FROM products WHERE id = ?', [productId]);
+  assert.equal(afterOrder.stock, 0, 'Placing an order must decrement stock');
+
+  // Selling stock that is gone must fail instead of overselling.
+  const oversell = await request('/api/orders', {
+    method: 'POST',
+    body: { ...orderBody, items: [{ product_id: productId, quantity: 1 }] }
+  });
+  assert.equal(oversell.status, 409);
+  assert.ok(oversell.body.message.includes('স্টক'));
+
+  // Cancelling returns the reserved units.
+  const cancelRes = await request(`/api/admin/orders/${orderRes.body.order.id}/status`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${adminToken}` },
+    body: { status: 'cancelled' }
+  });
+  assert.equal(cancelRes.status, 200);
+  const afterCancel = await get('SELECT stock FROM products WHERE id = ?', [productId]);
+  assert.equal(afterCancel.stock, 2, 'Cancelling must return the reserved stock');
+
+  // Two simultaneous orders cannot both take the same two units.
+  const concurrent = await Promise.all([
+    request('/api/orders', { method: 'POST', body: { ...orderBody, items: [{ product_id: productId, quantity: 2 }] } }),
+    request('/api/orders', { method: 'POST', body: { ...orderBody, items: [{ product_id: productId, quantity: 2 }] } })
+  ]);
+  assert.deepEqual(concurrent.map((result) => result.status).sort(), [201, 409]);
+
+  await request(`/api/admin/products/${productId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${adminToken}` }
+  });
+});
+
+test('Features 16: Admin Image Upload - Direct photo upload with magic byte verification', async () => {
+  const adminLogin = await request('/api/auth/login', {
+    method: 'POST',
+    body: { phone: config.ADMIN.phone, password: config.ADMIN.password }
+  });
+  const adminToken = adminLogin.body.token;
+  assert.ok(adminToken);
+
+  // 1. Unauthenticated request should fail
+  const unauthRes = await request('/api/admin/upload-image', {
+    method: 'POST',
+    body: { image: 'data:image/png;base64,abc' }
+  });
+  assert.equal(unauthRes.status, 401);
+
+  // 2. Missing body / image payload should fail
+  const emptyRes = await request('/api/admin/upload-image', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${adminToken}` },
+    body: {}
+  });
+  assert.equal(emptyRes.status, 400);
+
+  // 3. Invalid magic bytes (text masquerading as png) should fail
+  const fakeImageRes = await request('/api/admin/upload-image', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${adminToken}` },
+    body: { image: 'data:image/png;base64,SGVsbG8gV29ybGQ=' }
+  });
+  assert.equal(fakeImageRes.status, 400);
+  assert.ok(fakeImageRes.body.message.includes('ছবি'));
+
+  // 4. Valid PNG upload with standard data URI
+  const validPngBase64 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+  const uploadRes = await request('/api/admin/upload-image', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${adminToken}` },
+    body: { image: validPngBase64 }
+  });
+  assert.equal(uploadRes.status, 200);
+  assert.equal(uploadRes.body.success, true);
+  assert.ok(uploadRes.body.url && uploadRes.body.url.startsWith('/uploads/'));
+  assert.ok(uploadRes.body.url.endsWith('.png'));
+
+  // 5. Base64 containing newlines, line wraps, and whitespace (regression test)
+  const newlineBase64 = 'data:image/png;base64,\r\niVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk\n+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==\n';
+  const newlineUploadRes = await request('/api/admin/upload-image', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${adminToken}` },
+    body: { image: newlineBase64 }
+  });
+  assert.equal(newlineUploadRes.status, 200);
+  assert.equal(newlineUploadRes.body.success, true);
+  assert.ok(newlineUploadRes.body.url.startsWith('/uploads/'));
+
+  // 6. Valid WebP upload
+  const validWebpBase64 = 'data:image/webp;base64,UklGRkAAAABXRUJQVlA4IDQAAADwAQCdASoBAAEAAQAcJaACdLoB+AA/v2eAAAD+/vz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/AAA';
+  const webpUploadRes = await request('/api/admin/upload-image', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${adminToken}` },
+    body: { image: validWebpBase64 }
+  });
+  assert.equal(webpUploadRes.status, 200);
+  assert.equal(webpUploadRes.body.success, true);
+  assert.ok(webpUploadRes.body.url.endsWith('.webp'));
+
+  // 7. Valid JPEG upload
+  const validJpegBase64 = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=';
+  const jpegUploadRes = await request('/api/admin/upload-image', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${adminToken}` },
+    body: { image: validJpegBase64 }
+  });
+  assert.equal(jpegUploadRes.status, 200);
+  assert.equal(jpegUploadRes.body.success, true);
+  assert.ok(jpegUploadRes.body.url.endsWith('.jpg'));
+
+  // 8. Multipart form data upload
+  const boundary = '---------------------------sbpowertestboundary';
+  const pngBinary = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+  const multipartHeader = Buffer.from(
+    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="test.png"\r\nContent-Type: image/png\r\n\r\n`,
+    'binary'
+  );
+  const multipartFooter = Buffer.from(`\r\n--${boundary}--\r\n`, 'binary');
+  const multipartBody = Buffer.concat([multipartHeader, pngBinary, multipartFooter]);
+
+  const multipartRes = await request('/api/admin/upload-image', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${adminToken}`,
+      'Content-Type': `multipart/form-data; boundary=${boundary}`
+    },
+    body: multipartBody
+  });
+  assert.equal(multipartRes.status, 200);
+  assert.equal(multipartRes.body.success, true);
+  assert.ok(multipartRes.body.url.endsWith('.png'));
+
+  // 9. Oversized image rejection (>5MB)
+  const oversizeBuf = Buffer.alloc(6 * 1024 * 1024);
+  oversizeBuf[0] = 0xFF;
+  oversizeBuf[1] = 0xD8;
+  oversizeBuf[2] = 0xFF;
+  const oversizeRes = await request('/api/admin/upload-image', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${adminToken}` },
+    body: { image: oversizeBuf.toString('base64') }
+  });
+  assert.equal(oversizeRes.status, 400);
+  assert.ok(oversizeRes.body.message.includes('মেগাবাইট'));
+
+  // 10. Verify uploaded file is statically accessible via /uploads/
+  const uploadedPath = uploadRes.body.url;
+  const staticFileRes = await request(uploadedPath);
+  assert.equal(staticFileRes.status, 200);
+
+  // Clean up uploaded test files
+  const cleanupUrls = [uploadRes.body.url, newlineUploadRes.body.url, webpUploadRes.body.url, jpegUploadRes.body.url, multipartRes.body.url];
+  for (const u of cleanupUrls) {
+    if (u && u.startsWith('/uploads/')) {
+      const localFilePath = path.join(__dirname, '..', 'public', u.replace(/^\//, ''));
+      if (fs.existsSync(localFilePath)) {
+        fs.unlinkSync(localFilePath);
+      }
+    }
+  }
 });
 
 

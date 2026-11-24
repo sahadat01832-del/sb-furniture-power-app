@@ -62,36 +62,29 @@ test('APK & PWA 1: Web App Manifest & PNG Icons Compliance', async () => {
   assert.ok(icon192Res.headers['content-type'].includes('image/png'));
 });
 
-test('APK & PWA 2: PWA 1-Click Banner & APK Guidance Modal Assets', async () => {
+test('APK & PWA 2: PWA 1-Click Banner Assets', async () => {
   const cssRes = await request('/css/pwa-install.css');
   assert.equal(cssRes.status, 200);
   assert.ok(cssRes.text.includes('.pwa-install-banner'));
-  assert.ok(cssRes.text.includes('.apk-guide-box'));
+  assert.ok(cssRes.text.includes('.btn-pwa-primary'));
 
   const jsRes = await request('/js/pwa-install.js');
   assert.equal(jsRes.status, 200);
   assert.ok(jsRes.text.includes('beforeinstallprompt'));
-  assert.ok(jsRes.text.includes('openApkDownloadModal'));
   assert.ok(jsRes.text.includes('triggerPwaInstall'));
 });
 
-test('APK & PWA 3: HTML Landing Page & Admin Portal Integrate Zero-Friction PWA & Modal Guidance', async () => {
+test('APK & PWA 3: HTML Landing Page & Admin Portal Integrate Zero-Friction PWA', async () => {
   const indexRes = await request('/');
   assert.equal(indexRes.status, 200);
   assert.ok(indexRes.text.includes('id="pwaInstallBanner"'));
-  assert.ok(indexRes.text.includes('id="apkDownloadModal"'));
   assert.ok(indexRes.text.includes('id="btnNavInstall"'));
-  assert.ok(indexRes.text.includes('openApkDownloadModal'));
-  // Verify Bangla guidance text for conflict-free installation
-  assert.ok(indexRes.text.includes('পুরনো অ্যাপ থাকলে আনইনস্টল করুন'));
-  assert.ok(indexRes.text.includes('প্লে প্রোটেক্টে "Install anyway" চাপুন'));
 
   // Also verify Admin Portal has PWA capabilities
   const adminRes = await request('/admin');
   assert.equal(adminRes.status, 200);
   assert.ok(adminRes.text.includes('manifest-admin.json'));
   assert.ok(adminRes.text.includes('id="pwaInstallBanner"'));
-  assert.ok(adminRes.text.includes('id="apkDownloadModal"'));
   assert.ok(adminRes.text.includes('id="btnNavInstall"'));
 });
 

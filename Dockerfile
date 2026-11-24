@@ -1,5 +1,5 @@
-# Lightweight Node.js 20 on Alpine Linux for low RAM (<100MB usage)
-FROM node:20-alpine
+# Lightweight Node.js 24 on Alpine Linux for Firebase Admin SDK and current build tools
+FROM node:24-alpine
 
 # Set working directory
 WORKDIR /app

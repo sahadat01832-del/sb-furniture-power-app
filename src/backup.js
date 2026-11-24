@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const config = require('./config');
 const { db } = require('./db');
+const { uploadFirebaseBackup } = require('./firebaseBackup');
 
 const BACKUP_DIR = process.env.BACKUP_DIR || path.join(path.dirname(config.DATABASE_FILE), 'backups');
 const MAX_BACKUPS_TO_KEEP = 30;
@@ -29,6 +30,10 @@ function performBackup() {
     activeBackup = null;
   });
   return activeBackup;
+}
+
+function waitForActiveBackup() {
+  return activeBackup ? activeBackup.catch(() => {}) : Promise.resolve();
 }
 
 function createBackup() {
@@ -66,13 +71,30 @@ function createBackup() {
           console.warn('⚠️ Warning cleaning old backups:', cleanupErr.message);
         }
 
-        resolve({
+        const backupInfo = {
           success: true,
           filename: backupFilename,
           path: targetFilePath,
           sizeBytes: stats.size,
           createdAt: now.toISOString()
-        });
+        };
+
+        uploadFirebaseBackup(backupInfo)
+          .then((cloudBackup) => {
+            if (cloudBackup.success) {
+              console.log('✅ Encrypted Firebase backup uploaded.');
+            } else if (cloudBackup.configured) {
+              console.warn(`⚠️ Firebase backup failed (${cloudBackup.errorCode}); local backup is safe.`);
+            }
+            resolve({ ...backupInfo, cloudBackup });
+          })
+          .catch((cloudError) => {
+            console.warn('⚠️ Firebase backup failed; local backup is safe:', cloudError.code || cloudError.name || 'unknown_error');
+            resolve({
+              ...backupInfo,
+              cloudBackup: { configured: true, success: false, errorCode: 'firestore_unavailable' }
+            });
+          });
       });
     } catch (error) {
       console.error('❌ Backup Exception:', error);
@@ -149,6 +171,7 @@ if (require.main === module) {
 
 module.exports = {
   performBackup,
+  waitForActiveBackup,
   listBackups,
   cleanOldBackups,
   BACKUP_DIR

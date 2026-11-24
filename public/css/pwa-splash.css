@@ -1,3 +1,8 @@
+/* ============================================================
+   SB Furniture & SB POWER — Standalone App Splash Screen v4.0
+   Editorial Atelier Daylight Theme | Smooth Compositor Motion
+   ============================================================ */
+
 .startup-splash {
   position: fixed;
   inset: 0;
@@ -6,12 +11,12 @@
   place-items: center;
   overflow: hidden;
   background:
-    radial-gradient(circle at 50% 42%, rgba(234, 88, 12, 0.18), transparent 36%),
-    linear-gradient(145deg, #0b1220, #152238 58%, #101827);
-  color: #fff7ed;
+    radial-gradient(circle at 50% 42%, rgba(194, 65, 12, 0.12), transparent 44%),
+    linear-gradient(155deg, #faf8f5 0%, #f4efe6 55%, #fff3e8 100%);
+  color: #181512;
   opacity: 1;
   visibility: visible;
-  transition: opacity 360ms ease, visibility 360ms ease;
+  transition: opacity 320ms ease, visibility 320ms ease;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -31,60 +36,59 @@ html.is-standalone .startup-splash { display: grid; }
   position: relative;
   display: grid;
   justify-items: center;
-  gap: 15px;
+  gap: 14px;
   width: min(84vw, 340px);
   text-align: center;
-  animation: splash-content-in 700ms cubic-bezier(.2,.8,.2,1) both;
 }
 
 .startup-splash__logo-wrap {
   position: relative;
   display: grid;
   place-items: center;
-  width: 148px;
-  height: 148px;
-  border: 1px solid rgba(255, 237, 213, .22);
-  border-radius: 42px;
-  background: rgba(255, 255, 255, .045);
-  box-shadow: 0 24px 70px rgba(0, 0, 0, .28), 0 0 48px rgba(234, 88, 12, .14);
-  animation: splash-logo-float 2.4s ease-in-out 700ms infinite;
+  width: 144px;
+  height: 144px;
+  border: 1px solid #fddac3;
+  border-radius: 38px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow:
+    0 22px 54px -10px rgba(24, 21, 18, 0.14),
+    0 0 36px rgba(194, 65, 12, 0.12);
 }
 
 .startup-splash__logo-wrap::before,
 .startup-splash__logo-wrap::after {
   position: absolute;
   inset: -11px;
-  border: 1px solid rgba(251, 146, 60, .22);
-  border-radius: 50px;
+  border: 1px solid rgba(194, 65, 12, 0.26);
+  border-radius: 46px;
   content: "";
-  animation: splash-ring 1.8s ease-out 200ms infinite;
+  opacity: 0;
 }
 
 .startup-splash__logo-wrap::after {
   inset: -23px;
-  border-color: rgba(34, 211, 238, .14);
-  border-radius: 60px;
-  animation-delay: 600ms;
+  border-color: rgba(29, 78, 216, 0.18);
+  border-radius: 56px;
 }
 
 .startup-splash__logo {
   display: block;
-  width: 126px;
-  height: 126px;
-  border-radius: 32px;
-  filter: drop-shadow(0 8px 16px rgba(0, 0, 0, .25));
+  width: 122px;
+  height: 122px;
+  border-radius: 30px;
+  box-shadow: 0 8px 20px rgba(24, 21, 18, 0.12);
 }
 
 .startup-splash__title {
-  margin-top: 5px;
-  color: #fff7ed;
+  margin-top: 4px;
+  color: #181512;
   font: 800 clamp(1.25rem, 5vw, 1.65rem)/1.2 'Hind Siliguri', system-ui, sans-serif;
-  letter-spacing: .01em;
+  letter-spacing: 0.01em;
 }
 
 .startup-splash__subtitle {
-  color: rgba(255, 247, 237, .72);
-  font: 500 .94rem/1.4 'Hind Siliguri', system-ui, sans-serif;
+  color: #524d46;
+  font: 500 0.94rem/1.4 'Hind Siliguri', system-ui, sans-serif;
 }
 
 .startup-splash__loader {
@@ -98,15 +102,14 @@ html.is-standalone .startup-splash { display: grid; }
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #fb923c;
-  animation: splash-dot 850ms ease-in-out infinite alternate;
+  background: #c2410c;
 }
 
-.startup-splash__loader span:nth-child(2) { animation-delay: 170ms; background: #facc15; }
-.startup-splash__loader span:nth-child(3) { animation-delay: 340ms; background: #22d3ee; }
+.startup-splash__loader span:nth-child(2) { background: #d97706; }
+.startup-splash__loader span:nth-child(3) { background: #1d4ed8; }
 
 @keyframes splash-content-in {
-  from { opacity: 0; transform: translateY(16px) scale(.96); }
+  from { opacity: 0; transform: translateY(16px) scale(0.96); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
@@ -116,22 +119,37 @@ html.is-standalone .startup-splash { display: grid; }
 }
 
 @keyframes splash-ring {
-  0% { opacity: .7; transform: scale(.94); }
+  0% { opacity: 0.72; transform: scale(0.94); }
   100% { opacity: 0; transform: scale(1.12); }
 }
 
 @keyframes splash-dot {
-  from { opacity: .45; transform: translateY(0) scale(.82); }
+  from { opacity: 0.45; transform: translateY(0) scale(0.84); }
   to { opacity: 1; transform: translateY(-4px) scale(1); }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .startup-splash__content,
-  .startup-splash__logo-wrap,
-  .startup-splash__logo-wrap::before,
-  .startup-splash__logo-wrap::after,
-  .startup-splash__loader span {
-    animation: none !important;
+@media (prefers-reduced-motion: no-preference) {
+  .startup-splash__content {
+    animation: splash-content-in 620ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
   }
-  .startup-splash { transition-duration: 1ms; }
+  .startup-splash__logo-wrap {
+    animation: splash-logo-float 2.4s ease-in-out 620ms infinite;
+  }
+  .startup-splash__logo-wrap::before {
+    animation: splash-ring 1.8s ease-out 200ms infinite;
+  }
+  .startup-splash__logo-wrap::after {
+    animation: splash-ring 1.8s ease-out 600ms infinite;
+  }
+  .startup-splash__loader span {
+    animation: splash-dot 850ms ease-in-out infinite alternate;
+  }
+  .startup-splash__loader span:nth-child(2) { animation-delay: 170ms; }
+  .startup-splash__loader span:nth-child(3) { animation-delay: 340ms; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .startup-splash {
+    transition-duration: 120ms;
+  }
 }

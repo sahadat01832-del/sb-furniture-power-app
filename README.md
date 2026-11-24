@@ -69,17 +69,17 @@ Test suite আলাদা temporary SQLite database ব্যবহার ক�
 
 ## Cloud hosting (Render)
 
-অ্যাপের বর্তমান Render service `sb-furniture-power-app`; public link `https://sb-furniture-power-app.onrender.com` এবং এই মুহূর্তে `/health` সফল। সার্ভার Render-এ চলে, তাই নিজের PC বন্ধ থাকলেও চালু থাকতে পারে। এখন service Free plan-এ, ফলে ১৫ মিনিট traffic না থাকলে sleep করে, আবার জাগতে প্রায় এক মিনিট লাগে; Free filesystem-এর SQLite data restart, deploy বা sleep-এ হারাতে পারে।
+বর্তমান `render.yaml` Render-এ বিকল্প deployment কনফিগার করে। Render Free web service ১৫ মিনিট request না পেলে sleep করে এবং filesystem স্থায়ী নয়; তাই phone-hosted production data-এর জন্য এই Free service ব্যবহার করবেন না।
 
-`render.yaml` একই service-কে paid always-on plan-এ তুলবে, `/var/data`-এ 1 GB persistent disk যোগ করবে এবং `/health` check চালু করবে। Oregon region বাদ রাখা হয়েছে যাতে বিদ্যমান location-ই থাকে। ছোট 0.5 CPU / 512 MB plan $7/মাস এবং 1 GB disk প্রায় $0.25/মাস; bandwidth, কর বা অন্য usage হলে মোট বাড়তে পারে। Disk এক instance-এ সীমাবদ্ধ করে এবং deploy-এর সময় কয়েক সেকেন্ডের বিরতি হতে পারে।
+ফোনে Node.js server, Cloudflare Quick Tunnel, Firestore live URL এবং encrypted snapshot সেটআপের ধাপ [PHONE_SERVER_GUIDE.md](PHONE_SERVER_GUIDE.md)-এ আছে। Firebase Hosting-এর app link স্থায়ী থাকে; ফোন চালু হলে watchdog বর্তমান tunnel URL Firestore-এ প্রকাশ করে, app সেই ঠিকানা পড়ে। Admin login, orders, commissions, wallet ও product data পেতে ফোনের Node.js server এবং tunnel চালু থাকতে হবে।
 
-Blueprint-টি `codex/hosted-backend` branch থেকে একই service-এ প্রস্তাবিত পরিবর্তন preview করবে। Existing Render URL-ই থাকবে; নতুন service বা নতুন link তৈরি করার কথা নয়। বর্তমান `JWT_SECRET`, admin credentials ও অন্য secret Blueprint-এ লেখা নেই, যাতে sync-এ সেগুলো বদলে না যায়। `.env`, `data/`, database backup, APK ও release keystore Git-এ দেবেন না।
+Firebase Firestore-এ সর্বোচ্চ ৭টি encrypted snapshot রাখা হবে; server চালু হলে এবং প্রতি ৬ ঘণ্টায় নতুন snapshot হবে। Firebase credentials, backup key, `.env`, SQLite database, APK signing key Git-এ দেবেন না। Snapshot size 32 MiB-এর বেশি হলে local backup থাকবে, Firebase upload হবে না।
 
-লোকাল backup-এ পণ্য, ব্যবহারকারী ও অর্ডার আছে। Blueprint apply করলে ওই backup নিজে থেকে Render-এ যাবে না; live service-এর বর্তমান SQLite-ও আগে export করে যাচাই করতে হবে। Disk attach/redeploy-এর আগে দুই দিকের backup ও restore ধাপ ঠিক করা জরুরি। কোনো customer-এর নাম, ফোন, ঠিকানা বা order history cloud-এ পাঠানোর আগে মালিকের অনুমতি নিন।
+ফোন বন্ধ, network বিচ্ছিন্ন, Android battery management, Firebase quota শেষ, বা tunnel outage হলে ১০০% online থাকা সম্ভব নয়। Firestore backup failover server নয়; এটি API চালায় না। সফল backup-এর পরের ডেটা হারালে শেষ snapshot সর্বোচ্চ ৬ ঘণ্টা পিছিয়ে থাকতে পারে।
 
 ## Production-এর আগে
 
-- Production server startup-এ এবং প্রতি 24 ঘণ্টায় একটি SQLite backup তৈরি করে, সর্বশেষ 30টি রাখে। ফাইলগুলো Render disk-এই থাকে; আলাদা offsite backup এখনো স্বয়ংক্রিয় নয়।
+- Production server startup-এ এবং প্রতি ৬ ঘণ্টায় একটি SQLite snapshot তৈরি করে, সর্বশেষ ৩০টি local copy রাখে; Firebase configured থাকলে encrypted cloud copy-ও রাখে।
 - Paperfly fee ও pickup origin, furniture transport, partner settlement, return policy এবং commission ছাড়ার সময় নির্দিষ্ট করুন।
 - GitHub repository বর্তমানে public, এবং পুরোনো release keystore Git history-তে আছে। সেই key exposed ধরে নিন। নতুন APK-তে এটি ব্যবহার করবেন কি না তা সিদ্ধান্তের আগে জেনে নিন: sideloaded app-এর signing key বদলালে পুরোনো install সরাসরি update নাও নিতে পারে।
 - বাংলা Terms-এ delivery, cancellation, return, refund ও after-sales শর্ত লিখুন।

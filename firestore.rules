@@ -1,0 +1,22 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Public clients may read only the current phone API origin. Writes are
+    // reserved for the phone's trusted Firebase Admin SDK.
+    match /system_config/backend_tunnel {
+      allow get: if true;
+      allow list, create, update, delete: if false;
+    }
+
+    // Backup data is written only by the trusted Node.js server using Admin SDK.
+    // Browser and mobile clients must never read customer database snapshots.
+    match /sb_power_app_backups/{backupId} {
+      allow read, write: if false;
+
+      match /backup_chunks/{chunkId} {
+        allow read, write: if false;
+      }
+    }
+  }
+}

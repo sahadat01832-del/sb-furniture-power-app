@@ -1,0 +1,426 @@
+/* ============================================================
+   SB Furniture & SB POWER — Motion & Micro-Interaction Layer v4.0.1
+   GPU-Compositor First | Accessible Reduced-Motion Compliance
+   ============================================================ */
+
+/* Fallbacks for shared motion tokens in case loaded standalone */
+:root {
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --spring-bounce: cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+
+/* ==================== Discrete Overlay Entry/Exit ==================== */
+.modal-overlay {
+  opacity: 0;
+  transition-property: opacity, display;
+  transition-duration: 0.22s;
+  transition-timing-function: ease-out;
+  transition-behavior: allow-discrete;
+}
+
+.modal-overlay.active {
+  display: grid;
+  opacity: 1;
+}
+
+/* Top-level @starting-style ensures opacity entry animates across display:none -> grid */
+@starting-style {
+  .modal-overlay.active {
+    opacity: 0;
+  }
+}
+
+/* ==================== Keyframes ==================== */
+@keyframes sb-fade-rise {
+  from {
+    opacity: 0;
+    translate: 0 14px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+@keyframes sb-card-enter {
+  from {
+    opacity: 0;
+    translate: 0 16px;
+    scale: 0.985;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+    scale: 1;
+  }
+}
+
+@keyframes sb-panel-enter {
+  from {
+    opacity: 0;
+    translate: 0 10px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+@keyframes sb-sheet-up {
+  from {
+    opacity: 0;
+    translate: 0 32px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+@keyframes sb-modal-pop {
+  from {
+    opacity: 0;
+    translate: 0 14px;
+    scale: 0.96;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+    scale: 1;
+  }
+}
+
+@keyframes sb-bnav-bounce {
+  0% {
+    scale: 0.84;
+    translate: 0 0;
+  }
+  58% {
+    scale: 1.22;
+    translate: 0 -2px;
+  }
+  100% {
+    scale: 1;
+    translate: 0 0;
+  }
+}
+
+@keyframes sb-badge-pop {
+  0% {
+    scale: 1;
+  }
+  42% {
+    scale: 1.38;
+  }
+  74% {
+    scale: 0.92;
+  }
+  100% {
+    scale: 1;
+  }
+}
+
+@keyframes sb-accordion-reveal {
+  from {
+    opacity: 0;
+    translate: 0 -6px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+@keyframes sb-dock-rise {
+  from {
+    opacity: 0;
+    translate: 0 18px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+@keyframes sb-img-fade {
+  from {
+    opacity: 0.55;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ==================== Opt-In Full Motion ==================== */
+@media (prefers-reduced-motion: no-preference) {
+  /* Hero Editorial Reveal */
+  .hero-banner {
+    animation: sb-fade-rise 0.42s var(--ease-out) backwards;
+  }
+  .hero-eyebrow {
+    animation: sb-fade-rise 0.36s var(--ease-out) 0.04s backwards;
+  }
+  .hero-content h2 {
+    animation: sb-fade-rise 0.4s var(--ease-out) 0.09s backwards;
+  }
+  .hero-content p {
+    animation: sb-fade-rise 0.4s var(--ease-out) 0.14s backwards;
+  }
+  .hero-actions {
+    animation: sb-fade-rise 0.4s var(--ease-out) 0.19s backwards;
+  }
+
+  .hero-highlight-chip {
+    transition: transform 0.2s var(--ease-out), box-shadow 0.2s var(--ease-out), border-color 0.2s ease;
+    animation: sb-card-enter 0.38s var(--ease-out) backwards;
+  }
+  .hero-highlight-chip:nth-child(1) { animation-delay: 0.10s; }
+  .hero-highlight-chip:nth-child(2) { animation-delay: 0.15s; }
+  .hero-highlight-chip:nth-child(3) { animation-delay: 0.20s; }
+  .hero-highlight-chip:nth-child(4) { animation-delay: 0.25s; }
+
+  /* Brand Header & Logo Micro-interaction */
+  .logo-icon,
+  .admin-brand-mark {
+    transition: transform 0.26s var(--spring-bounce), box-shadow 0.22s ease;
+  }
+
+  /* Filter Disclosure Panel Smooth Expand */
+  .catalog-filter-panel > summary::after {
+    transition: transform 0.22s var(--ease-out);
+  }
+  .catalog-filter-panel[open] > summary::after {
+    transform: rotate(180deg);
+  }
+  .catalog-filter-panel[open] .catalog-filter-content {
+    animation: sb-accordion-reveal 0.24s var(--ease-out) backwards;
+  }
+
+  /* Product Catalog Grid Stagger */
+  .product-card {
+    animation: sb-card-enter 0.34s var(--ease-out) backwards;
+  }
+  .product-card:nth-child(1)  { animation-delay: 0.02s; }
+  .product-card:nth-child(2)  { animation-delay: 0.05s; }
+  .product-card:nth-child(3)  { animation-delay: 0.08s; }
+  .product-card:nth-child(4)  { animation-delay: 0.11s; }
+  .product-card:nth-child(5)  { animation-delay: 0.14s; }
+  .product-card:nth-child(6)  { animation-delay: 0.17s; }
+  .product-card:nth-child(7)  { animation-delay: 0.20s; }
+  .product-card:nth-child(8)  { animation-delay: 0.23s; }
+  .product-card:nth-child(9)  { animation-delay: 0.26s; }
+  .product-card:nth-child(10) { animation-delay: 0.29s; }
+  .product-card:nth-child(11) { animation-delay: 0.32s; }
+  .product-card:nth-child(n+12) { animation-delay: 0.34s; }
+
+  .product-thumb {
+    animation: sb-img-fade 0.28s ease-out;
+  }
+
+  /* Touch Press Feedback on Buttons & Interactive Pills */
+  .btn-nav,
+  .quick-shop-pill,
+  .cat-pill,
+  .tab-btn,
+  .hero-primary,
+  .hero-secondary,
+  .btn-submit,
+  .btn-secondary-solid,
+  .btn-danger-soft,
+  .floating-btn,
+  .bottom-nav-item,
+  .adm-btn-ai,
+  .btn-change-photo {
+    transition:
+      transform 0.16s var(--ease-out),
+      background-color 0.16s ease,
+      border-color 0.16s ease,
+      color 0.16s ease,
+      box-shadow 0.18s ease;
+  }
+
+  .btn-nav:active,
+  .quick-shop-pill:active,
+  .cat-pill:active,
+  .tab-btn:active,
+  .hero-primary:active,
+  .hero-secondary:active,
+  .btn-submit:active,
+  .btn-secondary-solid:active,
+  .btn-danger-soft:active,
+  .floating-btn:active,
+  .adm-btn-ai:active,
+  .btn-change-photo:active {
+    transform: scale(0.965);
+  }
+
+  .bottom-nav-item:active {
+    transform: scale(0.93);
+  }
+
+  /* Cart Badge Pop when Items Added/Updated */
+  .badge.is-badge-pop,
+  .float-badge.is-badge-pop {
+    animation: sb-badge-pop 0.42s var(--spring-bounce);
+  }
+
+  /* Bottom App Navigation Bar & Active Icon Spring */
+  .bottom-nav-bar {
+    animation: sb-dock-rise 0.38s var(--ease-out) 0.12s backwards;
+  }
+  .bottom-nav-item.active .bnav-icon {
+    animation: sb-bnav-bounce 0.34s var(--spring-bounce);
+  }
+
+  /* View Switching Transition (Shop / Orders / Wallet / Profile) */
+  .main-view-panel.active {
+    animation: sb-panel-enter 0.28s var(--ease-out) backwards;
+  }
+
+  .main-view-panel.active .surface-card,
+  .main-view-panel.active .empty-state-card,
+  .main-view-panel.active .wallet-kpi-card {
+    animation: sb-card-enter 0.3s var(--ease-out) backwards;
+  }
+  .main-view-panel.active .surface-card:nth-child(2),
+  .main-view-panel.active .wallet-kpi-card:nth-child(2) { animation-delay: 0.05s; }
+  .main-view-panel.active .surface-card:nth-child(3),
+  .main-view-panel.active .wallet-kpi-card:nth-child(3) { animation-delay: 0.10s; }
+  .main-view-panel.active .surface-card:nth-child(4) { animation-delay: 0.14s; }
+
+  .cart-item-card,
+  .track-order-list-item {
+    animation: sb-panel-enter 0.24s var(--ease-out) backwards;
+  }
+
+  /* Modals & Bottom Sheets Entry + Smooth Close */
+  .modal-overlay .modal-dialog {
+    transition: transform 0.22s var(--ease-out), opacity 0.22s ease;
+  }
+  .modal-overlay:not(.active) .modal-dialog {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  .modal-overlay.active .modal-dialog {
+    animation: sb-sheet-up 0.3s var(--ease-out) backwards;
+  }
+  @media (min-width: 640px) {
+    .modal-overlay:not(.active) .modal-dialog {
+      transform: translateY(12px) scale(0.96);
+    }
+    .modal-overlay.active .modal-dialog {
+      animation: sb-modal-pop 0.28s var(--spring-bounce) backwards;
+    }
+  }
+
+  /* Toast Pop */
+  .toast-msg {
+    transform: translateX(-50%) translateY(18px) scale(0.95);
+    transition: opacity 0.2s ease, transform 0.28s var(--spring-bounce);
+  }
+  .toast-msg.show {
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+
+  /* Floating Action Stack Stagger */
+  .floating-actions .floating-btn {
+    animation: sb-card-enter 0.36s var(--spring-bounce) backwards;
+  }
+  .floating-actions .floating-btn:nth-child(1) { animation-delay: 0.18s; }
+  .floating-actions .floating-btn:nth-child(2) { animation-delay: 0.26s; }
+
+  /* Admin Dashboard Animations */
+  .admin-login-card {
+    animation: sb-card-enter 0.42s var(--ease-out) backwards;
+  }
+
+  .admin-stat-card {
+    animation: sb-card-enter 0.34s var(--ease-out) backwards;
+  }
+  .admin-stat-card:nth-child(1) { animation-delay: 0.03s; }
+  .admin-stat-card:nth-child(2) { animation-delay: 0.07s; }
+  .admin-stat-card:nth-child(3) { animation-delay: 0.11s; }
+  .admin-stat-card:nth-child(4) { animation-delay: 0.15s; }
+  .admin-stat-card:nth-child(5) { animation-delay: 0.19s; }
+  .admin-stat-card:nth-child(6) { animation-delay: 0.23s; }
+
+  .admin-panel.admin-section-enter {
+    animation: sb-panel-enter 0.28s var(--ease-out) backwards;
+  }
+
+  .adm-metric-card,
+  .admin-guide-card,
+  .adm-backup-item {
+    transition: transform 0.2s var(--ease-out), box-shadow 0.2s ease, border-color 0.2s ease;
+    animation: sb-card-enter 0.32s var(--ease-out) backwards;
+  }
+  .adm-metric-card:nth-child(2),
+  .admin-guide-card:nth-child(2),
+  .adm-backup-item:nth-child(2) { animation-delay: 0.05s; }
+  .adm-metric-card:nth-child(3),
+  .admin-guide-card:nth-child(3),
+  .adm-backup-item:nth-child(3) { animation-delay: 0.10s; }
+  .adm-guide-card:nth-child(4) { animation-delay: 0.15s; }
+  .adm-guide-card:nth-child(5) { animation-delay: 0.20s; }
+
+  .admin-main .table-responsive tbody tr {
+    transition: background-color 0.16s ease;
+    animation: sb-panel-enter 0.24s var(--ease-out) backwards;
+  }
+  .admin-main .table-responsive tbody tr:nth-child(1) { animation-delay: 0.02s; }
+  .admin-main .table-responsive tbody tr:nth-child(2) { animation-delay: 0.04s; }
+  .admin-main .table-responsive tbody tr:nth-child(3) { animation-delay: 0.06s; }
+  .admin-main .table-responsive tbody tr:nth-child(4) { animation-delay: 0.08s; }
+  .admin-main .table-responsive tbody tr:nth-child(5) { animation-delay: 0.10s; }
+  .admin-main .table-responsive tbody tr:nth-child(n+6) { animation-delay: 0.12s; }
+
+  /* Pointer Hover Enhancements (prevents sticky hover on touch devices) */
+  @media (hover: hover) {
+    .brand-logo:hover .logo-icon {
+      transform: scale(1.06) rotate(-3deg);
+    }
+    .hero-highlight-chip:hover {
+      transform: translateY(-2px);
+      border-color: var(--brand-tint-bd);
+      box-shadow: var(--shadow-sm);
+    }
+    .btn-close {
+      transition: transform 0.22s var(--ease-out), background-color 0.16s ease, color 0.16s ease;
+    }
+    .btn-close:hover {
+      transform: rotate(90deg);
+    }
+    .admin-tabs .tab-btn:hover:not(.active) {
+      transform: translateX(3px);
+    }
+    .adm-metric-card:hover,
+    .admin-guide-card:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--adm-shadow-sm);
+    }
+  }
+
+  /* Scroll-Driven Reveal Enhancement for Footer on Modern Browsers */
+  @supports (animation-timeline: view()) {
+    .site-footer {
+      animation: sb-fade-rise linear both;
+      animation-timeline: view();
+      animation-range: entry 0% cover 22%;
+    }
+  }
+}
+
+/* ==================== Reduced Motion Accessibility ==================== */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .modal-overlay {
+    transition-duration: 0.12s;
+  }
+
+  .spinner {
+    animation-duration: 1.8s;
+  }
+}

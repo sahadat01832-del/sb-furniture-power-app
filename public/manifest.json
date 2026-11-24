@@ -5,8 +5,8 @@
   "description": "এসবি ফার্নিচার ও এসবি পাওয়ার - অনলাইন ক্যাটালগ ও রিসেলার প্ল্যাটফর্ম",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#101827",
-  "theme_color": "#ea580c",
+  "background_color": "#faf8f5",
+  "theme_color": "#c2410c",
   "orientation": "portrait",
   "icons": [
     {

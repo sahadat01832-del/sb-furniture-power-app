@@ -2,18 +2,53 @@ const express = require('express');
 const router = express.Router();
 const { query, get } = require('../db');
 const config = require('../config');
+const { toPaisa, takaFields } = require('../money');
+const { optionalAuth } = require('../auth');
+
+// Money is stored as INTEGER paisa; the API and UI work in taka.
+// Commission is limited to approved resellers/admins. Partner identity and
+// contact details stay private for every storefront visitor.
+const productToClient = (product, includeCommission = false) => {
+  if (!product) return product;
+  const converted = takaFields(product, includeCommission ? ['regular_price', 'reseller_commission'] : ['regular_price']);
+  converted.selling_price = converted.regular_price;
+  delete converted.wholesale_price;
+  delete converted.shop_id;
+  delete converted.shop_name;
+  delete converted.shop_type;
+  delete converted.vendor_phone;
+  delete converted.vendor_badge;
+  delete converted.vendor_address;
+  if (!includeCommission) {
+    delete converted.reseller_commission;
+    delete converted.commission_tab;
+  }
+  if (converted.furniture_cutlist && typeof converted.furniture_cutlist === 'string') {
+    try {
+      converted.furniture_cutlist = JSON.parse(converted.furniture_cutlist);
+    } catch (e) {
+      converted.furniture_cutlist = null;
+    }
+  }
+  return converted;
+};
+
+const canViewCommission = (req) => Boolean(req.user && ['reseller', 'admin'].includes(req.user.role));
+const preventProductCaching = (req, res, next) => {
+  res.set('Cache-Control', 'private, no-store');
+  res.vary('Authorization');
+  next();
+};
 
 // Categories & Filter Meta
-router.get('/meta/categories', async (req, res) => {
+router.get('/meta/categories', preventProductCaching, async (req, res) => {
   try {
     const cats = await query('SELECT DISTINCT category FROM products WHERE is_active = 1 ORDER BY category ASC');
     const brands = await query('SELECT DISTINCT brand FROM products WHERE is_active = 1 ORDER BY brand ASC');
-    const shops = await query('SELECT DISTINCT shop_name FROM products WHERE is_active = 1 AND shop_name IS NOT NULL ORDER BY shop_name ASC');
     return res.json({
       success: true,
       categories: cats.map((c) => c.category),
-      brands: brands.map((b) => b.brand),
-      shops: shops.map((s) => s.shop_name)
+      brands: brands.map((b) => b.brand)
     });
   } catch (err) {
     return res.status(500).json({ success: false, message: 'ক্যাটাগরি লোড ব্যর্থ হয়েছে' });
@@ -21,7 +56,7 @@ router.get('/meta/categories', async (req, res) => {
 });
 
 // Get all products with filters, search, price range, sorting, and pagination
-router.get('/', async (req, res) => {
+router.get('/', preventProductCaching, optionalAuth, async (req, res) => {
   try {
     const { tab, category, brand, shop, search, min_price, max_price, sort, page, limit } = req.query;
 
@@ -38,6 +73,9 @@ router.get('/', async (req, res) => {
     if (brand && brand !== 'all' && !['SB Furniture', 'SB POWER'].includes(brand)) {
       return res.status(400).json({ success: false, message: 'ব্র্যান্ড ফিল্টার সঠিক নয়' });
     }
+    if (shop && shop !== 'all') {
+      return res.status(400).json({ success: false, message: 'পণ্য খুঁজতে দোকানের ফিল্টার ব্যবহার করা যাবে না' });
+    }
     const pricePattern = /^(?:0|[1-9]\d{0,8})(?:\.\d{1,2})?$/;
     if ((min_price !== undefined && !pricePattern.test(min_price)) || (max_price !== undefined && !pricePattern.test(max_price))) {
       return res.status(400).json({ success: false, message: 'দামের ফিল্টার সঠিক সংখ্যা হতে হবে' });
@@ -52,8 +90,13 @@ router.get('/', async (req, res) => {
     let whereSql = ' WHERE is_active = 1';
     const params = [];
 
-    // Commission tab filter ('50tk', '100tk', '500tk', '1000tk')
+    const resellerView = canViewCommission(req);
+
+    // Commission filters are unavailable to ordinary customers.
     if (tab && tab !== 'all') {
+      if (!resellerView) {
+        return res.status(403).json({ success: false, message: 'কমিশন দেখতে রিসেলার অনুমোদন প্রয়োজন' });
+      }
       whereSql += ' AND commission_tab = ?';
       params.push(tab);
     }
@@ -70,31 +113,23 @@ router.get('/', async (req, res) => {
       params.push(brand);
     }
 
-    // Shop/Vendor filter ('SB Furniture', 'SB POWER', 'partner', or custom shop name)
-    if (shop && shop !== 'all') {
-      if (shop.toLowerCase() === 'partner') {
-        whereSql += " AND shop_name NOT IN ('SB Furniture', 'SB POWER') AND shop_name IS NOT NULL";
-      } else {
-        whereSql += ' AND (shop_name = ? OR brand = ?)';
-        params.push(shop, shop);
-      }
-    }
-
     // Search query
     if (search && search.trim()) {
-      whereSql += ' AND (title LIKE ? OR sku LIKE ? OR description LIKE ? OR shop_name LIKE ? OR materials LIKE ? OR finish LIKE ?)';
+      whereSql += ' AND (title LIKE ? OR sku LIKE ? OR description LIKE ? OR materials LIKE ? OR finish LIKE ?)';
       const term = `%${search.trim()}%`;
-      params.push(term, term, term, term, term, term);
+      params.push(term, term, term, term, term);
     }
 
     // Price range filters
-    if (min_price !== undefined && min_price !== '' && !isNaN(parseFloat(min_price))) {
+    const minPricePaisa = toPaisa(min_price);
+    if (minPricePaisa !== null) {
       whereSql += ' AND regular_price >= ?';
-      params.push(parseFloat(min_price));
+      params.push(minPricePaisa);
     }
-    if (max_price !== undefined && max_price !== '' && !isNaN(parseFloat(max_price))) {
+    const maxPricePaisa = toPaisa(max_price);
+    if (maxPricePaisa !== null) {
       whereSql += ' AND regular_price <= ?';
-      params.push(parseFloat(max_price));
+      params.push(maxPricePaisa);
     }
 
     // Total count for pagination
@@ -108,6 +143,9 @@ router.get('/', async (req, res) => {
     } else if (sort === 'price_desc') {
       orderSql = ' ORDER BY regular_price DESC, id DESC';
     } else if (sort === 'commission_desc') {
+      if (!resellerView) {
+        return res.status(403).json({ success: false, message: 'কমিশন অনুযায়ী সাজাতে রিসেলার অনুমোদন প্রয়োজন' });
+      }
       orderSql = ' ORDER BY reseller_commission DESC, id DESC';
     } else if (sort === 'newest') {
       orderSql = ' ORDER BY id DESC';
@@ -133,9 +171,11 @@ router.get('/', async (req, res) => {
 
     const response = {
       success: true,
+      reseller_access: resellerView,
+      account_role: req.user ? req.user.role : null,
       count: products.length,
       total: totalCount,
-      products
+      products: products.map((product) => productToClient(product, resellerView))
     };
 
     if (!isNaN(parsedPage) && parsedPage > 0 && effectiveLimit) {
@@ -152,7 +192,7 @@ router.get('/', async (req, res) => {
 });
 
 // Get single product by ID or SKU
-router.get('/:idOrSku', async (req, res) => {
+router.get('/:idOrSku', preventProductCaching, optionalAuth, async (req, res) => {
   try {
     const param = req.params.idOrSku;
     let product;
@@ -167,17 +207,15 @@ router.get('/:idOrSku', async (req, res) => {
       return res.status(404).json({ success: false, message: 'পণ্যটি খুঁজে পাওয়া যায়নি' });
     }
 
+    const resellerView = canViewCommission(req);
+    product = productToClient(product, resellerView);
+
     // Generate brand-specific copy preview
     const isFurniture = product.brand === 'SB Furniture';
-    let contactPhone = isFurniture ? config.SB_FURNITURE.phone : config.SB_POWER.phone;
-    if (product.vendor_phone) {
-      contactPhone = product.vendor_phone;
-    }
-
-    const isPartnerShop = product.shop_name && !['SB Furniture', 'SB POWER'].includes(product.shop_name);
-    const trustLine = isPartnerShop
-      ? `🏪 ${product.shop_name} — এই পণ্যটি পার্টনার দোকানের মাধ্যমে সরবরাহ করা হবে।`
-      : (isFurniture ? config.SB_FURNITURE.trust_line : 'SB POWER-এর গ্যাজেট; পণ্যের ব্র্যান্ড ও বিবরণ দেখে অর্ডার করুন।');
+    const contactPhone = isFurniture ? config.SB_FURNITURE.phone : config.SB_POWER.phone;
+    const trustLine = isFurniture
+      ? config.SB_FURNITURE.trust_line
+      : 'SB POWER-এর গ্যাজেট; পণ্যের ব্র্যান্ড ও বিবরণ দেখে অর্ডার করুন।';
 
     if (req.query.ref !== undefined && (typeof req.query.ref !== 'string' || req.query.ref.length > 40 || !/^[a-z0-9_-]*$/i.test(req.query.ref))) {
       return res.status(400).json({ success: false, message: 'রেফারেল কোড সঠিক নয়' });
@@ -187,9 +225,6 @@ router.get('/:idOrSku', async (req, res) => {
 
     let socialShareText = `🔥 ${product.title}\n`;
     socialShareText += `💵 মূল্য: ${product.regular_price} ৳\n`;
-    if (isPartnerShop) {
-      socialShareText += `🏪 শপ/ভেন্ডর: ${product.shop_name}${product.vendor_badge ? ' (' + product.vendor_badge + ')' : ''}\n`;
-    }
     if (product.materials) socialShareText += `🪵 ম্যাটেরিয়াল: ${product.materials}\n`;
     if (product.finish) socialShareText += `🎨 ফিনিশ: ${product.finish}\n`;
     if (product.description) socialShareText += `📌 বিবরণ: ${product.description}\n`;

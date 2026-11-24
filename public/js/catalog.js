@@ -155,12 +155,12 @@ function renderProductGrid(products) {
           <span class="badge-brand ${brandBadgeClass}">${escapeCatalogHtml(item.brand)}</span>
         </button>
         <div class="product-body">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-            <span class="product-meta-row" style="margin: 0;">${escapeCatalogHtml(item.category)}</span>
+          <div class="product-card-topmeta">
+            <span class="product-meta-row">${escapeCatalogHtml(item.category)}</span>
             ${stockBadge}
           </div>
           <button type="button" class="product-title" onclick="viewProductDetails(${item.id})">${escapeCatalogHtml(item.title)}</button>
-          ${item.finish ? `<div style="font-size: 0.76rem; color: #a1a1aa; margin-bottom: 6px;">ফিনিশ: ${escapeCatalogHtml(item.finish)}</div>` : ''}
+          ${item.finish ? `<div class="product-finish-line">ফিনিশ: ${escapeCatalogHtml(item.finish)}</div>` : ''}
           <div class="product-price-row">
             <div class="price-box">
               <span class="price-label">কাস্টমার মূল্য</span>
@@ -175,11 +175,11 @@ function renderProductGrid(products) {
             ${resellerAccess ? `<button type="button" class="btn-share" onclick="copyProductShareCopy(${item.id})" title="পোস্ট কপি করুন">
               <span aria-hidden="true">📋</span> সেলস পোস্ট কপি
             </button>` : ''}
-            <button type="button" class="btn-wa" onclick="orderViaWhatsApp(${item.id})" title="WhatsApp">
-              <span aria-hidden="true">💬</span> WhatsApp
+            <button type="button" class="btn-wa" onclick="orderViaWhatsApp(${item.id})" title="WhatsApp" aria-label="WhatsApp-এ অর্ডার করুন">
+              <span aria-hidden="true">💬</span><span class="wa-btn-label"> WhatsApp</span>
             </button>
             <button type="button" class="btn-order" onclick="viewProductDetails(${item.id})" title="পণ্য দেখুন বা অর্ডার করুন">
-              <span aria-hidden="true">🛒</span> ${resellerAccess ? 'রিসেলার টুলকিট' : 'অর্ডার করুন'}
+              <span aria-hidden="true">🛒</span> <span>${resellerAccess ? 'টুলকিট' : 'অর্ডার করুন'}</span>
             </button>
           </div>
         </div>
@@ -361,30 +361,30 @@ function renderCustomerProductDetails(item) {
 
   document.getElementById('modalProductTitle').textContent = `${item.sku} — পণ্যের বিস্তারিত`;
   document.getElementById('modalProductBody').innerHTML = `
-    <div style="text-align:center; margin-bottom:14px;">
-      <img src="${imageUrl}" alt="${escapeCatalogHtml(item.title)}" style="width:100%; max-height:280px; object-fit:cover; border-radius:var(--radius-sm);">
+    <div class="product-detail-img-wrap">
+      <img src="${imageUrl}" alt="${escapeCatalogHtml(item.title)}" class="product-detail-img">
     </div>
-    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
-      <span class="badge-sku" style="position:static;">${escapeCatalogHtml(item.sku)}</span>
-      <span class="badge-brand">${escapeCatalogHtml(item.brand)}</span>
+    <div class="product-detail-badges">
+      <span class="badge-sku">${escapeCatalogHtml(item.sku)}</span>
+      <span class="product-detail-brand-tag">${escapeCatalogHtml(item.brand)}</span>
       <span class="product-meta-row">${escapeCatalogHtml(item.category)}</span>
     </div>
-    <h3 style="font-size:1.12rem; color:#fff; margin-bottom:8px;">${escapeCatalogHtml(item.title)}</h3>
-    <div style="font-size:1.35rem; font-weight:700; color:var(--sbp-yellow); margin-bottom:12px;">
-      পণ্যের দাম: ${escapeCatalogHtml(item.regular_price)} ৳
+    <h3 class="product-detail-title">${escapeCatalogHtml(item.title)}</h3>
+    <div class="product-detail-price-bar">
+      <div class="product-detail-price">পণ্যের দাম: ${escapeCatalogHtml(item.regular_price)} ৳</div>
     </div>
-    <div style="background:#292524; padding:12px; border-radius:var(--radius-sm); font-size:.85rem; margin-bottom:14px; line-height:1.6;">
+    <div class="product-detail-desc">
       ${item.materials ? `<div><strong>উপকরণ:</strong> ${escapeCatalogHtml(item.materials)}</div>` : ''}
       ${item.finish ? `<div><strong>ফিনিশিং:</strong> ${escapeCatalogHtml(item.finish)}</div>` : ''}
-      <div style="margin-top:6px;">${escapeCatalogHtml(item.description)}</div>
+      <div class="product-detail-desc-body">${escapeCatalogHtml(item.description)}</div>
     </div>
     ${colorSelectorHtml}
-    <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:14px;">
-      <button class="btn-wa" style="padding:10px;" onclick="orderViaWhatsApp(${item.id})">💬 WhatsApp-এ অর্ডার</button>
-      <button class="btn-submit" style="padding:10px;" onclick="addToCartFromModal(${item.id})">🛒 কার্টে যোগ করুন</button>
+    <div class="product-detail-actions">
+      <button type="button" class="btn-wa" style="min-block-size: 46px; border-radius: var(--radius-sm); font-weight: 700;" onclick="orderViaWhatsApp(${item.id})">💬 WhatsApp-এ অর্ডার</button>
+      <button type="button" class="btn-submit" onclick="addToCartFromModal(${item.id})">🛒 কার্টে যোগ করুন</button>
     </div>
-    <div style="margin-top:14px; text-align:center; font-size:.82rem; color:var(--sbf-text-muted);">
-      পণ্য সম্পর্কে জানতে কল করুন: <a href="tel:${phone}" style="color:var(--sbp-yellow); font-weight:700;">${phone}</a>
+    <div class="product-detail-hotline">
+      পণ্য সম্পর্কে জানতে কল করুন: <a href="tel:${phone}">${phone}</a>
     </div>
   `;
   openModal('productDetailModal');
@@ -425,35 +425,35 @@ function viewProductDetails(productId) {
   const initialGrandTotal = item.regular_price + defaultDeliveryFee;
 
   document.getElementById('modalProductBody').innerHTML = `
-    <div style="text-align: center; margin-bottom: 14px;">
-      <img src="${imageUrl}" alt="${escapeCatalogHtml(item.title)}" style="width: 100%; max-height: 280px; object-fit: cover; border-radius: var(--radius-sm);">
+    <div class="product-detail-img-wrap">
+      <img src="${imageUrl}" alt="${escapeCatalogHtml(item.title)}" class="product-detail-img">
     </div>
-    <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px;">
-      <span class="badge-sku" style="position: static;">${escapeCatalogHtml(item.sku)}</span>
+    <div class="product-detail-badges">
+      <span class="badge-sku">${escapeCatalogHtml(item.sku)}</span>
       <span class="badge-profit-pill">কমিশন ৳${escapeCatalogHtml(item.reseller_commission)}</span>
-      <span style="font-size: 0.75rem; background: #38332f; padding: 3px 8px; border-radius: 4px; color: #fff;">${escapeCatalogHtml(item.brand)}</span>
+      <span class="product-detail-brand-tag">${escapeCatalogHtml(item.brand)}</span>
     </div>
-    <h3 style="font-size: 1.12rem; color: #fff; margin-bottom: 8px;">${escapeCatalogHtml(item.title)}</h3>
-    <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px;">
-      <div style="font-size: 1.25rem; font-weight: 700; color: var(--sbp-yellow);">
+    <h3 class="product-detail-title">${escapeCatalogHtml(item.title)}</h3>
+    <div class="product-detail-price-bar">
+      <div class="product-detail-price">
         কাস্টমার মূল্য: ${escapeCatalogHtml(item.regular_price)} ৳
       </div>
-      <div class="badge-profit-pill" style="font-size: 0.82rem; padding: 4px 10px;">
+      <div class="badge-profit-pill" style="font-size: 0.82rem; padding: 4px 11px;">
         আপনার নিট কমিশন: ৳${escapeCatalogHtml(item.reseller_commission)}
       </div>
     </div>
-    <div style="background: #292524; padding: 12px; border-radius: var(--radius-sm); font-size: 0.85rem; margin-bottom: 14px; line-height: 1.6;">
+    <div class="product-detail-desc">
       ${item.materials ? `<div><strong>উপকরণ:</strong> ${escapeCatalogHtml(item.materials)}</div>` : ''}
       ${item.finish ? `<div><strong>ফিনিশিং:</strong> ${escapeCatalogHtml(item.finish)}</div>` : ''}
-      <div style="margin-top: 6px;">${escapeCatalogHtml(item.description)}</div>
+      <div class="product-detail-desc-body">${escapeCatalogHtml(item.description)}</div>
     </div>
     ${colorSelectorHtml}
 
     <!-- One-Tap Reseller Toolkit -->
     <div class="reseller-toolkit-box">
       <div class="toolkit-title">
-        <span>⚡ রিসেলার টুলকিট (One-Tap Toolkit)</span>
-        <span style="font-size: 0.75rem; color: #34d399; font-weight: normal;">১-ক্লিকে শেয়ার ও অর্ডার</span>
+        <span>⚡ রিসেলার টুলকিট</span>
+        <span class="toolkit-title-hint">১-ক্লিকে শেয়ার ও অর্ডার</span>
       </div>
       <div class="toolkit-action-grid">
         <button type="button" class="btn-toolkit btn-toolkit-copy" onclick="copyProductShareCopy(${item.id})">
@@ -469,7 +469,7 @@ function viewProductDetails(productId) {
 
       <!-- Instant Customer Order Accordion Form -->
       <div id="custOrderAccordionPanel" class="customer-order-panel" style="display: none;">
-        <h4 style="color: #fbbf24; font-size: 0.95rem; margin-bottom: 10px;">📦 কাস্টমার অর্ডার ফর্ম (সরাসরি আপনার রেফারে)</h4>
+        <h4 style="color: var(--brand-primary-hv); font-size: 0.96rem; margin-bottom: 10px;">📦 কাস্টমার অর্ডার ফর্ম (সরাসরি আপনার রেফারে)</h4>
 
         <div class="form-group">
           <label class="form-label" style="font-size: 0.8rem;">কাস্টমারের পূর্ণ নাম *</label>
@@ -507,7 +507,7 @@ function viewProductDetails(productId) {
             <span>ডেলিভারি চার্জ:</span>
             <span id="tkDeliveryFee">${defaultDeliveryFee} ৳</span>
           </div>
-          <div class="profit-preview-row" style="font-weight: 700; color: #facc15;">
+          <div class="profit-preview-row profit-preview-total">
             <span>কাস্টমার মোট বিল (COD):</span>
             <span id="tkGrandTotal">${initialGrandTotal} ৳</span>
           </div>
@@ -515,29 +515,29 @@ function viewProductDetails(productId) {
             <span>আপনার নিশ্চিত কমিশন:</span>
             <span id="tkResellerCommission">৳${item.reseller_commission}</span>
           </div>
-          <div style="font-size: 0.74rem; color: #a7f3d0; margin-top: 4px;">
+          <div class="profit-preview-note">
             ✓ অর্ডার সাবমিট হলেই কমিশন আপনার ওয়ালেটে পেন্ডিং হিসেবে যোগ হবে এবং ডেলিভারিতে উত্তোলনযোগ্য হবে!
           </div>
         </div>
 
-        <button type="button" id="btnSubmitTkOrder" class="btn-submit" style="width: 100%; padding: 12px;" onclick="submitToolkitCustomerOrder(${item.id})">
+        <button type="button" id="btnSubmitTkOrder" class="btn-submit" onclick="submitToolkitCustomerOrder(${item.id})">
           নিশ্চিত করুন ও কাস্টমারের অর্ডার প্লেস করুন
         </button>
       </div>
     </div>
 
     <!-- Secondary Actions -->
-    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px;">
-      <button class="btn-wa" style="padding: 10px;" onclick="orderViaWhatsApp(${item.id})">
+    <div class="product-detail-actions">
+      <button type="button" class="btn-wa" style="min-block-size: 46px; border-radius: var(--radius-sm); font-weight: 700;" onclick="orderViaWhatsApp(${item.id})">
         💬 WhatsApp হটলাইন
       </button>
-      <button class="btn-submit" style="padding: 10px; background: #3f3f46;" onclick="addToCartFromModal(${item.id})">
+      <button type="button" class="btn-secondary-solid" onclick="addToCartFromModal(${item.id})">
         🛒 নিজের কার্টে নিন
       </button>
     </div>
 
-    <div style="margin-top: 14px; text-align: center; font-size: 0.82rem; color: var(--sbf-text-muted);">
-      কাস্টমাইজেশন বা সরাসরি অর্ডারে কল করুন: <a href="tel:${phone}" style="color: var(--sbp-yellow); font-weight: 700;">${phone}</a>
+    <div class="product-detail-hotline">
+      কাস্টমাইজেশন বা সরাসরি অর্ডারে কল করুন: <a href="tel:${phone}">${phone}</a>
     </div>
   `;
 

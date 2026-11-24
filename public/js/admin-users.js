@@ -113,7 +113,7 @@ function renderAdminUsersTable(users) {
           <div style="margin-top: 4px;">${statusBadge}</div>
         </td>
         <td data-label="রেফারেল কোড">
-          <code style="background: #1c1917; color: #fde68a; padding: 2px 6px; border-radius: 4px; font-size: 0.8rem;">
+          <code class="adm-code-pill">
             ${escapeHtml(u.referral_code || '-')}
           </code>
         </td>
@@ -147,12 +147,12 @@ function renderUserPagination(currentPage, totalPages, totalCount) {
 
   container.innerHTML = `
     <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; flex-wrap: wrap; gap: 8px;">
-      <div style="font-size: 0.8rem; color: var(--sbf-text-muted);">
-        সর্বমোট: <strong style="color: #fff;">${totalCount}</strong> জন (পৃষ্ঠা ${currentPage} / ${totalPages})
+      <div style="font-size: 0.82rem; color: var(--adm-text-muted, #64748b);">
+        সর্বমোট: <strong style="color: var(--adm-text, #0f172a);">${totalCount}</strong> জন (পৃষ্ঠা ${currentPage} / ${totalPages})
       </div>
       <div style="display: flex; gap: 6px;">
-        <button class="action-btn-sm" style="background: #38332f; color: #fff; cursor: pointer;" ${currentPage <= 1 ? 'disabled style="opacity: 0.5; cursor: not-allowed;"' : ''} onclick="loadAdminUsers(${currentPage - 1})">◀ পূর্ববর্তী</button>
-        <button class="action-btn-sm" style="background: #38332f; color: #fff; cursor: pointer;" ${currentPage >= totalPages ? 'disabled style="opacity: 0.5; cursor: not-allowed;"' : ''} onclick="loadAdminUsers(${currentPage + 1})">পরবর্তী ▶</button>
+        <button class="action-btn-sm adm-btn-neutral" ${currentPage <= 1 ? 'disabled style="opacity: 0.45; cursor: not-allowed;"' : ''} onclick="loadAdminUsers(${currentPage - 1})">◀ পূর্ববর্তী</button>
+        <button class="action-btn-sm adm-btn-neutral" ${currentPage >= totalPages ? 'disabled style="opacity: 0.45; cursor: not-allowed;"' : ''} onclick="loadAdminUsers(${currentPage + 1})">পরবর্তী ▶</button>
       </div>
     </div>
   `;

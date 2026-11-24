@@ -9,3 +9,7 @@ process.env.ADMIN_PHONE = '01999887766';
 process.env.ADMIN_PASSWORD = crypto.randomBytes(24).toString('hex');
 process.env.DATABASE_FILE = path.join(os.tmpdir(), `${suiteId}.sqlite`);
 process.env.BACKUP_DIR = path.join(os.tmpdir(), `${suiteId}-backups`);
+process.env.FIREBASE_PROJECT_ID = '';
+process.env.GOOGLE_APPLICATION_CREDENTIALS = '';
+process.env.FIREBASE_BACKUP_ENCRYPTION_KEY = '';
+process.env.FIREBASE_BACKUP_ENCRYPTION_KEY_FILE = '';

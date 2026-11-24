@@ -26,12 +26,17 @@ const generateToken = (user) => {
       phone: user.phone,
       name: user.name,
       role: user.role,
-      referral_code: user.referral_code
+      referral_code: user.referral_code,
+      // Bumped on password change so older tokens stop working.
+      token_version: Number(user.token_version) || 0
     },
     config.JWT_SECRET,
     { expiresIn: '30d' }
   );
 };
+
+const isCurrentToken = (decoded, user) =>
+  (Number(decoded.token_version) || 0) === (Number(user.token_version) || 0);
 
 const verifyToken = async (req, res, next) => {
   const token = getRequestToken(req);
@@ -43,16 +48,22 @@ const verifyToken = async (req, res, next) => {
   try {
     decoded = jwt.verify(token, config.JWT_SECRET, { algorithms: ['HS256'] });
   } catch (err) {
-    return res.status(403).json({ success: false, message: 'মেয়াদোত্তীর্ণ বা অবৈধ টোকেন' });
+    return res.status(401).json({ success: false, message: 'মেয়াদোত্তীর্ণ বা অবৈধ টোকেন' });
   }
 
   try {
     const user = await get(
-      'SELECT id, name, phone, role, referral_code, referred_by_id FROM users WHERE id = ?',
+      'SELECT id, name, phone, role, referral_code, referred_by_id, token_version, status FROM users WHERE id = ?',
       [decoded.id]
     );
     if (!user) {
       return res.status(401).json({ success: false, message: 'ব্যবহারকারী পাওয়া যায়নি; আবার লগইন করুন' });
+    }
+    if (user.status === 'suspended') {
+      return res.status(403).json({ success: false, message: 'আপনার অ্যাকাউন্টটি স্থগিত করা হয়েছে। অ্যাডমিনের সাথে যোগাযোগ করুন।' });
+    }
+    if (!isCurrentToken(decoded, user)) {
+      return res.status(401).json({ success: false, message: 'সেশন মেয়াদোত্তীর্ণ হয়েছে; আবার লগইন করুন' });
     }
     req.user = user;
     return next();
@@ -77,10 +88,11 @@ const optionalAuth = async (req, res, next) => {
   }
 
   try {
-    req.user = await get(
-      'SELECT id, name, phone, role, referral_code, referred_by_id FROM users WHERE id = ?',
+    const user = await get(
+      'SELECT id, name, phone, role, referral_code, referred_by_id, token_version, status FROM users WHERE id = ?',
       [decoded.id]
-    ) || null;
+    );
+    req.user = user && user.status !== 'suspended' && isCurrentToken(decoded, user) ? user : null;
     return next();
   } catch (err) {
     return next(err);

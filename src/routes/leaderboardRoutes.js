@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { query } = require('../db');
+const { takaFields } = require('../money');
 
 // GET /api/leaderboard — real reseller sales from delivered orders only.
 router.get('/', async (req, res) => {
@@ -31,8 +32,9 @@ router.get('/', async (req, res) => {
       name: reseller.name,
       phone: reseller.masked_phone,
       total_sales: reseller.total_sales,
-      total_volume: reseller.total_volume,
-      total_commission: reseller.total_commission,
+      total_volume: takaFields(reseller, ['total_volume']).total_volume,
+      total_commission: takaFields(reseller, ['total_commission']).total_commission,
+      // Converted from paisa above; both fields stay taka in the response.
       badge: index === 0 ? '🏆 শীর্ষ রিসেলার' : 'সক্রিয় রিসেলার'
     }));
 

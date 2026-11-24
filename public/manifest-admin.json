@@ -5,8 +5,8 @@
   "description": "এডমিন কন্ট্রোল প্যানেল — SB Furniture & SB POWER",
   "start_url": "/admin.html",
   "display": "standalone",
-  "background_color": "#101827",
-  "theme_color": "#ea580c",
+  "background_color": "#faf8f5",
+  "theme_color": "#c2410c",
   "orientation": "portrait",
   "icons": [
     {

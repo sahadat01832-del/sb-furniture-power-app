@@ -1,8 +1,44 @@
 const express = require('express');
 const router = express.Router();
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
 const { query, get, run, withTransaction } = require('../db');
 const { verifyToken, requireRole } = require('../auth');
 const config = require('../config');
+const { toPaisa, fromPaisa, takaFields } = require('../money');
+const {
+  estimateFurniturePartsAndBoards,
+  inspectProductImageWithAi,
+  generateProductCopyFromKeywords,
+  generateMultiChannelMarketingCopy
+} = require('../services/aiRouter');
+
+const PRODUCT_MONEY_FIELDS = ['regular_price', 'reseller_commission', 'wholesale_price'];
+const ORDER_MONEY_FIELDS = ['subtotal_amount', 'delivery_fee', 'total_amount', 'advance_paid', 'discount_amount', 'reseller_commission', 'total_wholesale_amount', 'total_reseller_commission', 'referral_commission_amount', 'referral_credit_amount', 'platform_net_profit'];
+const ITEM_MONEY_FIELDS = ['unit_price', 'commission_per_unit', 'total_price', 'unit_wholesale_price', 'unit_selling_price', 'unit_commission', 'platform_net_profit'];
+
+const productToClient = (product) => {
+  if (!product) return product;
+  const converted = takaFields(product, PRODUCT_MONEY_FIELDS);
+  converted.platform_net_profit = Math.max(0, (converted.regular_price || 0) - (converted.wholesale_price || 0) - (converted.reseller_commission || 0));
+  if (converted.furniture_cutlist && typeof converted.furniture_cutlist === 'string') {
+    try {
+      converted.furniture_cutlist = JSON.parse(converted.furniture_cutlist);
+    } catch (e) {
+      // Keep as string if parsing fails
+    }
+  }
+  return converted;
+};
+const orderToClient = (order) => {
+  if (!order) return order;
+  const converted = takaFields(order, ORDER_MONEY_FIELDS);
+  if (Array.isArray(order.items)) {
+    converted.items = order.items.map((item) => takaFields(item, ITEM_MONEY_FIELDS));
+  }
+  return converted;
+};
 
 const PRODUCT_DEFAULT_IMAGE = 'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?auto=format&fit=crop&w=800&q=80';
 const PRODUCT_BRANDS = new Set(['SB Furniture', 'SB POWER']);
@@ -22,9 +58,10 @@ function validateProductPayload(input) {
     shop_name: { max: 100 },
     vendor_badge: { max: 100 },
     vendor_address: { max: 300 },
-    description: { max: 5000 },
-    materials: { max: 300 },
-    finish: { max: 200 }
+    description: { max: 10000 },
+    caption: { max: 3000 },
+    materials: { max: 500 },
+    finish: { max: 500 }
   };
 
   for (const [field, rules] of Object.entries(textFields)) {
@@ -66,6 +103,15 @@ function validateProductPayload(input) {
       }
       continue;
     }
+    if (field === 'regular_price' || field === 'reseller_commission') {
+      // Money may carry up to two decimal places and is stored as paisa.
+      const paisa = toPaisa(value);
+      if (paisa === null) return { error: 'মূল্য ও কমিশন সঠিক সংখ্যায় দিন' };
+      const taka = paisa / 100;
+      if (taka < options.min || taka > options.max) return { error: 'মূল্য, কমিশন, স্টক বা সক্রিয়তার মান সীমার বাইরে' };
+      data[field] = taka;
+      continue;
+    }
     if (value === '' || value === null || !Number.isSafeInteger(Number(value))) {
       return { error: 'মূল্য, কমিশন, স্টক ও সক্রিয়তার তথ্য পূর্ণসংখ্যায় দিন' };
     }
@@ -74,6 +120,36 @@ function validateProductPayload(input) {
     data[field] = number;
   }
   if (data.reseller_commission > data.regular_price) return { error: 'কমিশন বিক্রয় মূল্যের চেয়ে বেশি হতে পারবে না' };
+
+  // Wholesale price (in taka; stored in paisa)
+  if (input.wholesale_price !== undefined && input.wholesale_price !== null && input.wholesale_price !== '') {
+    const wpPaisa = toPaisa(input.wholesale_price);
+    if (wpPaisa === null || wpPaisa < 0 || wpPaisa > 50000000 * 100) {
+      return { error: 'পাইকারি মূল্য সঠিক সংখ্যায় দিন' };
+    }
+    data.wholesale_price = wpPaisa / 100;
+  } else {
+    // Default wholesale cost: price - commission - 15% platform margin
+    data.wholesale_price = Math.max(0, data.regular_price - data.reseller_commission - Math.round(data.regular_price * 0.15));
+  }
+
+  // Profit validation (Net profit cannot be negative)
+  if (data.wholesale_price + data.reseller_commission > data.regular_price) {
+    return { error: 'পাইকারি মূল্য ও রিসেলার কমিশনের যোগফল বিক্রয় মূল্যের চেয়ে বেশি হতে পারবে না (নেট লাভ নেগেটিভ)' };
+  }
+
+  if (input.shop_id !== undefined && input.shop_id !== null) {
+    const sId = Number(input.shop_id);
+    if (Number.isSafeInteger(sId) && sId > 0) data.shop_id = sId;
+  }
+
+  if (input.shop_type !== undefined && ['own', 'partner'].includes(input.shop_type)) {
+    data.shop_type = input.shop_type;
+  } else if (data.shop_name && !['SB Furniture', 'SB POWER'].includes(data.shop_name)) {
+    data.shop_type = 'partner';
+  } else {
+    data.shop_type = 'own';
+  }
 
   if (input.commission_tab !== undefined) {
     if (typeof input.commission_tab !== 'string' || !COMMISSION_TABS.has(input.commission_tab)) {
@@ -121,6 +197,21 @@ function validateProductPayload(input) {
   data.description = data.description || '';
   data.materials = data.materials || '';
   data.finish = data.finish || '';
+
+  if (input.furniture_cutlist !== undefined && input.furniture_cutlist !== null) {
+    if (typeof input.furniture_cutlist === 'object') {
+      try {
+        data.furniture_cutlist = JSON.stringify(input.furniture_cutlist);
+      } catch (e) {
+        data.furniture_cutlist = null;
+      }
+    } else if (typeof input.furniture_cutlist === 'string') {
+      data.furniture_cutlist = input.furniture_cutlist.slice(0, 30000);
+    }
+  } else {
+    data.furniture_cutlist = null;
+  }
+
   return { data };
 }
 
@@ -142,6 +233,128 @@ function validateAnnouncementPayload(input) {
 // Require Admin Role for all routes in this router
 router.use(verifyToken, requireRole('admin'));
 
+const UPLOADS_DIR = path.join(__dirname, '..', '..', 'public', 'uploads');
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
+
+function detectImageMime(buffer) {
+  if (!buffer || buffer.length < 12) return null;
+  // JPEG: FF D8 FF
+  if (buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF) {
+    return { mime: 'image/jpeg', ext: 'jpg' };
+  }
+  // PNG: 89 50 4E 47 0D 0A 1A 0A
+  if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47 &&
+      buffer[4] === 0x0D && buffer[5] === 0x0A && buffer[6] === 0x1A && buffer[7] === 0x0A) {
+    return { mime: 'image/png', ext: 'png' };
+  }
+  // GIF: 47 49 46 38
+  if (buffer[0] === 0x47 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x38) {
+    return { mime: 'image/gif', ext: 'gif' };
+  }
+  // WEBP: RIFF....WEBP
+  if (buffer[0] === 0x52 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x46 &&
+      buffer[8] === 0x57 && buffer[9] === 0x45 && buffer[10] === 0x42 && buffer[11] === 0x50) {
+    return { mime: 'image/webp', ext: 'webp' };
+  }
+  return null;
+}
+
+function extractMultipartFile(buffer, contentType) {
+  if (!buffer || !contentType) return null;
+  const boundaryMatch = contentType.match(/boundary=([^;]+)/i);
+  if (!boundaryMatch) return null;
+  const boundary = boundaryMatch[1].trim().replace(/^["']|["']$/g, '');
+  const delimiter = Buffer.from('--' + boundary);
+  const headerEnd = Buffer.from('\r\n\r\n');
+  const partStart = buffer.indexOf(delimiter);
+  if (partStart === -1) return null;
+  const hStart = buffer.indexOf(headerEnd, partStart);
+  if (hStart === -1) return null;
+  const fileStart = hStart + 4;
+  const nextDelimiter = buffer.indexOf(Buffer.from('\r\n--' + boundary), fileStart);
+  if (nextDelimiter !== -1) {
+    return buffer.slice(fileStart, nextDelimiter);
+  }
+  const endBoundary = buffer.indexOf(Buffer.from('--' + boundary + '--'), fileStart);
+  if (endBoundary !== -1) {
+    return buffer.slice(fileStart, endBoundary);
+  }
+  return null;
+}
+
+// Direct Product Photo Upload Endpoint (Admin Only, No URL Required)
+router.post('/upload-image', async (req, res) => {
+  try {
+    let buffer = null;
+    const raw = req.body && (req.body.image || req.body.data || req.body.file);
+
+    if (raw && typeof raw === 'string') {
+      let base64Data = raw.trim();
+      const prefixIndex = base64Data.indexOf(';base64,');
+      if (prefixIndex !== -1) {
+        base64Data = base64Data.substring(prefixIndex + 8);
+      } else {
+        const directMatch = base64Data.match(/^data:[^,]+,([\s\S]+)$/);
+        if (directMatch) base64Data = directMatch[1];
+      }
+      base64Data = base64Data.replace(/\s+/g, '');
+      buffer = Buffer.from(base64Data, 'base64');
+    } else if (req.readable) {
+      // Handle multipart/form-data or direct binary stream
+      const chunks = [];
+      let total = 0;
+      for await (const chunk of req) {
+        total += chunk.length;
+        if (total > 10 * 1024 * 1024) {
+          return res.status(400).json({ success: false, message: 'ছবির সাইজ সর্বোচ্চ ৫ মেগাবাইট হতে পারবে' });
+        }
+        chunks.push(chunk);
+      }
+      const rawBuf = Buffer.concat(chunks);
+      const contentType = req.headers['content-type'] || '';
+      if (contentType.includes('multipart/form-data')) {
+        buffer = extractMultipartFile(rawBuf, contentType);
+      } else {
+        buffer = rawBuf;
+      }
+    }
+
+    if (!buffer || buffer.length === 0) {
+      return res.status(400).json({ success: false, message: 'ছবির ফাইল বা ডেটা প্রদান করুন' });
+    }
+
+    // 5MB limit
+    if (buffer.length > 5 * 1024 * 1024) {
+      return res.status(400).json({ success: false, message: 'ছবির সাইজ সর্বোচ্চ ৫ মেগাবাইট হতে পারবে' });
+    }
+
+    const detected = detectImageMime(buffer);
+    if (!detected) {
+      return res.status(400).json({ success: false, message: 'শুধুমাত্র JPG, PNG, WebP বা GIF ফরম্যাটের ছবি আপলোড করা যাবে' });
+    }
+
+    if (!fs.existsSync(UPLOADS_DIR)) {
+      await fs.promises.mkdir(UPLOADS_DIR, { recursive: true });
+    }
+
+    const filename = `prod_${Date.now()}_${crypto.randomBytes(6).toString('hex')}.${detected.ext}`;
+    const filePath = path.join(UPLOADS_DIR, filename);
+
+    await fs.promises.writeFile(filePath, buffer);
+
+    return res.json({
+      success: true,
+      url: `/uploads/${filename}`,
+      filename
+    });
+  } catch (error) {
+    console.error('Image upload failed:', error);
+    return res.status(500).json({ success: false, message: 'ছবি আপলোড করতে ব্যর্থ হয়েছে' });
+  }
+});
+
 // Admin User Management Sub-routes
 const adminUserRoutes = require('./adminUserRoutes');
 router.use('/', adminUserRoutes);
@@ -160,13 +373,13 @@ router.get('/stats', async (req, res) => {
       success: true,
       stats: {
         total_orders: totalOrdersRow.count,
-        total_revenue: totalOrdersRow.revenue,
+        total_revenue: fromPaisa(totalOrdersRow.revenue),
         pending_orders: pendingOrdersRow.count,
         delivered_orders: deliveredOrdersRow.count,
         total_products: totalProductsRow.count,
         total_resellers: totalResellersRow.count,
         pending_payouts_count: pendingPayoutsRow.count,
-        pending_payouts_amount: pendingPayoutsRow.total
+        pending_payouts_amount: fromPaisa(pendingPayoutsRow.total)
       }
     });
   } catch (error) {
@@ -175,21 +388,21 @@ router.get('/stats', async (req, res) => {
   }
 });
 
-// Admin Analytics Endpoint (Detailed Revenue, Top Products, Top Resellers)
+// Admin Analytics Endpoint (Detailed Profit Dashboard, Top Products, Top Resellers)
 router.get('/analytics', async (req, res) => {
   try {
     const totalOrdersRow = await get('SELECT COUNT(*) as count, COALESCE(SUM(total_amount), 0) as revenue FROM orders');
-    
+
     // Status counts
     const statusCounts = await query(`
-      SELECT status, COUNT(*) as count, COALESCE(SUM(total_amount), 0) as volume 
-      FROM orders 
+      SELECT status, COUNT(*) as count, COALESCE(SUM(total_amount), 0) as volume
+      FROM orders
       GROUP BY status
     `);
 
     // Top selling products
     const topProducts = await query(`
-      SELECT 
+      SELECT
         oi.product_id,
         oi.title,
         oi.sku,
@@ -205,16 +418,16 @@ router.get('/analytics', async (req, res) => {
 
     // Top performing resellers
     const topResellers = await query(`
-      SELECT 
+      SELECT
         u.id,
         u.name,
         u.phone,
         COUNT(DISTINCT o.id) as delivered_sales_count,
         COALESCE(SUM(o.total_amount), 0) as total_volume,
         (
-          SELECT COALESCE(SUM(amount), 0) 
-          FROM wallet_transactions 
-          WHERE user_id = u.id AND status = 'available' AND type = 'commission'
+          SELECT COALESCE(SUM(amount), 0)
+          FROM wallet_transactions
+          WHERE user_id = u.id AND status = 'available' AND type IN ('commission', 'referral_commission')
         ) as total_commission_earned
       FROM users u
       JOIN orders o ON u.id = o.reseller_id AND o.status = 'delivered'
@@ -225,16 +438,98 @@ router.get('/analytics', async (req, res) => {
 
     const pendingPayoutsRow = await get("SELECT COUNT(*) as count, COALESCE(SUM(amount), 0) as total FROM payout_requests WHERE status = 'pending'");
 
+    // Profit Dashboard Calculations (Delivered Orders)
+    const deliveredFinancialsRow = await get(`
+      SELECT
+        COUNT(*) as delivered_count,
+        COALESCE(SUM(total_amount), 0) as delivered_revenue,
+        COALESCE(SUM(total_wholesale_amount), 0) as delivered_wholesale,
+        COALESCE(SUM(total_reseller_commission), 0) as delivered_commission,
+        COALESCE(SUM(platform_net_profit), 0) as net_profit
+      FROM orders
+      WHERE status = 'delivered'
+    `);
+
+    // Today delivered financials
+    const todayFinancialsRow = await get(`
+      SELECT
+        COUNT(*) as delivered_count,
+        COALESCE(SUM(total_amount), 0) as delivered_revenue,
+        COALESCE(SUM(total_wholesale_amount), 0) as delivered_wholesale,
+        COALESCE(SUM(total_reseller_commission), 0) as delivered_commission,
+        COALESCE(SUM(platform_net_profit), 0) as net_profit
+      FROM orders
+      WHERE status = 'delivered' AND date(created_at) = date('now')
+    `);
+
+    // This Month delivered financials
+    const monthFinancialsRow = await get(`
+      SELECT
+        COUNT(*) as delivered_count,
+        COALESCE(SUM(total_amount), 0) as delivered_revenue,
+        COALESCE(SUM(total_wholesale_amount), 0) as delivered_wholesale,
+        COALESCE(SUM(total_reseller_commission), 0) as delivered_commission,
+        COALESCE(SUM(platform_net_profit), 0) as net_profit
+      FROM orders
+      WHERE status = 'delivered' AND strftime('%Y-%m', created_at) = strftime('%Y-%m', 'now')
+    `);
+
+    // Partner Shop Payable (delivered partner items where partner_settled = 0)
+    const partnerPayableRow = await get(`
+      SELECT COALESCE(SUM(oi.unit_wholesale_price * oi.quantity), 0) as payable
+      FROM order_items oi
+      JOIN orders o ON oi.order_id = o.id
+      WHERE o.status = 'delivered' AND (oi.shop_type = 'partner' OR oi.shop_name NOT IN ('SB Furniture', 'SB POWER')) AND o.partner_settled = 0
+    `);
+
+    // Partner Shop Settled
+    const partnerSettledRow = await get('SELECT COALESCE(SUM(amount), 0) as settled FROM shop_settlements');
+
+    // Reseller Commissions Pending vs Paid
+    const commPendingRow = await get("SELECT COALESCE(SUM(amount), 0) as total FROM wallet_transactions WHERE type IN ('commission', 'referral_commission') AND status = 'pending'");
+    const commPaidRow = await get("SELECT COALESCE(SUM(amount), 0) as total FROM wallet_transactions WHERE type IN ('commission', 'referral_commission') AND status IN ('available', 'completed')");
+
     return res.json({
       success: true,
       analytics: {
         total_orders: totalOrdersRow.count,
-        total_revenue: totalOrdersRow.revenue,
-        status_breakdown: statusCounts,
-        top_products: topProducts,
-        top_resellers: topResellers,
+        total_revenue: fromPaisa(totalOrdersRow.revenue),
+        status_breakdown: statusCounts.map((row) => takaFields(row, ['volume'])),
+        top_products: topProducts.map((row) => takaFields(row, ['total_sales_volume'])),
+        top_resellers: topResellers.map((row) => takaFields(row, ['total_volume', 'total_commission_earned'])),
         pending_payouts_count: pendingPayoutsRow.count,
-        pending_payouts_amount: pendingPayoutsRow.total
+        pending_payouts_amount: fromPaisa(pendingPayoutsRow.total),
+        profit_dashboard: {
+          today: {
+            orders_count: todayFinancialsRow.delivered_count,
+            revenue: fromPaisa(todayFinancialsRow.delivered_revenue),
+            wholesale_cost: fromPaisa(todayFinancialsRow.delivered_wholesale),
+            reseller_commissions: fromPaisa(todayFinancialsRow.delivered_commission),
+            net_profit: fromPaisa(todayFinancialsRow.net_profit)
+          },
+          this_month: {
+            orders_count: monthFinancialsRow.delivered_count,
+            revenue: fromPaisa(monthFinancialsRow.delivered_revenue),
+            wholesale_cost: fromPaisa(monthFinancialsRow.delivered_wholesale),
+            reseller_commissions: fromPaisa(monthFinancialsRow.delivered_commission),
+            net_profit: fromPaisa(monthFinancialsRow.net_profit)
+          },
+          all_time: {
+            orders_count: deliveredFinancialsRow.delivered_count,
+            revenue: fromPaisa(deliveredFinancialsRow.delivered_revenue),
+            wholesale_cost: fromPaisa(deliveredFinancialsRow.delivered_wholesale),
+            reseller_commissions: fromPaisa(deliveredFinancialsRow.delivered_commission),
+            net_profit: fromPaisa(deliveredFinancialsRow.net_profit)
+          },
+          partner_shops: {
+            payable_unsettled: fromPaisa(partnerPayableRow.payable),
+            total_settled: fromPaisa(partnerSettledRow.settled)
+          },
+          reseller_commissions_ledger: {
+            pending: fromPaisa(commPendingRow.total),
+            paid_or_available: fromPaisa(commPaidRow.total)
+          }
+        }
       }
     });
   } catch (error) {
@@ -277,7 +572,7 @@ router.get('/orders', async (req, res) => {
     return res.json({
       success: true,
       count: enrichedOrders.length,
-      orders: enrichedOrders
+      orders: enrichedOrders.map(orderToClient)
     });
   } catch (error) {
     console.error('Admin Orders Error:', error);
@@ -291,6 +586,10 @@ router.put('/orders/:id/status', async (req, res) => {
     const orderId = parseInt(req.params.id, 10);
     const { status, notes } = req.body;
 
+    if (!Number.isSafeInteger(orderId) || orderId < 1) {
+      return res.status(400).json({ success: false, message: 'অর্ডার আইডি সঠিক নয়' });
+    }
+
     const validStatuses = ['pending', 'confirmed', 'shipped', 'delivered', 'cancelled'];
     if (!validStatuses.includes(status)) {
       return res.status(400).json({ success: false, message: 'অবৈধ অর্ডার স্ট্যাটাস' });
@@ -303,7 +602,7 @@ router.put('/orders/:id/status', async (req, res) => {
 
     const previousStatus = order.status;
 
-    await withTransaction(async ({ run: txRun, get: txGet }) => {
+    await withTransaction(async ({ run: txRun, query: txQuery, get: txGet }) => {
       // 1. Update status in orders table
       await txRun(
         'UPDATE orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
@@ -320,37 +619,94 @@ router.put('/orders/:id/status', async (req, res) => {
         [orderId, previousStatus, status, adminUserId, logNote]
       );
 
-      // 3. Status-based wallet transaction management
-      if (status === 'delivered' && previousStatus !== 'delivered') {
-        // Mark reseller's pending commission transaction as 'available'
-        if (order.reseller_id) {
-          await txRun(
-            `UPDATE wallet_transactions 
-             SET status = 'available' 
-             WHERE order_id = ? AND user_id = ? AND type = 'commission'`,
-            [orderId, order.reseller_id]
-          );
-
-        }
-      } else if (status === 'cancelled' && previousStatus !== 'cancelled') {
-        // If cancelled, cancel all wallet transactions associated with this order
+      if (previousStatus === 'cancelled' && status !== 'cancelled') {
         await txRun(
-          `UPDATE wallet_transactions 
-           SET status = 'cancelled' 
-           WHERE order_id = ?`,
+          `UPDATE wallet_transactions
+           SET status = CASE
+             WHEN type = 'referral_redemption' THEN 'completed'
+             WHEN type IN ('commission', 'referral_commission', 'referral_credit') THEN 'pending'
+             ELSE status
+           END
+           WHERE order_id = ? AND status = 'cancelled'`,
           [orderId]
         );
-      } else if (previousStatus === 'delivered' && status !== 'delivered') {
-        // Reverting away from delivered: put commissions/bonuses back to pending
         await txRun(
-          `UPDATE wallet_transactions 
-           SET status = 'pending' 
-           WHERE order_id = ?`,
+          'UPDATE orders SET commission_released = 0, referral_reward_released = 0 WHERE id = ?',
           [orderId]
         );
       }
 
-      // 4. Send notification to reseller if order is attributed
+      // 3. Status-based wallet transaction management
+      if (status === 'delivered' && previousStatus !== 'delivered') {
+        // Mark reseller's pending commission transaction as 'available'
+        if (order.reseller_id && !order.commission_released) {
+          await txRun(
+            `UPDATE wallet_transactions
+             SET status = 'available'
+             WHERE order_id = ? AND user_id = ? AND type = 'commission'`,
+            [orderId, order.reseller_id]
+          );
+          await txRun('UPDATE orders SET commission_released = 1 WHERE id = ?', [orderId]);
+        }
+        if (order.referrer_user_id && !order.referral_reward_released) {
+          await txRun(
+            `UPDATE wallet_transactions
+             SET status = 'available'
+             WHERE order_id = ? AND user_id = ? AND type IN ('referral_commission', 'referral_credit') AND status = 'pending'`,
+            [orderId, order.referrer_user_id]
+          );
+          await txRun('UPDATE orders SET referral_reward_released = 1 WHERE id = ?', [orderId]);
+          await txRun(
+            `INSERT INTO notifications (user_id, title, message) VALUES (?, ?, ?)`,
+            [order.referrer_user_id, 'রেফারেল পুরস্কার যোগ হয়েছে', `আপনার আমন্ত্রিত সদস্যের অর্ডার #${order.order_number} ডেলিভারি সম্পন্ন হয়েছে; রেফারেল পুরস্কার যোগ হয়েছে।`]
+          );
+        }
+      } else if (status === 'cancelled' && previousStatus !== 'cancelled') {
+        // If cancelled, cancel all wallet transactions associated with this order
+        await txRun(
+          `UPDATE wallet_transactions
+           SET status = 'cancelled'
+           WHERE order_id = ?`,
+          [orderId]
+        );
+        await txRun('UPDATE orders SET commission_released = 0, referral_reward_released = 0 WHERE id = ?', [orderId]);
+      } else if (previousStatus === 'delivered' && status !== 'delivered') {
+        // Reverting away from delivered: put commissions/bonuses back to pending
+        await txRun(
+          `UPDATE wallet_transactions
+           SET status = 'pending'
+          WHERE order_id = ? AND type IN ('commission', 'referral_commission', 'referral_credit')`,
+          [orderId]
+        );
+        await txRun('UPDATE orders SET commission_released = 0, referral_reward_released = 0 WHERE id = ?', [orderId]);
+      }
+
+      // 4. Stock follows the order: cancelling returns reserved units, and
+      // reopening a cancelled order reserves them again.
+      if (status === 'cancelled' && previousStatus !== 'cancelled') {
+        const orderItems = await txQuery('SELECT product_id, quantity FROM order_items WHERE order_id = ?', [orderId]);
+        for (const item of orderItems) {
+          await txRun(
+            'UPDATE products SET stock = stock + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+            [item.quantity, item.product_id]
+          );
+        }
+      } else if (previousStatus === 'cancelled' && status !== 'cancelled') {
+        const orderItems = await txQuery('SELECT product_id, quantity FROM order_items WHERE order_id = ?', [orderId]);
+        for (const item of orderItems) {
+          const reservation = await txRun(
+            'UPDATE products SET stock = stock - ? WHERE id = ? AND stock >= ?',
+            [item.quantity, item.product_id, item.quantity]
+          );
+          if (!reservation || reservation.changes !== 1) {
+            const stockError = new Error(`পণ্য আইডি ${item.product_id}-এর পর্যাপ্ত স্টক নেই`);
+            stockError.statusCode = 409;
+            throw stockError;
+          }
+        }
+      }
+
+      // 5. Send notification to reseller if order is attributed
       if (order.reseller_id) {
         await txRun(
           `INSERT INTO notifications (user_id, title, message)
@@ -369,8 +725,93 @@ router.put('/orders/:id/status', async (req, res) => {
       message: `অর্ডারের স্ট্যাটাস পরিবর্তন করে '${status}' করা হয়েছে!`
     });
   } catch (error) {
+    if (error.statusCode === 409) {
+      return res.status(409).json({ success: false, message: error.message });
+    }
     console.error('Order Status Update Error:', error);
     return res.status(500).json({ success: false, message: 'স্ট্যাটাস আপডেট ব্যর্থ হয়েছে' });
+  }
+});
+
+// Dedicated Instant Release Commission endpoint
+router.post('/orders/:id/release-commission', async (req, res) => {
+  try {
+    const orderId = parseInt(req.params.id, 10);
+    if (!Number.isSafeInteger(orderId) || orderId < 1) {
+      return res.status(400).json({ success: false, message: 'অর্ডার আইডি সঠিক নয়' });
+    }
+
+    const order = await get('SELECT * FROM orders WHERE id = ?', [orderId]);
+    if (!order) {
+      return res.status(404).json({ success: false, message: 'অর্ডারটি পাওয়া যায়নি' });
+    }
+
+    if (!order.reseller_id) {
+      return res.status(400).json({ success: false, message: 'এই অর্ডারে কোনো রিসেলার যুক্ত নেই' });
+    }
+
+    if (order.commission_released) {
+      return res.status(400).json({ success: false, message: 'এই অর্ডারের কমিশন ইতিমধ্যে রিলিজ করা হয়েছে' });
+    }
+
+    if (order.status === 'cancelled') {
+      return res.status(400).json({ success: false, message: 'বাতিল অর্ডারের কমিশন রিলিজ করা সম্ভব নয়' });
+    }
+
+    await withTransaction(async ({ run: txRun }) => {
+      // 1. Move pending commission to available in wallet_transactions
+      const updatedTx = await txRun(
+        `UPDATE wallet_transactions
+         SET status = 'available', notes = COALESCE(notes, '') || ' (ইনস্ট্যান্ট রিলিজ)'
+         WHERE order_id = ? AND user_id = ? AND type = 'commission'`,
+        [orderId, order.reseller_id]
+      );
+
+      // If no commission transaction was found, insert an available one
+      if (updatedTx.changes === 0 && order.total_reseller_commission > 0) {
+        await txRun(
+          `INSERT INTO wallet_transactions (
+            user_id, order_id, amount, type, status, notes
+          ) VALUES (?, ?, ?, 'commission', 'available', ?)`,
+          [order.reseller_id, orderId, order.total_reseller_commission, `অর্ডার #${order.order_number}-এর কমিশন (ইনস্ট্যান্ট রিলিজ)`]
+        );
+      }
+
+      // 2. Mark commission_released on order
+      await txRun(
+        'UPDATE orders SET commission_released = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        [orderId]
+      );
+
+      // 3. Log to audit trail
+      const adminUserId = req.user ? req.user.id : null;
+      await txRun(
+        `INSERT INTO order_status_logs (
+          order_id, previous_status, new_status, changed_by_user_id, notes
+        ) VALUES (?, ?, ?, ?, ?)`,
+        [orderId, order.status, order.status, adminUserId, 'এডমিন কর্তৃক ইনস্ট্যান্ট কমিশন রিলিজ সম্পন্ন']
+      );
+
+      // 4. Send notification to reseller
+      const commTaka = fromPaisa(order.total_reseller_commission);
+      await txRun(
+        `INSERT INTO notifications (user_id, title, message)
+         VALUES (?, ?, ?)`,
+        [
+          order.reseller_id,
+          'ইনস্ট্যান্ট কমিশন রিলিজ! 🎉',
+          `আপনার অর্ডার #${order.order_number}-এর কমিশন (${commTaka}৳) ইনস্ট্যান্ট উত্তোলনযোগ্য ব্যালেন্সে যুক্ত করা হয়েছে।`
+        ]
+      );
+    });
+
+    return res.json({
+      success: true,
+      message: 'কমিশন সফলভাবে ইনস্ট্যান্ট রিলিজ করা হয়েছে!'
+    });
+  } catch (error) {
+    console.error('Instant Commission Release Error:', error);
+    return res.status(500).json({ success: false, message: 'কমিশন রিলিজ করতে ব্যর্থ হয়েছে' });
   }
 });
 
@@ -378,11 +819,14 @@ router.put('/orders/:id/status', async (req, res) => {
 router.get('/orders/:id/audit-trail', async (req, res) => {
   try {
     const orderId = parseInt(req.params.id, 10);
+    if (!Number.isSafeInteger(orderId) || orderId < 1) {
+      return res.status(400).json({ success: false, message: 'অর্ডার আইডি সঠিক নয়' });
+    }
     const logs = await query(
-      `SELECT osl.*, u.name as admin_name 
-       FROM order_status_logs osl 
-       LEFT JOIN users u ON osl.changed_by_user_id = u.id 
-       WHERE osl.order_id = ? 
+      `SELECT osl.*, u.name as admin_name
+       FROM order_status_logs osl
+       LEFT JOIN users u ON osl.changed_by_user_id = u.id
+       WHERE osl.order_id = ?
        ORDER BY osl.id ASC`,
       [orderId]
     );
@@ -410,7 +854,7 @@ router.get('/payouts', async (req, res) => {
 
     return res.json({
       success: true,
-      payouts
+      payouts: payouts.map((payout) => takaFields(payout, ['amount']))
     });
   } catch (error) {
     console.error('Admin Payouts Error:', error);
@@ -459,8 +903,8 @@ router.put('/payouts/:id', async (req, res) => {
       }
 
       const updateResult = await txRun(
-        `UPDATE payout_requests 
-         SET status = ?, admin_trx_id = ?, notes = ?, updated_at = CURRENT_TIMESTAMP 
+        `UPDATE payout_requests
+         SET status = ?, admin_trx_id = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
          WHERE id = ? AND status = 'pending'`,
         [status, admin_trx_id ? admin_trx_id.trim() : null, notes ? notes.trim() : null, payoutId]
       );
@@ -474,8 +918,8 @@ router.put('/payouts/:id', async (req, res) => {
       const targetStatus = status === 'approved' ? 'completed' : 'cancelled';
       const suffixNote = admin_trx_id ? ` (TrxID: ${admin_trx_id})` : ` (${status === 'approved' ? 'অনুমোদিত' : 'বাতিল'})`;
       await txRun(
-        `UPDATE wallet_transactions 
-         SET status = ?, notes = COALESCE(notes, '') || ? 
+        `UPDATE wallet_transactions
+         SET status = ?, notes = COALESCE(notes, '') || ?
          WHERE payout_id = ? OR (user_id = ? AND type = 'payout' AND status = 'pending' AND amount = ? AND payout_id IS NULL)`,
         [
           targetStatus,
@@ -489,8 +933,8 @@ router.put('/payouts/:id', async (req, res) => {
       // Notify reseller about payout approval or rejection
       const notifTitle = status === 'approved' ? 'ক্যাশআউট অনুমোদন সম্পন্ন!' : 'ক্যাশআউট রিকোয়েস্ট বাতিল';
       const notifMsg = status === 'approved'
-        ? `আপনার ${currentPayout.amount}৳ ক্যাশআউট (${currentPayout.payment_method.toUpperCase()}: ${currentPayout.account_number}) সফল হয়েছে। TrxID: ${admin_trx_id.trim()}`
-        : `আপনার ${currentPayout.amount}৳ ক্যাশআউট রিকোয়েস্ট বাতিল করা হয়েছে। কারণ: ${notes || 'অ্যাকাউন্ট তথ্যে অসঙ্গতি'}`;
+        ? `আপনার ${fromPaisa(currentPayout.amount)}৳ ক্যাশআউট (${currentPayout.payment_method.toUpperCase()}: ${currentPayout.account_number}) সফল হয়েছে। TrxID: ${admin_trx_id.trim()}`
+        : `আপনার ${fromPaisa(currentPayout.amount)}৳ ক্যাশআউট রিকোয়েস্ট বাতিল করা হয়েছে। কারণ: ${notes || 'অ্যাকাউন্ট তথ্যে অসঙ্গতি'}`;
 
       await txRun(
         `INSERT INTO notifications (user_id, title, message) VALUES (?, ?, ?)`,
@@ -554,7 +998,7 @@ router.get('/products', async (req, res) => {
     return res.json({
       success: true,
       count: products.length,
-      products
+      products: products.map(productToClient)
     });
   } catch (error) {
     console.error('Admin Products Fetch Error:', error);
@@ -575,29 +1019,55 @@ router.post('/products', async (req, res) => {
       return res.status(400).json({ success: false, message: 'এই SKU কোডটি ইতিমধ্যে ব্যবহৃত হচ্ছে' });
     }
 
+    // Resolve shop_id and shop_type
+    let shopId = product.shop_id || null;
+    let shopType = product.shop_type || 'own';
+    const shopName = product.shop_name || product.brand || 'SB Furniture';
+    if (!shopId) {
+      const existingShop = await get('SELECT id, shop_type FROM shops WHERE name = ?', [shopName]);
+      if (existingShop) {
+        shopId = existingShop.id;
+        shopType = existingShop.shop_type;
+      } else {
+        const isPartner = !['SB Furniture', 'SB POWER'].includes(shopName);
+        shopType = isPartner ? 'partner' : 'own';
+        const newShop = await run(
+          `INSERT INTO shops (name, shop_type, phone, address) VALUES (?, ?, ?, ?)`,
+          [shopName, shopType, product.vendor_phone || null, product.vendor_address || null]
+        );
+        shopId = newShop.lastID;
+      }
+    }
+
     const result = await run(
       `INSERT INTO products (
         title, sku, brand, category, regular_price, reseller_commission, commission_tab,
-        image_url, description, materials, finish, stock, is_active,
-        shop_name, vendor_phone, vendor_badge, vendor_address
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)`,
+        image_url, description, caption, materials, finish, stock, is_active,
+        shop_name, shop_id, shop_type, wholesale_price,
+        vendor_phone, vendor_badge, vendor_address, furniture_cutlist
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         product.title,
         product.sku,
         product.brand,
         product.category,
-        product.regular_price,
-        product.reseller_commission,
+        toPaisa(product.regular_price),
+        toPaisa(product.reseller_commission),
         product.commission_tab,
         product.image_url,
         product.description,
+        product.caption || null,
         product.materials,
         product.finish,
         product.stock,
-        product.shop_name,
+        shopName,
+        shopId,
+        shopType,
+        toPaisa(product.wholesale_price),
         product.vendor_phone,
         product.vendor_badge,
-        product.vendor_address
+        product.vendor_address,
+        product.furniture_cutlist
       ]
     );
 
@@ -628,13 +1098,33 @@ router.put('/products/:id', async (req, res) => {
     if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
       return res.status(400).json({ success: false, message: 'প্রোডাক্টের তথ্য সঠিকভাবে পাঠান' });
     }
-    const validation = validateProductPayload({ ...product, ...req.body });
+    // The stored row is paisa; the validator and the admin form work in taka.
+    const validation = validateProductPayload({ ...productToClient(product), ...req.body });
     if (validation.error) return res.status(400).json({ success: false, message: validation.error });
     const updated = validation.data;
 
     const duplicateSku = await get('SELECT id FROM products WHERE sku = ? AND id != ?', [updated.sku, productId]);
     if (duplicateSku) {
       return res.status(400).json({ success: false, message: 'এই SKU কোডটি অন্য একটি পণ্যে ব্যবহৃত হচ্ছে' });
+    }
+
+    let shopId = updated.shop_id || product.shop_id || null;
+    let shopType = updated.shop_type || product.shop_type || 'own';
+    const shopName = updated.shop_name || updated.brand || 'SB Furniture';
+    if (!shopId) {
+      const existingShop = await get('SELECT id, shop_type FROM shops WHERE name = ?', [shopName]);
+      if (existingShop) {
+        shopId = existingShop.id;
+        shopType = existingShop.shop_type;
+      } else {
+        const isPartner = !['SB Furniture', 'SB POWER'].includes(shopName);
+        shopType = isPartner ? 'partner' : 'own';
+        const newShop = await run(
+          `INSERT INTO shops (name, shop_type, phone, address) VALUES (?, ?, ?, ?)`,
+          [shopName, shopType, updated.vendor_phone || null, updated.vendor_address || null]
+        );
+        shopId = newShop.lastID;
+      }
     }
 
     await run(
@@ -648,14 +1138,19 @@ router.put('/products/:id', async (req, res) => {
         commission_tab = ?,
         image_url = ?,
         description = ?,
+        caption = ?,
         materials = ?,
         finish = ?,
         stock = ?,
         is_active = ?,
         shop_name = ?,
+        shop_id = ?,
+        shop_type = ?,
+        wholesale_price = ?,
         vendor_phone = ?,
         vendor_badge = ?,
         vendor_address = ?,
+        furniture_cutlist = ?,
         updated_at = CURRENT_TIMESTAMP
        WHERE id = ?`,
       [
@@ -663,19 +1158,24 @@ router.put('/products/:id', async (req, res) => {
         updated.sku,
         updated.brand,
         updated.category,
-        updated.regular_price,
-        updated.reseller_commission,
+        toPaisa(updated.regular_price),
+        toPaisa(updated.reseller_commission),
         updated.commission_tab,
         updated.image_url,
         updated.description,
+        updated.caption !== undefined ? updated.caption : (product.caption || null),
         updated.materials,
         updated.finish,
         updated.stock,
         updated.is_active,
-        updated.shop_name,
+        shopName,
+        shopId,
+        shopType,
+        toPaisa(updated.wholesale_price),
         updated.vendor_phone,
         updated.vendor_badge,
         updated.vendor_address,
+        updated.furniture_cutlist,
         productId
       ]
     );
@@ -694,11 +1194,496 @@ router.put('/products/:id', async (req, res) => {
 router.delete('/products/:id', async (req, res) => {
   try {
     const productId = parseInt(req.params.id, 10);
+    if (!Number.isSafeInteger(productId) || productId < 1) {
+      return res.status(400).json({ success: false, message: 'প্রোডাক্ট আইডি সঠিক নয়' });
+    }
     await run('UPDATE products SET is_active = 0 WHERE id = ?', [productId]);
     return res.json({ success: true, message: 'প্রোডাক্ট নিষ্ক্রিয় করা হয়েছে' });
   } catch (error) {
     console.error('Delete Product Error:', error);
     return res.status(500).json({ success: false, message: 'প্রোডাক্ট নিষ্ক্রিয় করতে ব্যর্থ হয়েছে' });
+  }
+});
+
+// ================= FURNITURE AI CUTLIST & BOARD CALCULATOR =================
+router.post('/furniture/estimate', async (req, res) => {
+  try {
+    const {
+      furniture_type = 'wardrobe',
+      height = 72,
+      width = 36,
+      depth = 18,
+      board_thickness = 0.75,
+      board_price = 1800,
+      notes = ''
+    } = req.body || {};
+
+    const estimate = await estimateFurniturePartsAndBoards({
+      furniture_type,
+      height: Number(height) || 72,
+      width: Number(width) || 36,
+      depth: Number(depth) || 18,
+      board_thickness: Number(board_thickness) || 0.75,
+      board_price: Number(board_price) || 1800,
+      notes: typeof notes === 'string' ? notes.slice(0, 500) : ''
+    });
+
+    return res.json(estimate);
+  } catch (error) {
+    console.error('Furniture Estimation API Error:', error);
+    return res.status(500).json({ success: false, message: 'ফার্নিচার বোর্ড ক্যালকুলেশনে সমস্যা হয়েছে' });
+  }
+});
+
+// ================= AI VISION IMAGE INSPECTOR =================
+router.post('/ai/inspect-image', async (req, res) => {
+  try {
+    let imageBase64 = null;
+    let mimeType = 'image/jpeg';
+    let imageUrl = null;
+    const boardPrice = Number(req.body && req.body.board_price) || 1800;
+
+    const raw = req.body && (req.body.image || req.body.data || req.body.image_url);
+
+    if (raw && typeof raw === 'string') {
+      const trimmed = raw.trim();
+      if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+        imageUrl = trimmed;
+      } else {
+        const mimeMatch = trimmed.match(/^data:([^;]+);base64,/);
+        if (mimeMatch) {
+          mimeType = mimeMatch[1];
+        }
+        let base64Data = trimmed;
+        const prefixIndex = base64Data.indexOf(';base64,');
+        if (prefixIndex !== -1) {
+          base64Data = base64Data.substring(prefixIndex + 8);
+        }
+        imageBase64 = base64Data.replace(/\s+/g, '');
+      }
+    } else if (req.readable) {
+      const chunks = [];
+      let total = 0;
+      for await (const chunk of req) {
+        total += chunk.length;
+        if (total > 8 * 1024 * 1024) {
+          return res.status(400).json({ success: false, message: 'ছবির সাইজ সর্বোচ্চ ৫ মেগাবাইট হতে পারবে' });
+        }
+        chunks.push(chunk);
+      }
+      const rawBuf = Buffer.concat(chunks);
+      const contentType = req.headers['content-type'] || '';
+      let buffer = rawBuf;
+      if (contentType.includes('multipart/form-data')) {
+        buffer = extractMultipartFile(rawBuf, contentType);
+      }
+      if (buffer && buffer.length > 0) {
+        const detected = detectImageMime(buffer);
+        if (detected) mimeType = detected.mime;
+        imageBase64 = buffer.toString('base64');
+      }
+    }
+
+    if (!imageBase64 && !imageUrl) {
+      return res.status(400).json({ success: false, message: 'বিশ্লেষণের জন্য ছবির ফাইল বা লিংক প্রদান করুন' });
+    }
+
+    const analysis = await inspectProductImageWithAi({
+      imageBase64,
+      mimeType,
+      imageUrl,
+      boardPrice
+    });
+
+    return res.json({
+      success: true,
+      analysis
+    });
+  } catch (error) {
+    console.error('AI Image Inspection Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'ছবি বিশ্লেষণে ত্রুটি ঘটেছে'
+    });
+  }
+});
+
+// ================= AI TEXT / KEYWORD COPY GENERATOR =================
+router.post('/ai/generate-copy', async (req, res) => {
+  try {
+    const { keywords, title, category, board_price } = req.body || {};
+    const inputKeywords = (keywords || title || '').trim();
+
+    if (!inputKeywords) {
+      return res.status(400).json({
+        success: false,
+        message: 'বিবরণ ও ক্যাপশন তৈরির জন্য পণ্যের নাম বা কিছু কীওয়ার্ড প্রদান করুন'
+      });
+    }
+
+    const analysis = await generateProductCopyFromKeywords({
+      keywords: inputKeywords,
+      category: typeof category === 'string' ? category.trim() : '',
+      boardPrice: Number(board_price) || 1800
+    });
+
+    return res.json({
+      success: true,
+      analysis
+    });
+  } catch (error) {
+    console.error('AI Copy Generation Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'বিবরণ প্রস্তুতিতে ত্রুটি ঘটেছে'
+    });
+  }
+});
+
+// ================= AI MULTI-CHANNEL MARKETING COPY GENERATOR =================
+router.post('/ai/marketing-copy', async (req, res) => {
+  try {
+    let product = req.body && req.body.product;
+    const productId = req.body && req.body.productId ? parseInt(req.body.productId, 10) : null;
+
+    if (!product && productId) {
+      const row = await get('SELECT * FROM products WHERE id = ?', [productId]);
+      if (row) {
+        product = productToClient(row);
+      }
+    }
+
+    if (!product) {
+      return res.status(400).json({
+        success: false,
+        message: 'মার্কেটিং কপি তৈরির জন্য প্রোডাক্ট তথ্য প্রয়োজন'
+      });
+    }
+
+    const origin = req.protocol + '://' + req.get('host');
+    const copies = generateMultiChannelMarketingCopy(product, origin);
+
+    return res.json({
+      success: true,
+      copy: copies
+    });
+  } catch (error) {
+    console.error('AI Marketing Copy Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'মার্কেটিং কপি তৈরিতে ত্রুটি ঘটেছে'
+    });
+  }
+});
+
+// Quick inline update for stock and regular price in admin product table
+router.patch('/products/:id/quick-update', async (req, res) => {
+  try {
+    const productId = parseInt(req.params.id, 10);
+    if (!Number.isSafeInteger(productId) || productId < 1) {
+      return res.status(400).json({ success: false, message: 'প্রোডাক্ট আইডি সঠিক নয়' });
+    }
+
+    const { stock, regular_price } = req.body || {};
+    const updates = [];
+    const params = [];
+
+    if (stock !== undefined) {
+      const numStock = parseInt(stock, 10);
+      if (isNaN(numStock) || numStock < 0) {
+        return res.status(400).json({ success: false, message: 'স্টক সংখ্যা ০ বা তার বেশি হতে হবে' });
+      }
+      updates.push('stock = ?');
+      params.push(numStock);
+    }
+
+    if (regular_price !== undefined) {
+      const numPrice = parseFloat(regular_price);
+      if (isNaN(numPrice) || numPrice < 1) {
+        return res.status(400).json({ success: false, message: 'বিক্রয় মূল্য সঠিক নয়' });
+      }
+      updates.push('regular_price = ?');
+      params.push(toPaisa(numPrice));
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ success: false, message: 'আপডেটের জন্য স্টক বা মূল্য প্রদান করুন' });
+    }
+
+    params.push(productId);
+    const result = await run(`UPDATE products SET ${updates.join(', ')} WHERE id = ?`, params);
+    if (result.changes === 0) {
+      return res.status(404).json({ success: false, message: 'প্রোডাক্ট খুঁজে পাওয়া যায়নি' });
+    }
+
+    const updated = await get('SELECT * FROM products WHERE id = ?', [productId]);
+    return res.json({
+      success: true,
+      message: 'প্রোডাক্ট তথ্য সফলভাবে আপডেট হয়েছে',
+      product: productToClient(updated)
+    });
+  } catch (error) {
+    console.error('Quick Update Product Error:', error);
+    return res.status(500).json({ success: false, message: 'প্রোডাক্ট আপডেট করতে ব্যর্থ হয়েছে' });
+  }
+});
+
+// ================= SHOPS & PARTNER LEDGER MANAGEMENT =================
+// List all shops with metrics
+router.get('/shops', async (req, res) => {
+  try {
+    const shops = await query(`
+      SELECT
+        s.*,
+        (SELECT COUNT(*) FROM products WHERE (shop_id = s.id OR shop_name = s.name) AND is_active = 1) as products_count,
+        COALESCE((
+          SELECT SUM(oi.quantity)
+          FROM order_items oi
+          JOIN orders o ON oi.order_id = o.id
+          WHERE (oi.shop_id = s.id OR oi.shop_name = s.name) AND o.status = 'delivered'
+        ), 0) as delivered_units,
+        COALESCE((
+          SELECT SUM(oi.unit_wholesale_price * oi.quantity)
+          FROM order_items oi
+          JOIN orders o ON oi.order_id = o.id
+          WHERE (oi.shop_id = s.id OR oi.shop_name = s.name) AND o.status = 'delivered' AND o.partner_settled = 0
+        ), 0) as wholesale_owed,
+        COALESCE((
+          SELECT SUM(amount) FROM shop_settlements WHERE shop_id = s.id
+        ), 0) as wholesale_settled
+      FROM shops s
+      ORDER BY s.id ASC
+    `);
+
+    return res.json({
+      success: true,
+      shops: shops.map((s) => takaFields(s, ['wholesale_owed', 'wholesale_settled']))
+    });
+  } catch (error) {
+    console.error('Fetch Shops Error:', error);
+    return res.status(500).json({ success: false, message: 'শপ তালিকা লোড করতে ব্যর্থ হয়েছে' });
+  }
+});
+
+// Create a new shop (Own or Partner)
+router.post('/shops', async (req, res) => {
+  try {
+    const { name, shop_type, phone, address, contact_person } = req.body;
+    if (typeof name !== 'string' || !name.trim() || name.trim().length > 100) {
+      return res.status(400).json({ success: false, message: 'শপের নাম আবশ্যক (১০০ অক্ষরের মধ্যে)' });
+    }
+    const cleanType = ['own', 'partner'].includes(shop_type) ? shop_type : 'partner';
+
+    const existing = await get('SELECT id FROM shops WHERE name = ?', [name.trim()]);
+    if (existing) {
+      return res.status(400).json({ success: false, message: 'এই নামের শপ ইতিমধ্যে নিবন্ধিত রয়েছে' });
+    }
+
+    const result = await run(
+      `INSERT INTO shops (name, shop_type, phone, address, contact_person) VALUES (?, ?, ?, ?, ?)`,
+      [name.trim(), cleanType, phone ? String(phone).trim() : null, address ? String(address).trim() : null, contact_person ? String(contact_person).trim() : null]
+    );
+
+    return res.status(201).json({
+      success: true,
+      message: 'শপ সফলভাবে তৈরি করা হয়েছে!',
+      id: result.lastID
+    });
+  } catch (error) {
+    console.error('Create Shop Error:', error);
+    return res.status(500).json({ success: false, message: 'শপ তৈরিতে ব্যর্থ হয়েছে' });
+  }
+});
+
+// Update an existing shop
+router.put('/shops/:id', async (req, res) => {
+  try {
+    const shopId = Number(req.params.id);
+    if (!Number.isSafeInteger(shopId) || shopId < 1) {
+      return res.status(400).json({ success: false, message: 'শপ আইডি সঠিক নয়' });
+    }
+    const { name, shop_type, phone, address, contact_person, is_active } = req.body;
+    const shop = await get('SELECT * FROM shops WHERE id = ?', [shopId]);
+    if (!shop) return res.status(404).json({ success: false, message: 'শপ পাওয়া যায়নি' });
+
+    await run(
+      `UPDATE shops SET
+        name = COALESCE(?, name),
+        shop_type = COALESCE(?, shop_type),
+        phone = COALESCE(?, phone),
+        address = COALESCE(?, address),
+        contact_person = COALESCE(?, contact_person),
+        is_active = COALESCE(?, is_active),
+        updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [
+        name ? name.trim() : null,
+        shop_type && ['own', 'partner'].includes(shop_type) ? shop_type : null,
+        phone !== undefined ? (phone ? String(phone).trim() : null) : null,
+        address !== undefined ? (address ? String(address).trim() : null) : null,
+        contact_person !== undefined ? (contact_person ? String(contact_person).trim() : null) : null,
+        is_active !== undefined ? Number(is_active) : null,
+        shopId
+      ]
+    );
+
+    return res.json({ success: true, message: 'শপ তথ্য সফলভাবে আপডেট হয়েছে!' });
+  } catch (error) {
+    console.error('Update Shop Error:', error);
+    return res.status(500).json({ success: false, message: 'শপ আপডেট ব্যর্থ হয়েছে' });
+  }
+});
+
+// Settle Partner Shop wholesale payable
+router.post('/shops/:id/settle', async (req, res) => {
+  try {
+    const shopId = Number(req.params.id);
+    if (!Number.isSafeInteger(shopId) || shopId < 1) {
+      return res.status(400).json({ success: false, message: 'শপ আইডি সঠিক নয়' });
+    }
+    const shop = await get('SELECT * FROM shops WHERE id = ?', [shopId]);
+    if (!shop) return res.status(404).json({ success: false, message: 'শপ পাওয়া যায়নি' });
+
+    const { amount, trx_id, notes } = req.body;
+    const parsedAmount = toPaisa(amount);
+    if (parsedAmount === null || parsedAmount <= 0) {
+      return res.status(400).json({ success: false, message: 'সঠিক পরিশোধকৃত টাকার পরিমাণ দিন' });
+    }
+
+    await withTransaction(async ({ run: txRun, query: txQuery }) => {
+      // Find unsettled delivered orders for this shop
+      const unsettledOrders = await txQuery(
+        `SELECT DISTINCT o.id
+         FROM orders o
+         JOIN order_items oi ON o.id = oi.order_id
+         WHERE (oi.shop_id = ? OR oi.shop_name = ?) AND o.status = 'delivered' AND o.partner_settled = 0`,
+        [shopId, shop.name]
+      );
+
+      // Mark them as partner_settled
+      for (const ord of unsettledOrders) {
+        await txRun('UPDATE orders SET partner_settled = 1 WHERE id = ?', [ord.id]);
+      }
+
+      const adminId = req.user ? req.user.id : null;
+      await txRun(
+        `INSERT INTO shop_settlements (
+          shop_id, amount, orders_count, trx_id, notes, settled_by_admin_id
+        ) VALUES (?, ?, ?, ?, ?, ?)`,
+        [
+          shopId,
+          parsedAmount,
+          unsettledOrders.length,
+          trx_id ? String(trx_id).trim() : null,
+          notes ? String(notes).trim() : null,
+          adminId
+        ]
+      );
+    });
+
+    return res.json({
+      success: true,
+      message: `${shop.name}-এর পাইকারি পাওনা ৳${fromPaisa(parsedAmount)} সফলভাবে পরিশোধ রেকর্ড করা হয়েছে!`
+    });
+  } catch (error) {
+    console.error('Shop Settlement Error:', error);
+    return res.status(500).json({ success: false, message: 'শপ সেটেলমেন্ট রেকর্ড করতে ব্যর্থ হয়েছে' });
+  }
+});
+
+// Shop settlement history
+router.get('/shops/:id/settlements', async (req, res) => {
+  try {
+    const shopId = Number(req.params.id);
+    const settlements = await query(
+      `SELECT ss.*, u.name as admin_name
+       FROM shop_settlements ss
+       LEFT JOIN users u ON ss.settled_by_admin_id = u.id
+       WHERE ss.shop_id = ?
+       ORDER BY ss.id DESC`,
+      [shopId]
+    );
+    return res.json({
+      success: true,
+      settlements: settlements.map((s) => takaFields(s, ['amount']))
+    });
+  } catch (error) {
+    console.error('Fetch Settlements Error:', error);
+    return res.status(500).json({ success: false, message: 'সেটেলমেন্ট রেকর্ড লোড ব্যর্থ হয়েছে' });
+  }
+});
+
+// ================= RESELLER ACCOUNTS MANAGEMENT =================
+// List resellers with stats and balances
+router.get('/resellers', async (req, res) => {
+  try {
+    const resellers = await query(`
+      SELECT
+        u.id,
+        u.name,
+        u.phone,
+        u.role,
+        u.status,
+        u.referral_code,
+        u.payout_method,
+        u.payout_number,
+        u.created_at,
+        COUNT(DISTINCT CASE WHEN o.status = 'delivered' THEN o.id END) as delivered_sales_count,
+        COALESCE(SUM(CASE WHEN o.status = 'delivered' THEN o.total_amount ELSE 0 END), 0) as total_volume,
+        COALESCE((
+          SELECT SUM(amount) FROM wallet_transactions
+          WHERE user_id = u.id AND status IN ('available', 'completed') AND type IN ('commission', 'referral_commission')
+        ), 0) as total_commission_earned,
+        COALESCE((
+          SELECT SUM(amount) FROM wallet_transactions
+          WHERE user_id = u.id AND status = 'pending' AND type IN ('commission', 'referral_commission')
+        ), 0) as pending_commission,
+        COALESCE((
+          SELECT SUM(amount) FROM wallet_transactions
+          WHERE user_id = u.id AND type = 'payout' AND status IN ('pending', 'approved', 'completed')
+        ), 0) as payout_committed
+      FROM users u
+      LEFT JOIN orders o ON u.id = o.reseller_id
+      WHERE u.role = 'reseller'
+      GROUP BY u.id
+      ORDER BY u.id DESC
+    `);
+
+    return res.json({
+      success: true,
+      resellers: resellers.map((r) => {
+        const converted = takaFields(r, ['total_volume', 'total_commission_earned', 'pending_commission', 'payout_committed']);
+        converted.available_balance = Math.max(0, (converted.total_commission_earned || 0) - (converted.payout_committed || 0));
+        return converted;
+      })
+    });
+  } catch (error) {
+    console.error('Fetch Resellers Error:', error);
+    return res.status(500).json({ success: false, message: 'রিসেলার তালিকা লোড ব্যর্থ হয়েছে' });
+  }
+});
+
+// Toggle reseller account status (active vs suspended)
+router.put('/resellers/:id/status', async (req, res) => {
+  try {
+    const userId = Number(req.params.id);
+    const { status } = req.body;
+    if (!Number.isSafeInteger(userId) || userId < 1) {
+      return res.status(400).json({ success: false, message: 'ইউজার আইডি সঠিক নয়' });
+    }
+    if (!['active', 'suspended'].includes(status)) {
+      return res.status(400).json({ success: false, message: 'অবৈধ স্ট্যাটাস (active বা suspended হতে হবে)' });
+    }
+
+    await run('UPDATE users SET status = ? WHERE id = ?', [status, userId]);
+
+    return res.json({
+      success: true,
+      message: `রিসেলার অ্যাকাউন্ট সফলভাবে ${status === 'active' ? 'সক্রিয় (Active)' : 'স্থগিত (Suspended)'} করা হয়েছে!`
+    });
+  } catch (error) {
+    console.error('Update Reseller Status Error:', error);
+    return res.status(500).json({ success: false, message: 'রিসেলার স্ট্যাটাস আপডেট ব্যর্থ হয়েছে' });
   }
 });
 
@@ -787,7 +1772,7 @@ router.delete('/announcements/:id', async (req, res) => {
 
 // ================= DATABASE BACKUP & DATA SAFETY =================
 const { performBackup, listBackups, BACKUP_DIR } = require('../backup');
-const path = require('path');
+const { getFirebaseBackupStatus } = require('../firebaseBackup');
 
 // Trigger instant manual SQLite backup
 router.post('/backup', async (req, res) => {
@@ -796,7 +1781,8 @@ router.post('/backup', async (req, res) => {
     return res.json({
       success: true,
       message: 'ডাটাবেজ সফলভাবে ব্যাকআপ নেওয়া হয়েছে!',
-      backup: backupInfo
+      backup: backupInfo,
+      firebaseBackup: getFirebaseBackupStatus()
     });
   } catch (error) {
     console.error('Admin Backup Error:', error);
@@ -811,7 +1797,8 @@ router.get('/backups', (req, res) => {
     return res.json({
       success: true,
       count: backups.length,
-      backups
+      backups,
+      firebaseBackup: getFirebaseBackupStatus()
     });
   } catch (error) {
     console.error('Admin List Backups Error:', error);

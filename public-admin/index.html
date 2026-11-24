@@ -2,172 +2,148 @@
 <html lang="bn">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>এডমিন কন্ট্রোল প্যানেল — SB Furniture & SB POWER</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>এডমিন কন্ট্রোল প্যানেল — SB Furniture &amp; SB POWER</title>
   <link rel="manifest" href="/manifest.json">
-  <meta name="theme-color" content="#b45309">
-  <link rel="stylesheet" href="/css/style.css">
-  <link rel="stylesheet" href="/css/pwa-install.css">
-  <style>
-    .admin-nav {
-      background: #1c1917;
-      border-bottom: 2px solid var(--sbf-amber);
-      padding: 12px 16px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .admin-stats-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 14px;
-      margin: 20px 0;
-    }
-    .admin-stat-card {
-      background: #292524;
-      border: 1px solid var(--sbf-border);
-      border-radius: var(--radius-sm);
-      padding: 16px;
-      text-align: center;
-    }
-    .admin-stat-num {
-      font-size: 1.6rem;
-      font-weight: 700;
-      color: var(--sbp-yellow);
-      margin-top: 4px;
-    }
-    .admin-tabs {
-      display: flex;
-      gap: 10px;
-      border-bottom: 1px solid var(--sbf-border);
-      margin-bottom: 20px;
-      padding-bottom: 8px;
-      overflow-x: auto;
-    }
-    .table-responsive {
-      width: 100%;
-      overflow-x: auto;
-      background: #292524;
-      border-radius: var(--radius-sm);
-      border: 1px solid var(--sbf-border);
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      text-align: left;
-      font-size: 0.85rem;
-    }
-    th, td {
-      padding: 12px 14px;
-      border-bottom: 1px solid #38332f;
-    }
-    th {
-      background: #1c1917;
-      color: #d6d3d1;
-      font-weight: 600;
-    }
-    .action-btn-sm {
-      padding: 4px 8px;
-      border-radius: 4px;
-      font-size: 0.75rem;
-      border: none;
-      cursor: pointer;
-      font-weight: 600;
-    }
-    .btn-deliver { background: #10b981; color: #fff; }
-    .btn-ship { background: #8b5cf6; color: #fff; }
-    .btn-confirm { background: #2563eb; color: #fff; }
-    .btn-cancel { background: #ef4444; color: #fff; }
-  </style>
+  <meta name="theme-color" content="#c2410c">
+  <link rel="icon" type="image/svg+xml" href="/icons/admin-icon.svg">
+  <link rel="icon" type="image/png" sizes="192x192" href="/icons/admin-icon-192.png">
+  <link rel="apple-touch-icon" href="/icons/admin-icon-192.png">
+  <link rel="stylesheet" href="/css/style.css?v=4.0.1">
+  <link rel="stylesheet" href="/css/admin.css?v=4.0.1">
+  <link rel="stylesheet" href="/css/pwa-splash.css?v=4.0.1">
+  <link rel="stylesheet" href="/css/pwa-install.css?v=4.0.1">
+  <link rel="stylesheet" href="/css/animations.css?v=4.0.1">
 </head>
 <body>
 
+  <div class="startup-splash" id="startupSplash" role="status" aria-live="polite" aria-label="SB অ্যাডমিন অ্যাপ চালু হচ্ছে">
+    <div class="startup-splash__content">
+      <div class="startup-splash__logo-wrap">
+        <img class="startup-splash__logo" src="/icons/admin-icon.svg" width="126" height="126" alt="">
+      </div>
+      <strong class="startup-splash__title">SB Control Panel</strong>
+      <span class="startup-splash__subtitle">অ্যাডমিন প্যানেল প্রস্তুত হচ্ছে</span>
+      <div class="startup-splash__loader" aria-hidden="true"><span></span><span></span><span></span></div>
+    </div>
+  </div>
+
   <!-- Admin Login Screen (Shown when not authenticated) -->
-  <div id="adminLoginSection" style="max-width: 400px; margin: 80px auto; padding: 24px; background: #292524; border-radius: var(--radius-md); border: 1px solid var(--sbf-border);">
-    <div style="text-align: center; margin-bottom: 20px;">
-      <div class="logo-icon" style="margin: 0 auto 10px;">SB</div>
-      <h2 style="font-size: 1.3rem;">এডমিন প্যানেল লগইন</h2>
-      <p style="font-size: 0.85rem; color: var(--sbf-text-muted);">SB Furniture & SB POWER কন্ট্রোল রুম</p>
+  <div id="adminLoginSection" class="admin-login-card">
+    <div class="admin-login-heading">
+      <div class="logo-icon">SB</div>
+      <h1>এডমিন প্যানেলে প্রবেশ</h1>
+      <p>অর্ডার, পণ্য, AI লিস্টিং ও ক্যাশআউট পরিচালনা করুন</p>
     </div>
 
     <div class="form-group">
-      <label class="form-label">এডমিন ফোন নম্বর</label>
-      <input type="tel" id="adminPhoneInput" class="form-control" value="01929621855">
+      <label class="form-label" for="adminPhoneInput">এডমিন ফোন নম্বর</label>
+      <input type="tel" id="adminPhoneInput" class="form-control" placeholder="01XXXXXXXXX" autocomplete="username" inputmode="tel" required>
     </div>
     <div class="form-group">
-      <label class="form-label">পাসওয়ার্ড</label>
-      <input type="password" id="adminPassInput" class="form-control" placeholder="এডমিন পাসওয়ার্ড">
+      <label class="form-label" for="adminPassInput">পাসওয়ার্ড</label>
+      <input type="password" id="adminPassInput" class="form-control" placeholder="আপনার পাসওয়ার্ড" autocomplete="current-password" required>
     </div>
-    <button class="btn-submit" onclick="submitAdminLogin()">লগইন করুন</button>
+    <div id="adminLoginError" class="admin-login-error" role="alert" hidden></div>
+    <button type="button" class="btn-submit" onclick="submitAdminLogin()">নিরাপদে লগইন করুন</button>
+    <a class="admin-back-link" href="/">← দোকানে ফিরে যান</a>
   </div>
 
   <!-- Admin Dashboard Container (Shown when authenticated) -->
   <div id="adminDashboardSection" style="display: none;">
     <div class="admin-nav">
-      <div style="display: flex; align-items: center; gap: 10px;">
-        <span style="font-size: 1.2rem; font-weight: 700; color: var(--sbp-yellow);">👑 SB কন্ট্রোল প্যানেল</span>
-        <a href="/" target="_blank" style="color: #a8a29e; font-size: 0.8rem; text-decoration: underline;">ওয়েবসাইট ভিজিট করুন ↗</a>
+      <div class="admin-brand-group">
+        <span class="admin-brand-mark">SB</span>
+        <div>
+          <strong>SB কন্ট্রোল প্যানেল</strong>
+          <span>স্টোর, ইনভেন্টরি ও অটোমেশন</span>
+        </div>
       </div>
-      <div style="display: flex; gap: 8px; align-items: center;">
-        <button id="btnNavInstall" class="btn-nav" onclick="triggerPwaInstall()" style="display: none; color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.4); background: rgba(245, 158, 11, 0.15); border-radius: 4px; padding: 6px 10px; font-size: 0.8rem; align-items: center; gap: 4px;">📲 অ্যাপ ইনস্টল</button>
-        <button class="btn-nav" style="color: var(--sbp-yellow); padding: 6px 12px; border: 1px solid var(--sbf-border); border-radius: 4px;" onclick="openAdminPasswordModal()">🔑 পাসওয়ার্ড পরিবর্তন</button>
-        <button class="btn-nav" style="color: var(--sbp-red); padding: 6px 12px;" onclick="adminLogout()">লগআউট</button>
+      <div class="admin-quick-actions">
+        <a class="admin-header-link" href="/">দোকান দেখুন ↗</a>
+        <button type="button" id="btnNavInstall" class="btn-nav" onclick="triggerPwaInstall()" title="অ্যাডমিন অ্যাপ ইনস্টল করুন" aria-label="অ্যাপ ইনস্টল করুন" style="display: none;"><span aria-hidden="true">📲</span><span class="nav-label">অ্যাপ ইনস্টল</span></button>
+        <button type="button" class="btn-nav" onclick="openAdminPasswordModal()" title="পাসওয়ার্ড পরিবর্তন" aria-label="পাসওয়ার্ড পরিবর্তন করুন"><span aria-hidden="true">🔑</span><span class="nav-label">পাসওয়ার্ড</span></button>
+        <button type="button" class="btn-nav admin-logout" onclick="adminLogout()" title="লগআউট" aria-label="লগআউট করুন"><span aria-hidden="true">🚪</span><span class="nav-label">লগআউট</span></button>
       </div>
     </div>
 
-    <main class="container" style="padding-top: 10px;">
+    <main class="admin-main">
       <!-- Real-time Stats Cards -->
       <div class="admin-stats-grid" id="adminStatsGrid">
         <div class="admin-stat-card">
-          <div style="font-size: 0.8rem; color: var(--sbf-text-muted);">মোট অর্ডার</div>
+          <div class="admin-stat-label">মোট অর্ডার</div>
           <div class="admin-stat-num" id="statTotalOrders">-</div>
         </div>
         <div class="admin-stat-card">
-          <div style="font-size: 0.8rem; color: var(--sbf-text-muted);">মোট সেলস আয়</div>
+          <div class="admin-stat-label">মোট সেলস আয়</div>
           <div class="admin-stat-num" id="statTotalRevenue">-</div>
         </div>
         <div class="admin-stat-card">
-          <div style="font-size: 0.8rem; color: #f59e0b;">পেন্ডিং অর্ডার</div>
-          <div class="admin-stat-num" style="color: #f59e0b;" id="statPendingOrders">-</div>
+          <div class="admin-stat-label" style="color: #b45309;">পেন্ডিং অর্ডার</div>
+          <div class="admin-stat-num" style="color: #b45309;" id="statPendingOrders">-</div>
         </div>
         <div class="admin-stat-card">
-          <div style="font-size: 0.8rem; color: #10b981;">ডেলিভার্ড অর্ডার</div>
-          <div class="admin-stat-num" style="color: #10b981;" id="statDeliveredOrders">-</div>
+          <div class="admin-stat-label" style="color: #047857;">ডেলিভার্ড অর্ডার</div>
+          <div class="admin-stat-num" style="color: #047857;" id="statDeliveredOrders">-</div>
         </div>
         <div class="admin-stat-card">
-          <div style="font-size: 0.8rem; color: var(--sbf-text-muted);">রিসেলার সদস্য</div>
+          <div class="admin-stat-label">রিসেলার সদস্য</div>
           <div class="admin-stat-num" id="statTotalResellers">-</div>
         </div>
         <div class="admin-stat-card">
-          <div style="font-size: 0.8rem; color: #ec4899;">পেন্ডিং ক্যাশআউট</div>
-          <div class="admin-stat-num" style="color: #ec4899;" id="statPendingPayouts">-</div>
+          <div class="admin-stat-label" style="color: #be185d;">পেন্ডিং ক্যাশআউট</div>
+          <div class="admin-stat-num" style="color: #be185d;" id="statPendingPayouts">-</div>
         </div>
       </div>
 
       <!-- Navigation Tabs -->
-      <div class="admin-tabs">
-        <button class="tab-btn active" id="tabBtnOrders" onclick="switchAdminSection('orders')">📦 অর্ডার ম্যানেজমেন্ট</button>
-        <button class="tab-btn" id="tabBtnPayouts" onclick="switchAdminSection('payouts')">💸 ক্যাশআউট অনুমোদন</button>
-        <button class="tab-btn" id="tabBtnProducts" onclick="switchAdminSection('products')">🪑 ক্লাউড ক্যাটালগ (CRUD)</button>
-        <button class="tab-btn" id="tabBtnUsers" onclick="switchAdminSection('users')">👥 ইউজার ও অ্যাডমিন</button>
-        <button class="tab-btn" id="tabBtnGuide" onclick="switchAdminSection('guide')">📋 কন্টেন্ট গাইড ও সেটিংস</button>
-        <button class="tab-btn" id="tabBtnAnalytics" onclick="switchAdminSection('analytics')">📊 এনালিটিক্স</button>
-        <button class="tab-btn" id="tabBtnAnnouncements" onclick="switchAdminSection('announcements')">📢 অফার ও নোটিশ</button>
-        <button class="tab-btn" id="tabBtnBackups" onclick="switchAdminSection('backups')">💾 ডাটাবেজ ব্যাকআপ</button>
+      <div class="admin-tabs" role="navigation" aria-label="অ্যাডমিনের কাজ">
+        <span class="admin-menu-title">ব্যবস্থাপনা</span>
+        <button type="button" class="tab-btn active" id="tabBtnOrders" aria-controls="adminOrdersSection" onclick="switchAdminSection('orders')"><span>📦</span> অর্ডার</button>
+        <button type="button" class="tab-btn" id="tabBtnProfit" aria-controls="adminProfitSection" onclick="switchAdminSection('profit')"><span>💰</span> লাভ ও হিসাব</button>
+        <button type="button" class="tab-btn" id="tabBtnShops" aria-controls="adminShopsSection" onclick="switchAdminSection('shops')"><span>🏪</span> পার্টনার শপ</button>
+        <button type="button" class="tab-btn" id="tabBtnReferrals" aria-controls="adminReferralsSection" onclick="switchAdminSection('referrals')"><span>🌳</span> রেফারেল</button>
+        <button type="button" class="tab-btn" id="tabBtnProducts" aria-controls="adminProductsSection" onclick="switchAdminSection('products')"><span>🪑</span> পণ্য</button>
+        <button type="button" class="tab-btn" id="tabBtnPayouts" aria-controls="adminPayoutsSection" onclick="switchAdminSection('payouts')"><span>৳</span> ক্যাশআউট</button>
+        <button type="button" class="tab-btn" id="tabBtnUsers" aria-controls="adminUsersSection" onclick="switchAdminSection('users')"><span>👥</span> রিসেলার ও ইউজার</button>
+        <button type="button" class="tab-btn" id="tabBtnAnnouncements" aria-controls="adminAnnouncementsSection" onclick="switchAdminSection('announcements')"><span>📢</span> ঘোষণা</button>
+        <button type="button" class="tab-btn" id="tabBtnAnalytics" aria-controls="adminAnalyticsSection" onclick="switchAdminSection('analytics')"><span>📊</span> রিপোর্ট</button>
+        <button type="button" class="tab-btn" id="tabBtnBackups" aria-controls="adminBackupsSection" onclick="switchAdminSection('backups')"><span>💾</span> ব্যাকআপ</button>
+        <button type="button" class="tab-btn" id="tabBtnGuide" aria-controls="adminGuideSection" onclick="switchAdminSection('guide')"><span>⚙️</span> সেটিংস ও গাইড</button>
+      </div>
+
+      <div class="admin-mobile-navigation">
+        <label for="adminSectionSelect">সেকশন পরিবর্তন করুন</label>
+        <select id="adminSectionSelect" class="form-control" onchange="switchAdminSection(this.value)">
+          <option value="orders">📦 অর্ডার পরিচালনা</option>
+          <option value="profit">💰 লাভ ও হিসাব (Profit)</option>
+          <option value="shops">🏪 পার্টনার শপ ও লেজার</option>
+          <option value="referrals">🌳 রেফারেল প্রোগ্রাম ও গাছ</option>
+          <option value="products">🪑 পণ্য ও ক্যাটালগ</option>
+          <option value="payouts">৳ ক্যাশআউট অনুমোদন</option>
+          <option value="users">👥 রিসেলার ও ইউজার</option>
+          <option value="announcements">📢 ঘোষণা ও নোটিশ</option>
+          <option value="analytics">📊 রিপোর্ট</option>
+          <option value="backups">💾 ডাটাবেজ ব্যাকআপ</option>
+          <option value="guide">⚙️ সেটিংস ও গাইড</option>
+        </select>
       </div>
 
       <!-- Section 1: Orders -->
-      <div id="adminOrdersSection">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-          <h3 style="font-size: 1.1rem;">অর্ডার তালিকা</h3>
+      <div id="adminOrdersSection" class="admin-panel">
+        <div class="adm-section-head">
           <div>
-            <select id="orderStatusFilter" class="form-control" style="width: auto; display: inline-block;" onchange="loadAdminOrders()">
+            <h3>📦 অর্ডার তালিকা</h3>
+            <p class="adm-section-sub">গ্রাহকের অর্ডার যাচাই, ডেলিভারি ও কমিশন পরিচালনা</p>
+          </div>
+          <div>
+            <select id="orderStatusFilter" class="form-control" style="width: auto; min-width: 170px;" onchange="loadAdminOrders()">
               <option value="all">সকল অর্ডার</option>
-              <option value="pending">পেন্ডিং (Pending)</option>
-              <option value="confirmed">নিশ্চিত (Confirmed)</option>
-              <option value="shipped">শিপড (Shipped)</option>
-              <option value="delivered">ডেলিভার্ড (Delivered)</option>
-              <option value="cancelled">বাতিল (Cancelled)</option>
+              <option value="pending">অপেক্ষমাণ</option>
+              <option value="confirmed">নিশ্চিত</option>
+              <option value="shipped">পাঠানো হয়েছে</option>
+              <option value="delivered">ডেলিভারি সম্পন্ন</option>
+              <option value="cancelled">বাতিল</option>
             </select>
           </div>
         </div>
@@ -179,23 +155,178 @@
                 <th>অর্ডার নং</th>
                 <th>গ্রাহক ও ফোন</th>
                 <th>ঠিকানা ও এরিয়া</th>
-                <th>সর্বমোট</th>
-                <th>অগ্রিম TrxID</th>
+                <th>সর্বমোট ও অগ্রিম</th>
+                <th>লাভ ও পাইকারি</th>
                 <th>রিসেলার ও কমিশন</th>
                 <th>স্ট্যাটাস</th>
                 <th>অ্যাকশন</th>
               </tr>
             </thead>
-            <tbody id="adminOrdersTableBody">
-              <!-- Dynamically populated -->
-            </tbody>
+            <tbody id="adminOrdersTableBody"></tbody>
           </table>
         </div>
       </div>
 
+      <!-- Section: Profit Dashboard -->
+      <div id="adminProfitSection" class="admin-panel" style="display: none;">
+        <div class="adm-section-head">
+          <div>
+            <h3>💰 প্ল্যাটফর্ম লাভ ও হিসাব (Profit Engine)</h3>
+            <p class="adm-section-sub">বিক্রয় মূল্য, পাইকারি খরচ, রিসেলার কমিশন ও প্রকৃত নিট লাভ</p>
+          </div>
+          <button type="button" class="action-btn-sm btn-edit-product" style="padding: 8px 14px;" onclick="loadAdminProfitDashboard()">🔄 রিফ্রেশ হিসাব</button>
+        </div>
+
+        <!-- 3-Period Profit KPI Cards -->
+        <div class="adm-profit-grid">
+          <div class="adm-metric-card">
+            <div class="adm-metric-card-head">
+              <strong>📅 আজকের হিসাব (Today)</strong>
+              <span id="profitTodayOrders" class="adm-metric-badge">০টি অর্ডার</span>
+            </div>
+            <div class="adm-metric-row"><span>মোট বিক্রয় (Revenue):</span><strong id="profitTodayRevenue">০ ৳</strong></div>
+            <div class="adm-metric-row"><span>পাইকারি খরচ (Wholesale):</span><strong id="profitTodayWholesale" style="color: #6d28d9;">০ ৳</strong></div>
+            <div class="adm-metric-row"><span>রিসেলার কমিশন:</span><strong id="profitTodayCommission" style="color: #b45309;">০ ৳</strong></div>
+            <div class="adm-metric-highlight is-emerald">
+              <span>💎 নিট লাভ (Net Profit):</span>
+              <strong id="profitTodayNet" style="font-size: 1.12rem;">০ ৳</strong>
+            </div>
+          </div>
+
+          <div class="adm-metric-card">
+            <div class="adm-metric-card-head">
+              <strong>🗓️ চলতি মাস (This Month)</strong>
+              <span id="profitMonthOrders" class="adm-metric-badge">০টি অর্ডার</span>
+            </div>
+            <div class="adm-metric-row"><span>মোট বিক্রয় (Revenue):</span><strong id="profitMonthRevenue">০ ৳</strong></div>
+            <div class="adm-metric-row"><span>পাইকারি খরচ (Wholesale):</span><strong id="profitMonthWholesale" style="color: #6d28d9;">০ ৳</strong></div>
+            <div class="adm-metric-row"><span>রিসেলার কমিশন:</span><strong id="profitMonthCommission" style="color: #b45309;">০ ৳</strong></div>
+            <div class="adm-metric-highlight is-emerald">
+              <span>💎 নিট লাভ (Net Profit):</span>
+              <strong id="profitMonthNet" style="font-size: 1.12rem;">০ ৳</strong>
+            </div>
+          </div>
+
+          <div class="adm-metric-card">
+            <div class="adm-metric-card-head">
+              <strong>🌐 সর্বমোট হিসাব (All Time)</strong>
+              <span id="profitAllOrders" class="adm-metric-badge">০টি অর্ডার</span>
+            </div>
+            <div class="adm-metric-row"><span>মোট বিক্রয় (Revenue):</span><strong id="profitAllRevenue">০ ৳</strong></div>
+            <div class="adm-metric-row"><span>পাইকারি খরচ (Wholesale):</span><strong id="profitAllWholesale" style="color: #6d28d9;">০ ৳</strong></div>
+            <div class="adm-metric-row"><span>রিসেলার কমিশন:</span><strong id="profitAllCommission" style="color: #b45309;">০ ৳</strong></div>
+            <div class="adm-metric-highlight is-emerald">
+              <span>💎 নিট লাভ (Net Profit):</span>
+              <strong id="profitAllNet" style="font-size: 1.12rem;">০ ৳</strong>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2 Summary Cards: Partner Payable & Reseller Commission Ledger -->
+        <div class="adm-ledger-grid">
+          <div class="adm-metric-card">
+            <div class="adm-metric-card-head">
+              <strong>🏪 পার্টনার শপ পাওনা লেজার</strong>
+              <button type="button" class="action-btn-sm btn-ship" onclick="switchAdminSection('shops')">লেজার দেখুন</button>
+            </div>
+            <div class="adm-metric-row"><span>পার্টনারদের মোট পাইকারি মূল্য:</span><strong id="ledgerPartnerWholesale">০ ৳</strong></div>
+            <div class="adm-metric-row"><span>পরিশোধ সম্পন্ন (Settled):</span><strong id="ledgerPartnerSettled" style="color: #047857;">০ ৳</strong></div>
+            <div class="adm-metric-highlight is-amber">
+              <span>বর্তমান বকেয়া পাওনা:</span>
+              <strong id="ledgerPartnerPending" style="font-size: 1.05rem;">০ ৳</strong>
+            </div>
+          </div>
+
+          <div class="adm-metric-card">
+            <div class="adm-metric-card-head">
+              <strong>💼 রিসেলার কমিশন ও ওয়ালেট লেজার</strong>
+              <button type="button" class="action-btn-sm btn-deliver" onclick="switchAdminSection('payouts')">ক্যাশআউট কিউ</button>
+            </div>
+            <div class="adm-metric-row"><span>পেন্ডিং কমিশন (অর্ডারে আটকে থাকা):</span><strong id="ledgerPendingCommission" style="color: #b45309;">০ ৳</strong></div>
+            <div class="adm-metric-row"><span>ছাড়কৃত কমিশন (ওয়ালেটে এভেইলেবল):</span><strong id="ledgerReleasedCommission" style="color: #047857;">০ ৳</strong></div>
+            <div class="adm-metric-row"><span>অপেক্ষমাণ ক্যাশআউট রিকোয়েস্ট:</span><strong id="ledgerPendingPayouts" style="color: #be185d;">০ ৳</strong></div>
+            <div class="adm-metric-highlight is-blue">
+              <span>পরিশোধিত মোট ক্যাশআউট:</span>
+              <strong id="ledgerApprovedPayouts" style="font-size: 1.05rem;">০ ৳</strong>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section: Shops & Partner Ledger -->
+      <div id="adminShopsSection" class="admin-panel" style="display: none;">
+        <div class="adm-section-head">
+          <div>
+            <h3>🏪 দোকান ও পার্টনার লেজার</h3>
+            <p class="adm-section-sub">দোকানের হিসাব ও পাওনা পরিশোধ। পণ্য যোগ, এডিট বা বন্ধ করতে ক্যাটালগ খুলুন।</p>
+          </div>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button type="button" class="action-btn-sm btn-edit-product" style="padding: 9px 16px;" onclick="openAddShopModal()">+ নতুন পার্টনার শপ</button>
+            <button type="button" class="btn-submit" style="width: auto; margin-top: 0; padding: 0 16px; min-height: 38px; font-size: 0.84rem;" onclick="switchAdminSection('products')">🪑 পণ্য পরিচালনা করুন</button>
+          </div>
+        </div>
+
+        <div class="table-responsive">
+          <table>
+            <thead>
+              <tr>
+                <th>দোকানের নাম</th>
+                <th>ধরন (Type)</th>
+                <th>যোগাযোগ ও ফোন</th>
+                <th>মোট পণ্য</th>
+                <th>ডেলিভার্ড ইউনিট</th>
+                <th>মোট পাইকারি পাওনা</th>
+                <th>পরিশোধিত</th>
+                <th>বর্তমান বকেয়া</th>
+                <th>করণীয়</th>
+              </tr>
+            </thead>
+            <tbody id="adminShopsTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Section: Referral Program and Tree -->
+      <div id="adminReferralsSection" class="admin-panel" style="display: none;">
+        <div class="referral-admin-heading">
+          <div>
+            <h3>🌳 রেফারেল প্রোগ্রাম</h3>
+            <p>কমিশনের নিয়ম ঠিক করুন, পুরো রেফারেল গাছ দেখুন এবং সদস্যের কেনাকাটার হিসাব খুলুন।</p>
+          </div>
+        </div>
+        <div class="referral-admin-settings">
+          <label class="referral-admin-toggle"><input id="referralProgramEnabled" type="checkbox"> <span>রেফারেল প্রোগ্রাম চালু</span></label>
+          <label>কাস্টমার আমন্ত্রণ ছাড়ের হার (%)<input id="referralCustomerPercent" class="form-control" type="number" min="0" max="50" step="0.01" inputmode="decimal"></label>
+          <label>রিসেলার আমন্ত্রণ কমিশন (%)<input id="referralResellerPercent" class="form-control" type="number" min="0" max="50" step="0.01" inputmode="decimal"></label>
+          <button type="button" class="btn-submit" onclick="saveAdminReferralSettings()">নিয়ম সংরক্ষণ</button>
+        </div>
+        <p class="referral-admin-note">আমন্ত্রিত সদস্যকে অ্যাকাউন্টে লগইন করে নিজের অ্যাকাউন্টের ফোন নম্বর দিয়ে অর্ডার করতে হবে। অর্ডার ডেলিভারি সম্পন্ন হলে ছাড়ের জমা বা কমিশন ছাড় হবে।</p>
+        <div class="referral-admin-search">
+          <label for="referralMemberSearch">নাম, ফোন বা রেফারেল কোড দিয়ে সদস্য খুঁজুন</label>
+          <input id="referralMemberSearch" class="form-control" type="search" maxlength="80" oninput="searchAdminReferralMembers()" placeholder="নাম, ফোন বা কোড লিখুন">
+          <div id="referralSearchResults" class="referral-search-results" aria-live="polite"></div>
+        </div>
+        <div class="referral-admin-layout">
+          <section class="referral-admin-tree-wrap">
+            <div class="referral-admin-section-title"><h4>রেফারেল গাছ</h4><button type="button" class="action-btn-sm btn-confirm" onclick="loadAdminReferrals()">আবার লোড করুন</button></div>
+            <p id="referralTreeStatus" class="referral-admin-note">শাখা খুলতে সদস্যের নামে চাপ দিন।</p>
+            <div id="adminReferralTree" class="referral-tree-list" aria-live="polite"></div>
+          </section>
+          <section id="adminReferralProfile" class="referral-admin-profile" aria-live="polite">
+            <h4>সদস্যের প্রোফাইল</h4>
+            <p style="color: var(--adm-text-muted); font-size: 0.84rem;">গাছ বা খোঁজার ফলাফল থেকে কোনো সদস্য বাছুন।</p>
+          </section>
+        </div>
+      </div>
+
       <!-- Section 2: Payouts -->
-      <div id="adminPayoutsSection" style="display: none;">
-        <h3 style="font-size: 1.1rem; margin-bottom: 12px;">💸 রিসেলার ক্যাশআউট রিকোয়েস্ট</h3>
+      <div id="adminPayoutsSection" class="admin-panel" style="display: none;">
+        <div class="adm-section-head">
+          <div>
+            <h3>💸 রিসেলার ক্যাশআউট রিকোয়েস্ট</h3>
+            <p class="adm-section-sub">বিকাশ, নগদ ও রকেট উত্তোলন অনুরোধ যাচাই ও অনুমোদন</p>
+          </div>
+        </div>
         <div class="table-responsive">
           <table>
             <thead>
@@ -211,18 +342,19 @@
                 <th>অ্যাকশন</th>
               </tr>
             </thead>
-            <tbody id="adminPayoutsTableBody">
-              <!-- Dynamically populated -->
-            </tbody>
+            <tbody id="adminPayoutsTableBody"></tbody>
           </table>
         </div>
       </div>
 
-      <!-- Section 3: Products (Dynamic Cloud Catalog CRUD) -->
-      <div id="adminProductsSection" style="display: none;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-          <h3 style="font-size: 1.1rem;">🪑 ক্যাটালগ ও পণ্য ব্যবস্থাপনা</h3>
-          <button class="btn-submit" style="width: auto; margin-top: 0; padding: 8px 16px;" onclick="openAddProductModal()">
+      <!-- Section 3: Products -->
+      <div id="adminProductsSection" class="admin-panel" style="display: none;">
+        <div class="adm-section-head">
+          <div>
+            <h3>🪑 ক্যাটালগ ও পণ্য ব্যবস্থাপনা</h3>
+            <p class="adm-section-sub">ছবি বা টাইটেল থেকে AI অটো-লিস্টিং, বোর্ড হিসাব এবং লাইভ মার্জিন কন্ট্রোল</p>
+          </div>
+          <button type="button" class="btn-submit" style="width: auto; margin-top: 0; padding: 0 18px; min-height: 42px;" onclick="openAddProductModal()">
             + নতুন পণ্য যুক্ত করুন
           </button>
         </div>
@@ -234,23 +366,25 @@
                 <th>ছবি</th>
                 <th>SKU</th>
                 <th>শিরোনাম</th>
-                <th>ব্র্যান্ড ও ক্যাটাগরি</th>
-                <th>মূল্য</th>
-                <th>কমিশন ট্যাব</th>
+                <th>দোকান ও ক্যাটাগরি</th>
+                <th>মূল্য ও পাইকারি</th>
+                <th>রিসেলার কমিশন</th>
+                <th>নিট লাভ</th>
                 <th>স্টক</th>
                 <th>অ্যাকশন</th>
               </tr>
             </thead>
-            <tbody id="adminProductsTableBody">
-              <!-- Dynamically populated -->
-            </tbody>
+            <tbody id="adminProductsTableBody"></tbody>
           </table>
         </div>
       </div>
+
       <!-- Section 4: Analytics -->
-      <div id="adminAnalyticsSection" style="display: none;">
-        <div style="margin-bottom: 20px;">
-          <h3 style="font-size: 1.1rem; margin-bottom: 12px; color: var(--sbp-yellow);">📊 শীর্ষ বিক্রিত পণ্য (Top Products)</h3>
+      <div id="adminAnalyticsSection" class="admin-panel" style="display: none;">
+        <div style="margin-bottom: 24px;">
+          <div class="adm-section-head">
+            <h3>📊 শীর্ষ বিক্রিত পণ্য (Top Products)</h3>
+          </div>
           <div class="table-responsive">
             <table>
               <thead>
@@ -261,15 +395,15 @@
                   <th>মোট বিক্রয় ভলিউম</th>
                 </tr>
               </thead>
-              <tbody id="analyticsTopProductsBody">
-                <!-- Dynamically loaded -->
-              </tbody>
+              <tbody id="analyticsTopProductsBody"></tbody>
             </table>
           </div>
         </div>
 
         <div>
-          <h3 style="font-size: 1.1rem; margin-bottom: 12px; color: #10b981;">🏆 শীর্ষ পারফর্মিং রিসেলার (Top Resellers)</h3>
+          <div class="adm-section-head">
+            <h3>🏆 শীর্ষ পারফর্মিং রিসেলার (Top Resellers)</h3>
+          </div>
           <div class="table-responsive">
             <table>
               <thead>
@@ -281,19 +415,20 @@
                   <th>মোট অর্জিত কমিশন</th>
                 </tr>
               </thead>
-              <tbody id="analyticsTopResellersBody">
-                <!-- Dynamically loaded -->
-              </tbody>
+              <tbody id="analyticsTopResellersBody"></tbody>
             </table>
           </div>
         </div>
       </div>
 
       <!-- Section 5: Announcements -->
-      <div id="adminAnnouncementsSection" style="display: none;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-          <h3 style="font-size: 1.1rem;">অফার ও নোটিশ ব্যানার</h3>
-          <button class="btn-nav" style="background: var(--sbf-amber); color: #fff;" onclick="openAddAnnouncementModal()">+ নতুন ঘোষণা</button>
+      <div id="adminAnnouncementsSection" class="admin-panel" style="display: none;">
+        <div class="adm-section-head">
+          <div>
+            <h3>📢 অফার ও নোটিশ ব্যানার</h3>
+            <p class="adm-section-sub">কাস্টমার দোকানের উপরের চলমান ঘোষণা পরিচালনা</p>
+          </div>
+          <button type="button" class="btn-submit" style="width: auto; margin-top: 0; padding: 0 16px; min-height: 40px;" onclick="openAddAnnouncementModal()">+ নতুন ঘোষণা</button>
         </div>
         <div class="table-responsive">
           <table>
@@ -307,51 +442,48 @@
                 <th>অ্যাকশন</th>
               </tr>
             </thead>
-            <tbody id="adminAnnouncementsTableBody">
-              <!-- Dynamically loaded -->
-            </tbody>
+            <tbody id="adminAnnouncementsTableBody"></tbody>
           </table>
         </div>
       </div>
 
       <!-- Section 6: Backups & Data Safety -->
-      <div id="adminBackupsSection" style="display: none;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+      <div id="adminBackupsSection" class="admin-panel" style="display: none;">
+        <div class="adm-section-head">
           <div>
-            <h3 style="font-size: 1.1rem; color: #34d399; margin: 0;">💾 ডাটাবেজ ব্যাকআপ ও ডাটা সুরক্ষা</h3>
-            <p style="font-size: 0.8rem; color: var(--sbf-text-muted); margin: 4px 0 0;">নিরাপদ অনলাইন SQLite স্ন্যাপশট ব্যাকআপ ও অফলাইন ডাউনলোড</p>
+            <h3>💾 ডাটাবেজ ব্যাকআপ ও ডাটা সুরক্ষা</h3>
+            <p class="adm-section-sub">নিরাপদ অনলাইন SQLite স্ন্যাপশট ব্যাকআপ ও অফলাইন ডাউনলোড</p>
           </div>
-          <button class="btn-nav" style="background: #059669; color: #fff;" onclick="triggerInstantBackup()">⚡ ইনস্ট্যান্ট ব্যাকআপ তৈরি করুন</button>
+          <button type="button" class="action-btn-sm btn-deliver" style="padding: 9px 16px;" onclick="triggerInstantBackup()">⚡ ইনস্ট্যান্ট ব্যাকআপ তৈরি করুন</button>
         </div>
-        <div id="adminBackupsList" style="margin-top: 14px;"></div>
+        <div id="adminBackupsList" style="margin-top: 12px;"></div>
       </div>
 
       <!-- Section 7: Users & Admins Management -->
-      <div id="adminUsersSection" style="display: none;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 10px;">
+      <div id="adminUsersSection" class="admin-panel" style="display: none;">
+        <div class="adm-section-head">
           <div>
-            <h3 style="font-size: 1.15rem; color: var(--sbp-yellow); margin: 0;">👥 ইউজার ও অ্যাডমিন ব্যবস্থাপনা</h3>
-            <p style="font-size: 0.8rem; color: var(--sbf-text-muted); margin: 2px 0 0;">নিবন্ধিত রিসেলার ও এডমিনদের তালিকা, পদবি পরিবর্তন ও নতুন এডমিন তৈরি</p>
+            <h3>👥 ইউজার ও অ্যাডমিন ব্যবস্থাপনা</h3>
+            <p class="adm-section-sub">কাস্টমার অ্যাকাউন্ট পরিচালনা, রিসেল অনুমতি দেওয়া বা বন্ধ করা, এবং অ্যাডমিন তৈরি</p>
           </div>
-          <button class="btn-submit" style="width: auto; margin-top: 0; padding: 8px 16px; background: #059669; font-weight: 600;" onclick="openAddUserModal()">
-            ➕ নতুন অ্যাডমিন / ইউজার তৈরি করুন
+          <button type="button" class="action-btn-sm btn-deliver" style="padding: 9px 16px;" onclick="openAddUserModal()">
+            ➕ নতুন অ্যাডমিন / ইউজার তৈরি
           </button>
         </div>
 
-        <!-- Filter & Search Bar -->
         <div style="display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; align-items: center;">
           <div style="flex: 1; min-width: 220px;">
             <input type="text" id="userSearchInput" class="form-control" placeholder="🔍 নাম, ফোন নম্বর বা রেফারেল কোড দিয়ে খুঁজুন...">
           </div>
-          <div style="min-width: 140px;">
+          <div style="min-width: 150px;">
             <select id="userRoleFilter" class="form-control">
-              <option value="all">সকল পদবি (All Roles)</option>
-              <option value="admin">👑 শুধু এডমিন (Admin)</option>
-              <option value="reseller">💼 রিসেলার (Reseller)</option>
-              <option value="customer">🛍️ কাস্টমার (Customer)</option>
+              <option value="all">সব ব্যবহারকারী</option>
+              <option value="admin">👑 শুধু অ্যাডমিন</option>
+              <option value="reseller">💼 রিসেলার</option>
+              <option value="customer">🛍️ ক্রেতা</option>
             </select>
           </div>
-          <button class="action-btn-sm" style="background: #3b82f6; color: #fff; padding: 8px 14px;" onclick="loadAdminUsers(1)">🔄 রিফ্রেশ</button>
+          <button type="button" class="action-btn-sm btn-edit-product" style="min-height: 44px; padding: 0 16px;" onclick="loadAdminUsers(1)">🔄 রিফ্রেশ</button>
         </div>
 
         <div class="table-responsive">
@@ -367,89 +499,87 @@
                 <th>পদবি পরিবর্তন / অ্যাকশন</th>
               </tr>
             </thead>
-            <tbody id="adminUsersTableBody">
-              <!-- Dynamically populated -->
-            </tbody>
+            <tbody id="adminUsersTableBody"></tbody>
           </table>
         </div>
         <div id="adminUsersPagination" style="margin-top: 12px; padding: 8px 0;"></div>
       </div>
 
       <!-- Section 8: Content Guide & Settings -->
-      <div id="adminGuideSection" style="display: none;">
-        <div style="margin-bottom: 16px;">
-          <h3 style="font-size: 1.15rem; color: var(--sbp-yellow); margin: 0;">📋 কন্টেন্ট গাইড ও সেটিংস ওভারভিউ</h3>
-          <p style="font-size: 0.82rem; color: var(--sbf-text-muted); margin: 3px 0 0;">অ্যাপের কোথায় কি আছে এবং কীভাবে খুব সহজে ১ ক্লিকে পরিবর্তন করবেন তার সহজ নির্দেশিকা</p>
+      <div id="adminGuideSection" class="admin-panel" style="display: none;">
+        <div class="adm-section-head">
+          <div>
+            <h3>📋 কন্টেন্ট গাইড ও সেটিংস ওভারভিউ</h3>
+            <p class="adm-section-sub">অ্যাপের কোথায় কি আছে এবং কীভাবে সহজে পরিচালনা করবেন তার নির্দেশিকা</p>
+          </div>
         </div>
 
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; margin-bottom: 20px;">
-          <!-- Guide Card 1: Products & Catalog -->
-          <div style="background: #292524; border: 1px solid var(--sbf-border); border-radius: var(--radius-sm); padding: 16px;">
-            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
-              <span style="font-size: 1.4rem;">🪑</span>
-              <div>
-                <h4 style="margin: 0; color: #fde68a; font-size: 0.95rem;">প্রোডাক্ট, ছবি ও মূল্য ব্যবস্থাপনা</h4>
-                <span style="font-size: 0.72rem; color: #34d399;">ডাটাবেজ: products টেবিল</span>
+        <div class="admin-guide-cards">
+          <div class="admin-guide-card">
+            <div>
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 1.5rem;">🪑</span>
+                <div>
+                  <h4>প্রোডাক্ট, ছবি ও মূল্য ব্যবস্থাপনা</h4>
+                  <span class="admin-guide-tag">ডাটাবেজ: products টেবিল</span>
+                </div>
               </div>
+              <p>নতুন ফার্নিচার বা পাওয়ার গ্যাজেট যোগ করতে, ছবি ও মূল্য বদলাতে এবং AI দিয়ে বিবরণ সাজাতে ক্লাউড ক্যাটালগ ব্যবহার করুন।</p>
             </div>
-            <p style="font-size: 0.8rem; color: #d6d3d1; line-height: 1.5; margin-bottom: 12px;">
-              নতুন ফার্নিচার বা পাওয়ার গ্যাজেট যোগ করতে, ছবি ও মূল্য বদলাতে এবং স্টক আপডেট করতে ক্লাউড ক্যাটালগ ব্যবহার করুন।
-            </p>
-            <button class="action-btn-sm btn-confirm" style="width: 100%; padding: 8px;" onclick="switchAdminSection('products')">
+            <button type="button" class="action-btn-sm btn-confirm" style="width: 100%; min-height: 40px;" onclick="switchAdminSection('products')">
               👉 ক্যাটালগ ও পণ্য তালিকায় যান
             </button>
           </div>
 
-          <!-- Guide Card 2: Commission Tabs -->
-          <div style="background: #292524; border: 1px solid var(--sbf-border); border-radius: var(--radius-sm); padding: 16px;">
-            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
-              <span style="font-size: 1.4rem;">💰</span>
-              <div>
-                <h4 style="margin: 0; color: #fde68a; font-size: 0.95rem;">কমিশন ট্যাব (50, 100, 500, 1000৳)</h4>
-                <span style="font-size: 0.72rem; color: #60a5fa;">ফিল্টার: commission_tab</span>
+          <div class="admin-guide-card">
+            <div>
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 1.5rem;">💰</span>
+                <div>
+                  <h4>কমিশন ট্যাব (৫০, ১০০, ৫০০, ১০০০৳)</h4>
+                  <span class="admin-guide-tag">ফিল্টার: commission_tab</span>
+                </div>
               </div>
+              <p>কাস্টমার অ্যাপে অনুমোদিত রিসেলারদের কমিশন ফিল্টার ঠিক রাখতে পণ্যের কমিশনের সঙ্গে মিলিয়ে ট্যাব নির্বাচন করুন।</p>
             </div>
-            <p style="font-size: 0.8rem; color: #d6d3d1; line-height: 1.5; margin-bottom: 12px;">
-              রিসেলার অ্যাপে কমিশন ফিল্টার চালু করতে পণ্যের নির্ধারিত কমিশনের সঙ্গে মিলিয়ে কমিশন ট্যাব নির্বাচন করুন।
-            </p>
-            <button class="action-btn-sm btn-ship" style="width: 100%; padding: 8px;" onclick="switchAdminSection('products')">
+            <button type="button" class="action-btn-sm btn-ship" style="width: 100%; min-height: 40px;" onclick="switchAdminSection('products')">
               👉 প্রোডাক্ট কমিশন ট্যাব সেট করুন
             </button>
           </div>
 
-          <!-- Guide Card 3: Announcements & Banners -->
-          <div style="background: #292524; border: 1px solid var(--sbf-border); border-radius: var(--radius-sm); padding: 16px;">
-            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
-              <span style="font-size: 1.4rem;">📢</span>
-              <div>
-                <h4 style="margin: 0; color: #fde68a; font-size: 0.95rem;">ব্যানার, অফার ও স্ক্রলিং নোটিশ</h4>
-                <span style="font-size: 0.72rem; color: #f59e0b;">ডাটাবেজ: announcements</span>
+          <div class="admin-guide-card">
+            <div>
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 1.5rem;">📢</span>
+                <div>
+                  <h4>ব্যানার, অফার ও স্ক্রলিং নোটিশ</h4>
+                  <span class="admin-guide-tag">ডাটাবেজ: announcements</span>
+                </div>
               </div>
+              <p>লাইভ অ্যাপের উপরে চলমান মেগা অফার ও ফ্ল্যাশ ডিল নোটিশ সরাসরি এখান থেকে পরিবর্তন বা নতুন অফার চালু করুন।</p>
             </div>
-            <p style="font-size: 0.8rem; color: #d6d3d1; line-height: 1.5; margin-bottom: 12px;">
-              লাইভ অ্যাপের উপরে চলমান মেগা অফার ও ফ্ল্যাশ ডিল নোটিশ সরাসরি এখান থেকে পরিবর্তন বা নতুন অফার চালু করুন।
-            </p>
-            <button class="action-btn-sm" style="background: #f59e0b; color: #1c1917; width: 100%; padding: 8px; font-weight: 600;" onclick="switchAdminSection('announcements')">
+            <button type="button" class="action-btn-sm" style="background: #d97706; color: #ffffff; width: 100%; min-height: 40px;" onclick="switchAdminSection('announcements')">
               👉 অফার ও নোটিশ এডিট করুন
             </button>
           </div>
 
-          <!-- Guide Card 4: Shop Info & Hotlines -->
-          <div style="background: #292524; border: 1px solid var(--sbf-border); border-radius: var(--radius-sm); padding: 16px;">
-            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
-              <span style="font-size: 1.4rem;">🏪</span>
-              <div>
-                <h4 style="margin: 0; color: #fde68a; font-size: 0.95rem;">দোকান তথ্য ও হটলাইন</h4>
-                <span style="font-size: 0.72rem; color: #ec4899;">কনফিগ: /api/config</span>
+          <div class="admin-guide-card">
+            <div>
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 1.5rem;">🏪</span>
+                <div>
+                  <h4>দোকান তথ্য ও হটলাইন</h4>
+                  <span class="admin-guide-tag">কনফিগ: /api/config</span>
+                </div>
+              </div>
+              <div class="admin-guide-list">
+                <div>• <strong>SB Furniture:</strong> <span class="guide-hotline-val">01929621855</span> (WhatsApp)</div>
+                <div>• <strong>SB POWER:</strong> <span class="guide-hotline-val">01634664224</span> (TikTok @sb.power.official)</div>
+                <div>• <strong>ডেলিভারি:</strong> ভারী ফার্নিচারে লোকাল ট্রান্সপোর্ট ও কুরিয়ারে পার্সেল চার্জ।</div>
+                <div>• <strong>রিসেলার:</strong> পণ্যভিত্তিক সরাসরি কমিশন।</div>
               </div>
             </div>
-            <div style="font-size: 0.78rem; color: #d6d3d1; line-height: 1.6; margin-bottom: 12px;">
-              <div>• <strong>SB Furniture:</strong> 01929621855 (WhatsApp)</div>
-              <div>• <strong>SB POWER:</strong> 01634664224 (TikTok @sb.power.official)</div>
-              <div>• <strong>ডেলিভারি:</strong> Paperfly চার্জ pickup origin, destination zone ও parcel weight অনুযায়ী merchant account-এ যাচাই করুন। ভারী furniture-এর জন্য local transport লাগবে।</div>
-              <div>• <strong>রিসেলার:</strong> পণ্যভিত্তিক সরাসরি কমিশন; নতুন অর্ডারে team bonus নেই।</div>
-            </div>
-            <button class="action-btn-sm" style="background: #10b981; color: #fff; width: 100%; padding: 8px; font-weight: 600;" onclick="copyToClipboard('01929621855', 'হটলাইন নম্বর কপি হয়েছে!')">
+            <button type="button" class="action-btn-sm btn-deliver" style="width: 100%; min-height: 40px;" onclick="copyToClipboard('01929621855', 'হটলাইন নম্বর কপি হয়েছে!')">
               📋 হটলাইন নম্বর কপি করুন
             </button>
           </div>
@@ -458,109 +588,391 @@
     </main>
   </div>
 
-  <!-- Add Product Modal -->
+  <!-- Add / Edit Product Modal -->
   <div class="modal-overlay" id="addProductModal" role="dialog" aria-modal="true" aria-labelledby="productFormTitle">
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-dialog-lg">
       <div class="modal-header">
         <h3 id="productFormTitle">নতুন প্রোডাক্ট যোগ করুন</h3>
-        <button class="btn-close" onclick="closeModal('addProductModal')">&times;</button>
+        <button type="button" class="btn-close" onclick="closeModal('addProductModal')" aria-label="বন্ধ করুন">&times;</button>
       </div>
       <div class="modal-body">
         <input type="hidden" id="editProductId" value="">
-        <div class="form-group">
-          <label class="form-label">টাইটেল (বাংলা নাম সহ) *</label>
-          <input type="text" id="prodTitle" class="form-control" placeholder="যেমন: আধুনিক ফার্মেসি ডেকোরেশন">
-        </div>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+
+        <!-- Group 1: Identity & AI Copywriting -->
+        <div class="adm-form-section">
+          <div class="adm-form-section-head">
+            <span>১. পণ্যের নাম ও পরিচিতি</span>
+            <button type="button" id="btnAiGenCopy" class="adm-btn-ai" onclick="runAiCopyFromTitleOrKeywords()">
+              ✨ AI দিয়ে বিবরণ, ক্যাপশন ও দাম সাজান
+            </button>
+          </div>
+
           <div class="form-group">
-            <label class="form-label">SKU কোড *</label>
-            <input type="text" id="prodSku" class="form-control" placeholder="যেমন: SBF-111">
-          </div>
-          <div class="form-group">
-            <label class="form-label">ব্র্যান্ড *</label>
-            <select id="prodBrand" class="form-control">
-              <option value="SB Furniture">SB Furniture</option>
-              <option value="SB POWER">SB POWER</option>
-            </select>
-          </div>
-        </div>
-        <!-- Multi-Vendor / Partner Shop Promotion Fields -->
-        <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: var(--radius-sm); padding: 10px; margin-bottom: 12px;">
-          <div style="font-size: 0.85rem; font-weight: 700; color: #34d399; margin-bottom: 8px;">
-            🏪 শপ / ভেন্ডর প্রমোশন (অন্যান্য দোকান মালিকের পণ্য প্রোমোট করতে)
-          </div>
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-            <div class="form-group" style="margin-bottom: 8px;">
-              <label class="form-label">শপ / দোকানের নাম</label>
-              <input type="text" id="prodShopName" class="form-control" placeholder="যেমন: ভাই ভাই ফার্নিচার / SB Furniture">
+            <label class="form-label" for="prodTitle">টাইটেল (বাংলা নাম সহ) *</label>
+            <input type="text" id="prodTitle" class="form-control" placeholder="যেমন: T900 Ultra 2 Smartwatch অথবা ৩ দরজার মেলামাইন আলমারি">
+            <div id="aiTextGenStatus" style="display: none; font-size: 0.78rem; color: #6d28d9; margin-top: 6px; font-weight: 600;">
+              ⏳ AI টাইটেল বিশ্লেষণ করে বাংলা বিবরণ, ক্যাপশন ও মূল্য প্রস্তুত করছে...
             </div>
-            <div class="form-group" style="margin-bottom: 8px;">
-              <label class="form-label">ভেন্ডরের ফোন / WhatsApp নম্বর</label>
+          </div>
+
+          <div class="adm-grid-2">
+            <div class="form-group" style="margin-bottom: 0;">
+              <label class="form-label" for="prodSku">SKU কোড *</label>
+              <input type="text" id="prodSku" class="form-control" placeholder="যেমন: SBF-111">
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label class="form-label" for="prodShopId">দোকান / শপ নির্বাচন *</label>
+              <select id="prodShopId" class="form-control" onchange="onProdShopChange(this.value)">
+                <option value="1">SB Furniture (নিজস্ব)</option>
+                <option value="2">SB POWER (নিজস্ব)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Group 2: Product Photo & AI Vision -->
+        <div class="adm-form-section photo-upload-group">
+          <div class="adm-form-section-head">
+            <span>২. 📸 পণ্যের ছবি (Product Photo) *</span>
+            <span id="prodUploadStatus" class="upload-status-badge">ছবি নির্বাচন করুন</span>
+          </div>
+
+          <input type="file" id="prodImageFile" accept="image/png,image/jpeg,image/webp,image/gif" style="display: none;" onchange="handleProductImageSelect(event)">
+
+          <div class="product-upload-dropzone" onclick="document.getElementById('prodImageFile').click()" id="prodUploadDropzone">
+            <div id="prodImagePlaceholder" class="upload-placeholder">
+              <div class="upload-icon">📷</div>
+              <strong style="color: var(--adm-amber); font-size: 0.94rem;">গ্যালারি বা ক্যামেরা থেকে ছবি বাছুন</strong>
+              <span style="font-size: 0.78rem; color: var(--adm-text-muted); margin-top: 4px;">ট্যাপ করুন, ছবি টেনে আনুন অথবা Ctrl+V দিয়ে পেস্ট করুন</span>
+            </div>
+            <div id="prodImagePreviewWrap" style="display: none; position: relative; width: 100%; text-align: center;">
+              <img id="prodImagePreview" src="" alt="পণ্যের প্রিভিউ" style="max-height: 190px; max-width: 100%; object-fit: contain; margin: 0 auto; border-radius: 8px; border: 1px solid var(--adm-border);">
+              <div style="margin-top: 8px;">
+                <button type="button" class="btn-change-photo" onclick="event.stopPropagation(); document.getElementById('prodImageFile').click();">
+                  🔄 অন্য ছবি বাছুন
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 1-Click AI Image-to-Product Autolisting -->
+          <div id="aiImageInspectActionBox" class="adm-ai-vision-card" style="display: none;">
+            <div style="font-size: 0.84rem; font-weight: 700; color: #5b21b6; margin-bottom: 8px;">
+              ✨ ছবি (গ্যাজেট বা ফার্নিচার) বিশ্লেষণ করে ১-ক্লিকে টাইটেল, ক্যাপশন, বিবরণ, দাম ও কাঠের হিসাব তৈরি করুন
+            </div>
+            <button type="button" id="btnAiInspectImage" class="adm-btn-ai" style="padding: 9px 18px; font-size: 0.86rem;" onclick="runAiProductImageInspection()">
+              <span>⚡ AI দিয়ে সব ফিল্ড পূরণ করুন</span>
+            </button>
+            <div id="aiVisionStatusText" style="display: none; font-size: 0.8rem; color: #6d28d9; margin-top: 6px; font-weight: 600;">
+              ⏳ AI ছবি বিশ্লেষণ করছে...
+            </div>
+          </div>
+
+          <input type="hidden" id="prodImageUrl" value="">
+
+          <div style="margin-top: 8px; text-align: right;">
+            <button type="button" class="btn-text-link" onclick="toggleManualUrlInput()" style="font-size: 0.78rem; color: var(--adm-text-muted); text-decoration: underline; background: none; border: none; cursor: pointer;">
+              🔗 বা ছবির সরাসরি লিঙ্ক দিতে চাইলে এখানে ক্লিক করুন
+            </button>
+          </div>
+          <div id="manualUrlWrapper" style="display: none; margin-top: 6px;">
+            <input type="url" id="prodManualImageUrl" class="form-control" placeholder="https://..." oninput="handleManualUrlInput(this.value)">
+          </div>
+        </div>
+
+        <!-- Group 3: Brand, Category, Shop Details -->
+        <div class="adm-form-section is-shop">
+          <div class="adm-form-section-head">
+            <span>৩. 🏪 ব্র্যান্ড, ক্যাটাগরি ও শপ তথ্য</span>
+          </div>
+          <div class="adm-grid-2" style="margin-bottom: 10px;">
+            <div class="form-group" style="margin-bottom: 0;">
+              <label class="form-label" for="prodBrand">ব্র্যান্ড *</label>
+              <select id="prodBrand" class="form-control">
+                <option value="SB Furniture">SB Furniture</option>
+                <option value="SB POWER">SB POWER</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label class="form-label" for="prodCategory">ক্যাটাগরি *</label>
+              <select id="prodCategory" class="form-control">
+                <option value="দোকান ডেকোরেশন">দোকান ডেকোরেশন</option>
+                <option value="হোম ও অফিস ফার্নিচার">হোম ও অফিস ফার্নিচার</option>
+                <option value="ওয়্যারলেস অডিও ও গ্যাজেটস">ওয়্যারলেস অডিও ও গ্যাজেটস</option>
+              </select>
+            </div>
+          </div>
+          <div class="adm-grid-2" style="margin-bottom: 10px;">
+            <div class="form-group" style="margin-bottom: 0;">
+              <label class="form-label" for="prodShopName">দোকানের নাম</label>
+              <input type="text" id="prodShopName" class="form-control" placeholder="যেমন: SB Furniture / পার্টনার শপ">
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label class="form-label" for="prodVendorPhone">ভেন্ডরের ফোন / WhatsApp নম্বর</label>
               <input type="tel" id="prodVendorPhone" class="form-control" placeholder="01XXXXXXXXX">
             </div>
           </div>
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+          <div class="adm-grid-2">
             <div class="form-group" style="margin-bottom: 0;">
-              <label class="form-label">ভেন্ডর ব্যাজ</label>
-              <input type="text" id="prodVendorBadge" class="form-control" placeholder="যেমন: Verified Partner, প্রিমিয়াম শপ">
+              <label class="form-label" for="prodVendorBadge">ভেন্ডর ব্যাজ</label>
+              <input type="text" id="prodVendorBadge" class="form-control" placeholder="যেমন: নিজস্ব ব্র্যান্ড / স্থানীয় পার্টনার শপ">
             </div>
             <div class="form-group" style="margin-bottom: 0;">
-              <label class="form-label">শপ লোকেশন / ঠিকানা</label>
+              <label class="form-label" for="prodVendorAddress">শপ লোকেশন / ঠিকানা</label>
               <input type="text" id="prodVendorAddress" class="form-control" placeholder="যেমন: মিরপুর ১০, ঢাকা">
             </div>
           </div>
         </div>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-          <div class="form-group">
-            <label class="form-label">ক্যাটাগরি *</label>
-            <select id="prodCategory" class="form-control">
-              <option value="দোকান ডেকোরেশন">দোকান ডেকোরেশন</option>
-              <option value="হোম ও অফিস ফার্নিচার">হোম ও অফিস ফার্নিচার</option>
-              <option value="ওয়্যারলেস অডিও ও গ্যাজেটস">ওয়্যারলেস অডিও ও গ্যাজেটস</option>
-            </select>
+
+        <!-- Group 4: Pricing, Commission & Live Profit Breakdown -->
+        <div class="adm-form-section">
+          <div class="adm-form-section-head">
+            <span>৪. 🧮 মূল্য, কমিশন ও লাইভ লাভ হিসাব</span>
+            <span id="calcMarginBadge" class="adm-metric-badge">মার্জিন: 0%</span>
+          </div>
+
+          <div class="adm-grid-2" style="margin-bottom: 10px;">
+            <div class="form-group" style="margin-bottom: 0;">
+              <label class="form-label" for="prodCommTab">কমিশন ট্যাব *</label>
+              <select id="prodCommTab" class="form-control">
+                <option value="50tk">৫০৳ কমিশন</option>
+                <option value="100tk">১০০৳ কমিশন</option>
+                <option value="500tk">৫০০৳ কমিশন</option>
+                <option value="1000tk">১০০০৳ কমিশন</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label class="form-label" for="prodStock">স্টক পরিমাণ</label>
+              <input type="number" id="prodStock" class="form-control" value="50">
+            </div>
+          </div>
+
+          <div class="adm-grid-3" style="margin-bottom: 12px;">
+            <div class="form-group" style="margin-bottom: 0;">
+              <label class="form-label" for="prodWholesalePrice">পাইকারি / ক্রয়মূল্য *</label>
+              <input type="number" id="prodWholesalePrice" class="form-control" placeholder="যেমন: 400" step="0.01" min="0" oninput="updateLiveProfitCalculator()">
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label class="form-label" for="prodPrice">গ্রাহক বিক্রয় মূল্য *</label>
+              <input type="number" id="prodPrice" class="form-control" placeholder="যেমন: 600" step="0.01" min="0" oninput="updateLiveProfitCalculator()">
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label class="form-label" for="prodCommission">রিসেলার কমিশন *</label>
+              <input type="number" id="prodCommission" class="form-control" placeholder="যেমন: 100" step="0.01" min="0" oninput="updateLiveProfitCalculator()">
+            </div>
+          </div>
+
+          <div id="liveProfitCalcBox" style="background: #ffffff; border: 1px solid var(--adm-border); border-radius: 10px; padding: 12px;">
+            <div class="adm-grid-3" style="font-size: 0.82rem; margin-bottom: 8px;">
+              <div>গ্রাহক মূল্য: <strong id="calcPriceDisplay">০ ৳</strong></div>
+              <div>পাইকারি খরচ: <strong id="calcWholesaleDisplay" style="color: #6d28d9;">-০ ৳</strong></div>
+              <div>রিসেলার কমিশন: <strong id="calcCommissionDisplay" style="color: #b45309;">-০ ৳</strong></div>
+            </div>
+            <div class="adm-metric-highlight is-emerald" style="margin-top: 4px;">
+              <span>💎 প্ল্যাটফর্ম নিট লাভ:</span>
+              <strong id="calcNetProfitDisplay" style="font-size: 1.15rem;">০ ৳</strong>
+            </div>
+            <div id="calcProfitWarning" style="display: none; margin-top: 8px; padding: 7px 10px; border-radius: 6px; background: var(--adm-rose-bg); border: 1px solid var(--adm-rose-bd); color: var(--adm-rose); font-size: 0.78rem; font-weight: 600;">
+              ⚠️ সতর্কতা: প্ল্যাটফর্মের কোনো নিট লাভ থাকবে না! বিক্রয় মূল্য বাড়ান অথবা পাইকারি খরচ/কমিশন কমান।
+            </div>
+          </div>
+        </div>
+
+        <!-- Group 5: Furniture AI & Cut-List Calculator -->
+        <div id="furnitureAiCutlistBox" class="adm-form-section is-furniture">
+          <div class="adm-form-section-head">
+            <span>🪑 ৫. ফার্নিচার কাঠ ও ৪×৮ বোর্ড ক্যালকুলেটর (AI &amp; Manual)</span>
+            <span class="adm-metric-badge" style="background: #fef3c7; color: #92400e;">বোর্ড: ৪×৮ ফুট</span>
+          </div>
+
+          <div class="adm-grid-4" style="margin-bottom: 10px;">
+            <div>
+              <label class="form-label" style="font-size: 0.75rem;" for="furnDimHeight">উচ্চতা (ইঞ্চি)</label>
+              <input type="number" id="furnDimHeight" class="form-control" style="font-size: 0.85rem; padding: 6px 8px; min-height: 38px;" placeholder="72" value="72">
+            </div>
+            <div>
+              <label class="form-label" style="font-size: 0.75rem;" for="furnDimWidth">প্রস্থ (ইঞ্চি)</label>
+              <input type="number" id="furnDimWidth" class="form-control" style="font-size: 0.85rem; padding: 6px 8px; min-height: 38px;" placeholder="36" value="36">
+            </div>
+            <div>
+              <label class="form-label" style="font-size: 0.75rem;" for="furnDimDepth">গভীরতা (ইঞ্চি)</label>
+              <input type="number" id="furnDimDepth" class="form-control" style="font-size: 0.85rem; padding: 6px 8px; min-height: 38px;" placeholder="18" value="18">
+            </div>
+            <div>
+              <label class="form-label" style="font-size: 0.75rem;" for="furnBoardPrice">বোর্ড দর (৳)</label>
+              <input type="number" id="furnBoardPrice" class="form-control" style="font-size: 0.85rem; padding: 6px 8px; min-height: 38px;" placeholder="1800" value="1800" oninput="recalculateFurnitureCutlist()">
+            </div>
+          </div>
+
+          <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px;">
+            <button type="button" id="btnRunFurnitureAi" class="btn-submit" style="flex: 1; min-height: 40px; font-size: 0.84rem; background: #d97706;" onclick="runFurnitureAiEstimate()">
+              ⚡ AI দিয়ে কাট-লিস্ট হিসাব করুন
+            </button>
+            <button type="button" class="btn-nav" style="border-color: #d97706; color: #92400e;" onclick="addManualFurniturePartRow()">
+              + ১টি পার্ট নিজে লিখুন
+            </button>
+          </div>
+
+          <div style="max-height: 220px; overflow-y: auto; background: #ffffff; border: 1px solid #fde68a; border-radius: 8px; padding: 6px; margin-bottom: 8px;">
+            <table style="width: 100%; font-size: 0.78rem; text-align: left; border-collapse: collapse;">
+              <thead>
+                <tr style="border-bottom: 1px solid #fef3c7; color: #78350f;">
+                  <th style="padding: 5px;">পার্টসের নাম</th>
+                  <th style="padding: 5px; width: 70px;">দৈর্ঘ্য (")</th>
+                  <th style="padding: 5px; width: 70px;">প্রস্থ (")</th>
+                  <th style="padding: 5px; width: 55px;">পিস</th>
+                  <th style="padding: 5px; width: 35px;">মুছুন</th>
+                </tr>
+              </thead>
+              <tbody id="furniturePartsTableBody"></tbody>
+            </table>
+          </div>
+
+          <div id="furnCutlistSummary" style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; background: #fef3c7; padding: 9px 12px; border-radius: 8px; font-size: 0.82rem;">
+            <div>
+              <strong>মোট ৪×৮ বোর্ড:</strong> <span id="furnTotalBoardsBadge" style="color: #92400e; font-size: 1rem; font-weight: 800;">০ টি</span>
+              <span id="furnWastageBadge" style="margin-left: 6px; color: #78350f; font-size: 0.75rem;">(অপচয়: ০%)</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span>বোর্ড খরচ: <strong id="furnBoardCostText">০ ৳</strong></span>
+              <button type="button" class="action-btn-sm btn-confirm" onclick="applyFurnitureBoardCostToWholesale()">
+                ✓ পাইকারিতে যোগ
+              </button>
+            </div>
+          </div>
+          <div id="furnAiProviderBadge" style="margin-top: 5px; font-size: 0.74rem; color: #78350f; text-align: right; display: none;"></div>
+        </div>
+
+        <!-- Group 6: Materials, Finish, Caption & Description -->
+        <div class="adm-form-section">
+          <div class="adm-form-section-head">
+            <span>৬. 📝 স্পেসিফিকেশন, ক্যাপশন ও বিবরণ</span>
+          </div>
+          <div class="adm-grid-2">
+            <div class="form-group">
+              <label class="form-label" for="prodMaterials">উপকরণ (মেলামাইন / সুপার এস / চিপসেট)</label>
+              <input type="text" id="prodMaterials" class="form-control" placeholder="যেমন: সুপার এস বোর্ড">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="prodFinish">ফিনিশিং ও কালার</label>
+              <input type="text" id="prodFinish" class="form-control" placeholder="যেমন: White Carrara Marble অথবা ম্যাট ব্ল্যাক">
+            </div>
           </div>
           <div class="form-group">
-            <label class="form-label">কমিশন ট্যাব *</label>
-            <select id="prodCommTab" class="form-control">
-              <option value="50tk">৫০৳ কমিশন</option>
-              <option value="100tk">১০০৳ কমিশন</option>
-              <option value="500tk">৫০০৳ কমিশন</option>
-              <option value="1000tk">১০০০৳ কমিশন</option>
-            </select>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+              <label class="form-label" style="margin-bottom: 0;" for="prodCaption">সোশ্যাল মিডিয়া ক্যাপশন (Social Post Hook)</label>
+              <button type="button" class="btn-text-link" style="font-size: 0.76rem; color: var(--adm-blue); background: none; border: none; cursor: pointer; font-weight: 600;" onclick="copyFieldValue('prodCaption', 'ক্যাপশন কপি হয়েছে!')">📋 ক্যাপশন কপি করুন</button>
+            </div>
+            <textarea id="prodCaption" class="form-control" rows="3" placeholder="ফেসবুক, হোয়াটসঅ্যাপ বা টিকটক পোস্টের জন্য আকর্ষণীয় ক্যাপশন..."></textarea>
+          </div>
+          <div class="form-group" style="margin-bottom: 0;">
+            <label class="form-label" for="prodDesc">বিস্তারিত বিবরণ (Description)</label>
+            <textarea id="prodDesc" class="form-control" rows="5" placeholder="পণ্য সম্পর্কে বিস্তারিত লিখুন..."></textarea>
           </div>
         </div>
-        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;">
-          <div class="form-group">
-            <label class="form-label">বিক্রয় মূল্য *</label>
-            <input type="number" id="prodPrice" class="form-control" placeholder="টাকা">
-          </div>
-          <div class="form-group">
-            <label class="form-label">কমিশন (লাভ) *</label>
-            <input type="number" id="prodCommission" class="form-control" placeholder="যেমন: 500">
-          </div>
-          <div class="form-group">
-            <label class="form-label">স্টক পরিমাণ</label>
-            <input type="number" id="prodStock" class="form-control" value="50">
-          </div>
-        </div>
-        <div class="form-group">
-          <label class="form-label">ছবির লিংক (URL) *</label>
-          <input type="url" id="prodImageUrl" class="form-control" placeholder="https://...">
-        </div>
-        <div class="form-group">
-          <label class="form-label">বোর্ড উপকরণ (মেলামাইন / সুপার এস / রম)</label>
-          <input type="text" id="prodMaterials" class="form-control" placeholder="যেমন: সুপার এস বোর্ড">
-        </div>
-        <div class="form-group">
-          <label class="form-label">ফিনিশিং ও কালার</label>
-          <input type="text" id="prodFinish" class="form-control" placeholder="যেমন: White Carrara Marble">
-        </div>
-        <div class="form-group">
-          <label class="form-label">বিবরণ (Description)</label>
-          <textarea id="prodDesc" class="form-control" rows="2" placeholder="পণ্য সম্পর্কে বিস্তারিত লিখুন..."></textarea>
-        </div>
-        <button class="btn-submit" onclick="submitProductForm()">সংরক্ষণ করুন</button>
+
+        <button type="button" class="btn-submit" id="btnSubmitProduct" onclick="submitProductForm()">✅ সংরক্ষণ করুন (1-Click Save)</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Add Shop Modal -->
+  <div class="modal-overlay" id="addShopModal" role="dialog" aria-modal="true" aria-labelledby="shopModalTitle">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 id="shopModalTitle">🏪 নতুন পার্টনার শপ যুক্ত করুন</h3>
+        <button type="button" class="btn-close" onclick="closeModal('addShopModal')" aria-label="বন্ধ করুন">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label" for="shopNameInput">দোকানের নাম *</label>
+          <input type="text" id="shopNameInput" class="form-control" placeholder="যেমন: ভাই ভাই পাইকারি গ্যাজেট">
+        </div>
+        <div class="adm-grid-2">
+          <div class="form-group">
+            <label class="form-label" for="shopTypeInput">শপ টাইপ *</label>
+            <select id="shopTypeInput" class="form-control">
+              <option value="partner" selected>পার্টনার শপ (Third-Party)</option>
+              <option value="own">নিজস্ব ব্র্যান্ড (Own Brand)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="shopContactInput">যোগাযোগের ব্যক্তি</label>
+            <input type="text" id="shopContactInput" class="form-control" placeholder="মালিক বা প্রতিনিধির নাম">
+          </div>
+        </div>
+        <div class="adm-grid-2">
+          <div class="form-group">
+            <label class="form-label" for="shopPhoneInput">ফোন / WhatsApp নম্বর *</label>
+            <input type="tel" id="shopPhoneInput" class="form-control" placeholder="01XXXXXXXXX">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="shopCommissionRateInput">কমিশন বা ছাড়ের হার (%)</label>
+            <input type="number" id="shopCommissionRateInput" class="form-control" placeholder="10" step="0.1" value="0">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="shopAddressInput">দোকানের ঠিকানা / মার্কেট লোকেশন</label>
+          <input type="text" id="shopAddressInput" class="form-control" placeholder="যেমন: দোকান নং ১২, স্টেডিয়াম মার্কেট, ঢাকা">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="shopNotesInput">নোট বা বিশেষ শর্ত</label>
+          <textarea id="shopNotesInput" class="form-control" rows="2" placeholder="পেমেন্ট বা প্রোডাক্ট রিটার্ন সংক্রান্ত নিয়ম..."></textarea>
+        </div>
+        <button type="button" class="btn-submit" onclick="submitAddShopForm()">শপ সংরক্ষণ করুন</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settle Shop Modal -->
+  <div class="modal-overlay" id="settleShopModal" role="dialog" aria-modal="true" aria-labelledby="settleModalTitle">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 id="settleModalTitle">💸 পার্টনার শপের পাওনা পরিশোধ</h3>
+        <button type="button" class="btn-close" onclick="closeModal('settleShopModal')" aria-label="বন্ধ করুন">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="settleShopId" value="">
+        <div class="adm-form-section">
+          <div style="font-size: 0.86rem; color: var(--adm-text-muted);">দোকানের নাম: <strong id="settleShopName" style="color: var(--adm-text);">-</strong></div>
+          <div style="font-size: 0.86rem; color: #b45309; margin-top: 4px;">বর্তমান বকেয়া পাওনা: <strong id="settlePendingAmount" style="font-size: 1.08rem;">০ ৳</strong></div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="settleAmountInput">পরিশোধের পরিমাণ (টাকা) *</label>
+          <input type="number" id="settleAmountInput" class="form-control" placeholder="টাকার পরিমাণ লিখুন" min="1" step="0.01">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="settleTrxIdInput">পেমেন্ট মেথড বা TrxID</label>
+          <input type="text" id="settleTrxIdInput" class="form-control" placeholder="যেমন: bKash TrxID বা ব্যাংক ডিপোজিট স্লিপ নং">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="settleNotesInput">নোট / মন্তব্য</label>
+          <input type="text" id="settleNotesInput" class="form-control" placeholder="যেমন: নভেম্বর মাসের পাইকারি বিল পরিশোধ">
+        </div>
+        <button type="button" class="btn-submit" style="background: var(--adm-emerald);" onclick="submitShopSettlement()">পরিশোধ নিশ্চিত ও সংরক্ষণ করুন</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Shop Settlements History Modal -->
+  <div class="modal-overlay" id="shopSettlementsModal" role="dialog" aria-modal="true" aria-labelledby="historyModalTitle">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 id="historyModalTitle">📜 পার্টনার শপ পেমেন্ট হিস্ট্রি</h3>
+        <button type="button" class="btn-close" onclick="closeModal('shopSettlementsModal')" aria-label="বন্ধ করুন">&times;</button>
+      </div>
+      <div class="modal-body" id="shopSettlementsBody"></div>
+    </div>
+  </div>
+
+  <!-- Order Detail & Customer View Modal -->
+  <div class="modal-overlay" id="orderDetailModal" role="dialog" aria-modal="true" aria-labelledby="orderDetailModalTitle">
+    <div class="modal-dialog modal-dialog-lg" style="max-width: 780px;">
+      <div class="modal-header">
+        <h3 id="orderDetailModalTitle">📦 অর্ডার বিবরণ</h3>
+        <button type="button" class="btn-close" onclick="closeModal('orderDetailModal')" aria-label="বন্ধ করুন">&times;</button>
+      </div>
+      <div class="modal-body" id="orderDetailModalBody"></div>
     </div>
   </div>
 
@@ -569,11 +981,9 @@
     <div class="modal-dialog">
       <div class="modal-header">
         <h3 id="auditModalTitle">অর্ডার স্ট্যাটাস অডিট ট্রেইল</h3>
-        <button class="btn-close" onclick="closeModal('orderAuditModal')">&times;</button>
+        <button type="button" class="btn-close" onclick="closeModal('orderAuditModal')" aria-label="বন্ধ করুন">&times;</button>
       </div>
-      <div class="modal-body" id="auditModalBody">
-        <!-- Dynamically loaded -->
-      </div>
+      <div class="modal-body" id="auditModalBody"></div>
     </div>
   </div>
 
@@ -582,66 +992,68 @@
     <div class="modal-dialog">
       <div class="modal-header">
         <h3 id="announcementModalTitle">নতুন অফার / নোটিশ</h3>
-        <button class="btn-close" onclick="closeModal('announcementModal')">&times;</button>
+        <button type="button" class="btn-close" onclick="closeModal('announcementModal')" aria-label="বন্ধ করুন">&times;</button>
       </div>
       <div class="modal-body">
         <input type="hidden" id="editAnnouncementId" value="">
         <div class="form-group">
-          <label class="form-label">শিরোনাম *</label>
+          <label class="form-label" for="annTitle">শিরোনাম *</label>
           <input type="text" id="annTitle" class="form-control" placeholder="যেমন: 🔥 মেগা অফার: আজই প্রথম সেল...">
         </div>
         <div class="form-group">
-          <label class="form-label">বিস্তারিত বার্তা *</label>
+          <label class="form-label" for="annMessage">বিস্তারিত বার্তা *</label>
           <textarea id="annMessage" class="form-control" rows="3" placeholder="ঘোষণার বার্তা লিখুন..."></textarea>
         </div>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+        <div class="adm-grid-2">
           <div class="form-group">
-            <label class="form-label">টাইপ</label>
+            <label class="form-label" for="annType">টাইপ</label>
             <select id="annType" class="form-control">
               <option value="flash_deal">ফ্ল্যাশ ডিল / অফার</option>
               <option value="general">সাধারণ নোটিশ</option>
             </select>
           </div>
           <div class="form-group">
-            <label class="form-label">স্ট্যাটাস</label>
+            <label class="form-label" for="annActive">স্ট্যাটাস</label>
             <select id="annActive" class="form-control">
               <option value="1">সক্রিয় (Active)</option>
               <option value="0">নিষ্ক্রিয় (Inactive)</option>
             </select>
           </div>
         </div>
-        <button class="btn-submit" onclick="submitAnnouncementForm()">সংরক্ষণ করুন</button>
+        <button type="button" class="btn-submit" onclick="submitAnnouncementForm()">সংরক্ষণ করুন</button>
       </div>
     </div>
+  </div>
+
   <!-- Add Admin / User Modal -->
   <div class="modal-overlay" id="adminUserModal" role="dialog" aria-modal="true" aria-labelledby="userModalTitle">
     <div class="modal-dialog">
       <div class="modal-header">
         <h3 id="userModalTitle">➕ নতুন অ্যাডমিন / ইউজার তৈরি করুন</h3>
-        <button class="btn-close" onclick="closeAddUserModal()">&times;</button>
+        <button type="button" class="btn-close" onclick="closeAddUserModal()" aria-label="বন্ধ করুন">&times;</button>
       </div>
       <div class="modal-body">
         <div class="form-group">
-          <label class="form-label">পূর্ণ নাম *</label>
+          <label class="form-label" for="newUserName">পূর্ণ নাম *</label>
           <input type="text" id="newUserName" class="form-control" placeholder="যেমন: মো: আরিফুল ইসলাম">
         </div>
         <div class="form-group">
-          <label class="form-label">মোবাইল নম্বর (১১ ডিজিট) *</label>
+          <label class="form-label" for="newUserPhone">মোবাইল নম্বর (১১ ডিজিট) *</label>
           <input type="tel" id="newUserPhone" class="form-control" placeholder="01XXXXXXXXX">
         </div>
         <div class="form-group">
-          <label class="form-label">লগইন পাসওয়ার্ড (৮ থেকে ৭২ বাইট) *</label>
+          <label class="form-label" for="newUserPassword">লগইন পাসওয়ার্ড (৮ থেকে ৭২ বাইট) *</label>
           <input type="password" id="newUserPassword" class="form-control" placeholder="শক্তিশালী পাসওয়ার্ড দিন">
         </div>
         <div class="form-group">
-          <label class="form-label">পদবি / রোল (Role) *</label>
+          <label class="form-label" for="newUserRole">পদবি / রোল (Role) *</label>
           <select id="newUserRole" class="form-control">
+            <option value="customer" selected>🛍️ কাস্টমার (Customer) — সাধারণ ক্রেতা</option>
+            <option value="reseller">💼 রিসেলার (Reseller) — অ্যাডমিন অনুমোদিত বিক্রি ও কমিশন</option>
             <option value="admin">👑 এডমিন (Admin) — পূর্ণ নিয়ন্ত্রণ সুবিধা</option>
-            <option value="reseller">💼 রিসেলার (Reseller) — পণ্য বিক্রি ও কমিশন</option>
-            <option value="customer">🛍️ কাস্টমার (Customer) — সাধারণ ক্রেতা</option>
           </select>
         </div>
-        <button class="btn-submit" onclick="submitAddUserForm()">নিশ্চিত ও সংরক্ষণ করুন</button>
+        <button type="button" class="btn-submit" onclick="submitAddUserForm()">নিশ্চিত ও সংরক্ষণ করুন</button>
       </div>
     </div>
   </div>
@@ -651,94 +1063,51 @@
     <div class="modal-dialog">
       <div class="modal-header">
         <h3 id="pwdModalTitle">🔑 এডমিন পাসওয়ার্ড পরিবর্তন</h3>
-        <button class="btn-close" onclick="closeAdminPasswordModal()">&times;</button>
+        <button type="button" class="btn-close" onclick="closeAdminPasswordModal()" aria-label="বন্ধ করুন">&times;</button>
       </div>
       <div class="modal-body">
         <div class="form-group">
-          <label class="form-label">বর্তমান পাসওয়ার্ড (যাচাইয়ের জন্য)</label>
+          <label class="form-label" for="adminOldPass">বর্তমান পাসওয়ার্ড (যাচাইয়ের জন্য)</label>
           <input type="password" id="adminOldPass" class="form-control" placeholder="বর্তমান পাসওয়ার্ড দিন">
         </div>
         <div class="form-group">
-          <label class="form-label">নতুন পাসওয়ার্ড (৮ থেকে ৭২ বাইট) *</label>
+          <label class="form-label" for="adminNewPass">নতুন পাসওয়ার্ড (৮ থেকে ৭২ বাইট) *</label>
           <input type="password" id="adminNewPass" class="form-control" placeholder="নতুন পাসওয়ার্ড লিখুন">
         </div>
-        <button class="btn-submit" onclick="submitAdminPasswordChange()">পাসওয়ার্ড আপডেট করুন</button>
+        <button type="button" class="btn-submit" onclick="submitAdminPasswordChange()">পাসওয়ার্ড আপডেট করুন</button>
       </div>
     </div>
   </div>
 
-  <div id="toast" class="toast-msg"></div>
-
-  <!-- Android APK Installation Helper & Visual Guidance Modal -->
-  <div class="modal-overlay" id="apkDownloadModal" role="dialog" aria-modal="true" aria-labelledby="apkModalTitle">
-    <div class="modal-dialog modal-dialog-guide">
+  <!-- 1-Click Multi-Channel Marketing Copy Modal -->
+  <div class="modal-overlay" id="marketingCopyModal" role="dialog" aria-modal="true" aria-labelledby="mktCopyModalTitle">
+    <div class="modal-dialog modal-dialog-lg" style="max-width: 640px;">
       <div class="modal-header">
-        <div>
-          <h3 id="apkModalTitle" style="font-size: 1.15rem; color: #fff;">🛡️ SB Admin Panel এডমিন অ্যাপ</h3>
-          <span id="apkModalBadge" class="modal-badge-release">অফিসিয়াল এডমিন রিলিজ • v1.0.1</span>
-        </div>
-        <button class="btn-close" onclick="closeApkDownloadModal()">&times;</button>
+        <h3 id="mktCopyModalTitle">📢 ১-ক্লিক মাল্টি-চ্যানেল মার্কেটিং কপি (AI Powered)</h3>
+        <button type="button" class="btn-close" onclick="closeModal('marketingCopyModal')" aria-label="বন্ধ করুন">&times;</button>
       </div>
       <div class="modal-body">
-        <!-- 1-Click PWA Zero Friction Option -->
-        <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 12px; padding: 14px; margin-bottom: 16px;">
-          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
-            <div style="font-weight: 700; color: #34d399; font-size: 0.92rem;">
-              ⚡ দ্রুততম: ১-ক্লিকে অ্যাপ ইনস্টল (Zero Friction)
-            </div>
-            <span style="background: #059669; color: #fff; font-size: 0.68rem; padding: 2px 6px; border-radius: 6px; font-weight: 700;">প্রস্তাবিত</span>
-          </div>
-          <p style="font-size: 0.8rem; color: #d1fae5; margin: 0 0 10px; line-height: 1.45;">
-            কোনো ফাইল ডাউনলোড, মেমোরি নষ্ট বা আননোন সোর্স অনুমতি ছাড়াই সরাসরি ক্রোম ব্রাউজার থেকে ফোনের হোম স্ক্রিনে এডমিন অ্যাপ যুক্ত করুন।
-          </p>
-          <button type="button" class="btn-pwa-primary" style="width: 100%;" onclick="triggerPwaInstall()">
-            📲 সরাসরি ১-ক্লিকে ইনস্টল করুন (WebAPK)
-          </button>
+        <div style="display: flex; gap: 6px; margin-bottom: 12px; border-bottom: 1px solid var(--adm-border); padding-bottom: 10px; flex-wrap: wrap;">
+          <button type="button" class="action-btn-sm mkt-tab-btn" data-tab="fb" style="background: #6d28d9; color: #fff;" onclick="setMarketingTab('fb')">💬 ফেসবুক ও হোয়াটসঅ্যাপ</button>
+          <button type="button" class="action-btn-sm mkt-tab-btn" data-tab="tiktok" style="background: var(--adm-surface-hover); color: var(--adm-text-sec);" onclick="setMarketingTab('tiktok')">🎬 টিকটক / রিলস স্ক্রিপ্ট</button>
+          <button type="button" class="action-btn-sm mkt-tab-btn" data-tab="reseller" style="background: var(--adm-surface-hover); color: var(--adm-text-sec);" onclick="setMarketingTab('reseller')">💼 রিসেলার গাইড</button>
         </div>
-
-        <!-- Android APK Direct Download Guide -->
-        <div class="apk-guide-box">
-          <div class="apk-guide-title">
-            <span>📦</span> <span>অ্যান্ড্রয়েড APK অফলাইন ইনস্টলেশন নির্দেশিকা</span>
-          </div>
-          <ul class="apk-step-list">
-            <li class="apk-step-item">
-              <span class="apk-step-num">১</span>
-              <div>
-                <strong>পুরনো অ্যাপ থাকলে আনইনস্টল করুন:</strong> আপনার ফোনে আগে থেকে কোনো পুরনো টেস্ট বিল্ড ইনস্টল থাকলে সেটি আনইনস্টল করে নিন, যাতে নতুন অফিশিয়াল সার্টিফিকেটের সাথে "App not installed" কনফ্লিক্ট না হয়।
-              </div>
-            </li>
-            <li class="apk-step-item">
-              <span class="apk-step-num">২</span>
-              <div>
-                <strong>অফিসিয়াল APK ডাউনলোড করুন:</strong> নিচের বাটনে চেপে লেটেস্ট রিলিজ প্যাকেজ ডাউনলোড সম্পন্ন করুন।
-              </div>
-            </li>
-            <li class="apk-step-item">
-              <span class="apk-step-num">৩</span>
-              <div>
-                <strong>প্লে প্রোটেক্টে "Install anyway" চাপুন:</strong> ডাউনলোড শেষে ওপেন করে "Install" চাপুন। যদি গুগল প্লে প্রোটেক্ট পপ-আপ আসে, তবে <em>"More details"</em> চেপে <em>"Install anyway"</em> দিন।
-              </div>
-            </li>
-          </ul>
-
-          <div class="apk-warning-callout">
-            🛡️ <strong>১০০% নিরাপদ বিল্ড:</strong> এই APK টি SB Furniture Ltd-এর নিজস্ব স্থায়ী প্রোডাকশন কি (RSA 4096-bit, SHA-256) দ্বারা সাইন করা এবং এতে কোনো ডিবাগ কোড নেই।
-          </div>
-
-          <div style="margin-top: 14px;">
-            <a id="btnStartDirectApk" href="/download/admin-apk" class="btn-apk-direct" onclick="startApkDownload(event, 'admin')">
-              <span>📥</span> <span>সরাসরি APK ফাইল ডাউনলোড শুরু করুন</span>
-            </a>
-          </div>
+        <textarea id="marketingCopyTextarea" class="form-control" rows="12" style="font-family: var(--font-family); font-size: 0.9rem; line-height: 1.55; white-space: pre-wrap; background: var(--adm-surface-sub);" readonly></textarea>
+        <div style="display: flex; gap: 10px; margin-top: 14px; justify-content: flex-end;">
+          <button type="button" class="action-btn-sm btn-deliver" style="padding: 10px 18px; font-size: 0.88rem; min-height: 42px;" onclick="copyMarketingText()">
+            📋 কপি করুন (Copy Text)
+          </button>
+          <button type="button" class="btn-nav" onclick="closeModal('marketingCopyModal')">বন্ধ করুন</button>
         </div>
       </div>
     </div>
   </div>
+
+  <div id="toast" class="toast-msg" role="status" aria-live="polite"></div>
 
   <!-- PWA 1-Click Install Fixed Bottom Banner -->
   <div id="pwaInstallBanner" class="pwa-install-banner" style="display: none;">
-    <div class="pwa-banner-icon">📱</div>
+    <div class="pwa-banner-icon" aria-hidden="true">📱</div>
     <div class="pwa-banner-info">
       <div class="pwa-banner-title">
         <span>📲 ১-ক্লিকে এডমিন অ্যাপ ইনস্টল</span>
@@ -747,15 +1116,18 @@
       <div class="pwa-banner-desc">কোনো ফাইল ডাউনলোড ছাড়াই ফোনের স্ক্রিনে যুক্ত করুন</div>
     </div>
     <div class="pwa-banner-actions">
-      <button class="btn-pwa-install" onclick="triggerPwaInstall()">ইনস্টল করুন</button>
-      <button class="btn-pwa-dismiss" onclick="dismissPwaBanner()" aria-label="বন্ধ করুন">✕</button>
+      <button type="button" class="btn-pwa-install" onclick="triggerPwaInstall()">ইনস্টল করুন</button>
+      <button type="button" class="btn-pwa-dismiss" onclick="dismissPwaBanner()" aria-label="বন্ধ করুন">✕</button>
     </div>
   </div>
 
-  <script src="/js/api.js"></script>
-  <script src="/js/admin.js"></script>
-  <script src="/js/admin-users.js"></script>
-  <script src="/js/pwa-install.js" defer></script>
+  <script src="/js/app-config.js?v=4.0.0"></script>
+  <script src="/js/api.js?v=4.0.0"></script>
+  <script src="/js/admin.js?v=4.0.1"></script>
+  <script src="/js/admin-referrals.js?v=1.0.2"></script>
+  <script src="/js/admin-users.js?v=4.0.0"></script>
+  <script src="/js/pwa-install.js?v=3.2.2" defer></script>
+  <script src="/js/pwa-splash.js?v=1.0.0"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {

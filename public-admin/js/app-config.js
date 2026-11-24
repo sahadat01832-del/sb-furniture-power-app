@@ -1,0 +1,9 @@
+// Public deployment setting. The API URL is not a secret.
+window.APP_CONFIG = window.APP_CONFIG || {};
+window.APP_CONFIG.apiUrl = "https://killing-deliver-eve-coating.trycloudflare.com"; // PHONE_SERVER_API_URL
+window.APP_CONFIG.firebaseProjectId = "sb-power-marketplace"; // FIREBASE_PROJECT_ID
+window.APP_CONFIG.firebaseApiKey = "AIzaSyCdyZrcAnEpX7QQDi614QR1bM90O7_rzZY"; // FIREBASE_WEB_API_KEY (public Firebase web config)
+window.APP_CONFIG.firebaseAppId = "1:524721397981:web:eb7c40ec4fd6090379fb34"; // FIREBASE_WEB_APP_ID
+window.APP_CONFIG.firebaseAuthDomain = "sb-power-marketplace.firebaseapp.com"; // FIREBASE_AUTH_DOMAIN (optional)
+window.APP_CONFIG.VITE_DEV_API_URL = ''; // VITE_DEV_API_URL / local development override
+window.APP_CONFIG.devPort = 3000;

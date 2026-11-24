@@ -1,0 +1,10 @@
+{
+  "indexes": [],
+  "fieldOverrides": [
+    {
+      "collectionGroup": "backup_chunks",
+      "fieldPath": "payload",
+      "indexes": []
+    }
+  ]
+}

@@ -1,8 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const { query, get, run, withTransaction } = require('../db');
-const { verifyToken } = require('../auth');
+const { verifyToken, requireRole } = require('../auth');
 const config = require('../config');
+const { toPaisa, fromPaisa, takaFields } = require('../money');
+
+router.use(verifyToken, requireRole('reseller', 'admin'));
 
 // Helper to compute user balance with comprehensive breakdown
 const computeBalances = async (userId) => {
@@ -10,7 +13,7 @@ const computeBalances = async (userId) => {
   const earnedRow = await get(
     `SELECT COALESCE(SUM(amount), 0) as total 
      FROM wallet_transactions 
-     WHERE user_id = ? AND status IN ('available', 'completed') AND type IN ('commission', 'referral_bonus', 'team_bonus')`,
+     WHERE user_id = ? AND status IN ('available', 'completed') AND type IN ('commission', 'referral_commission', 'referral_bonus', 'team_bonus')`,
     [userId]
   );
   const totalEarned = earnedRow ? earnedRow.total : 0;
@@ -51,6 +54,19 @@ const computeBalances = async (userId) => {
   );
   const pendingCommission = pendingRow ? pendingRow.total : 0;
 
+  const referralCommissionRow = await get(
+    `SELECT COALESCE(SUM(amount), 0) as total
+     FROM wallet_transactions
+     WHERE user_id = ? AND status IN ('available', 'completed') AND type = 'referral_commission'`,
+    [userId]
+  );
+  const pendingReferralCommissionRow = await get(
+    `SELECT COALESCE(SUM(amount), 0) as total
+     FROM wallet_transactions
+     WHERE user_id = ? AND status = 'pending' AND type = 'referral_commission'`,
+    [userId]
+  );
+
   // Debited/Requested Payouts
   const payoutRow = await get(
     `SELECT COALESCE(SUM(amount), 0) as total 
@@ -77,6 +93,8 @@ const computeBalances = async (userId) => {
     totalEarned,
     totalWithdrawn,
     commissionEarned,
+    referralCommissionEarned: referralCommissionRow ? referralCommissionRow.total : 0,
+    pendingReferralCommission: pendingReferralCommissionRow ? pendingReferralCommissionRow.total : 0,
     firstSaleBonusEarned,
     teamBonusEarned
   };
@@ -100,13 +118,15 @@ router.get('/summary', verifyToken, async (req, res) => {
     return res.json({
       success: true,
       summary: {
-        available_balance: balances.availableBalance,
-        pending_commission: balances.pendingCommission,
-        total_earned: balances.totalEarned,
-        total_withdrawn: balances.totalWithdrawn,
-        commission_earned: balances.commissionEarned,
-        first_sale_bonus: balances.firstSaleBonusEarned,
-        team_bonus: balances.teamBonusEarned,
+        available_balance: fromPaisa(balances.availableBalance),
+        pending_commission: fromPaisa(balances.pendingCommission),
+        total_earned: fromPaisa(balances.totalEarned),
+        total_withdrawn: fromPaisa(balances.totalWithdrawn),
+        commission_earned: fromPaisa(balances.commissionEarned),
+        referral_commission_earned: fromPaisa(balances.referralCommissionEarned),
+        pending_referral_commission: fromPaisa(balances.pendingReferralCommission),
+        first_sale_bonus: fromPaisa(balances.firstSaleBonusEarned),
+        team_bonus: fromPaisa(balances.teamBonusEarned),
         referred_count: refCountRow ? refCountRow.count : 0,
         referral_code: user.referral_code,
         min_cashout: config.REFERRAL.MIN_CASHOUT_AMOUNT
@@ -138,7 +158,7 @@ router.get('/downline', verifyToken, async (req, res) => {
     return res.json({
       success: true,
       count: team.length,
-      team
+      team: team.map((member) => takaFields(member, ['total_sales_volume']))
     });
   } catch (error) {
     console.error('Downline Fetch Error:', error);
@@ -158,7 +178,7 @@ router.get('/transactions', verifyToken, async (req, res) => {
 
     return res.json({
       success: true,
-      transactions
+      transactions: transactions.map((transaction) => takaFields(transaction, ['amount']))
     });
   } catch (error) {
     console.error('Transactions Error:', error);
@@ -170,9 +190,10 @@ router.get('/transactions', verifyToken, async (req, res) => {
 router.post('/payout-request', verifyToken, async (req, res) => {
   try {
     const { amount, payment_method, account_number } = req.body;
-    const parsedAmount = Number(amount);
+    const parsedAmount = toPaisa(amount);
+    const minCashoutPaisa = toPaisa(config.REFERRAL.MIN_CASHOUT_AMOUNT);
 
-    if (!Number.isSafeInteger(parsedAmount) || parsedAmount < config.REFERRAL.MIN_CASHOUT_AMOUNT) {
+    if (parsedAmount === null || parsedAmount < minCashoutPaisa) {
       return res.status(400).json({
         success: false,
         message: `ন্যূনতম ক্যাশআউট পরিমাণ ${config.REFERRAL.MIN_CASHOUT_AMOUNT} টাকা হতে হবে`
@@ -201,7 +222,7 @@ router.post('/payout-request', verifyToken, async (req, res) => {
     if (parsedAmount > balances.availableBalance) {
       return res.status(400).json({
         success: false,
-        message: `পর্যাপ্ত ব্যালেন্স নেই। আপনার উত্তোলনযোগ্য ব্যালেন্স: ${balances.availableBalance} টাকা`
+        message: `পর্যাপ্ত ব্যালেন্স নেই। আপনার উত্তোলনযোগ্য ব্যালেন্স: ${fromPaisa(balances.availableBalance)} টাকা`
       });
     }
 
@@ -227,7 +248,7 @@ router.post('/payout-request', verifyToken, async (req, res) => {
 
       const balancesInTransaction = await computeBalances(req.user.id);
       if (parsedAmount > balancesInTransaction.availableBalance) {
-        const balanceError = new Error(`পর্যাপ্ত ব্যালেন্স নেই। আপনার উত্তোলনযোগ্য ব্যালেন্স: ${balancesInTransaction.availableBalance} টাকা`);
+        const balanceError = new Error(`পর্যাপ্ত ব্যালেন্স নেই। আপনার উত্তোলনযোগ্য ব্যালেন্স: ${fromPaisa(balancesInTransaction.availableBalance)} টাকা`);
         balanceError.statusCode = 400;
         throw balanceError;
       }

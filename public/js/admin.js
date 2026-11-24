@@ -116,7 +116,15 @@ function switchAdminSection(section) {
   sections.forEach((s) => {
     const capitalized = s.charAt(0).toUpperCase() + s.slice(1);
     const secEl = document.getElementById(`admin${capitalized}Section`);
-    if (secEl) secEl.style.display = section === s ? 'block' : 'none';
+    if (secEl) {
+      const isTarget = section === s;
+      secEl.style.display = isTarget ? 'block' : 'none';
+      if (isTarget) {
+        secEl.classList.remove('admin-section-enter');
+        void secEl.offsetWidth;
+        secEl.classList.add('admin-section-enter');
+      }
+    }
     const tabEl = document.getElementById(`tabBtn${capitalized}`);
     if (tabEl) tabEl.classList.toggle('active', section === s);
   });
@@ -921,8 +929,10 @@ async function loadAdminProducts() {
         </td>
         <td data-label="স্টক">${escapeAdminHtml(p.stock)}</td>
         <td data-label="করণীয়">
-          <div style="display: flex; gap: 4px; align-items: center;">
+          <div style="display: flex; gap: 4px; align-items: center; flex-wrap: wrap;">
             <button class="action-btn-sm btn-edit-product" onclick="editProductModal(${p.id})">✏️ এডিট</button>
+            <button class="action-btn-sm" style="background: #25d366; color: #fff; font-weight: 700; border: none;" onclick="openMarketingCopyModal(${p.id})">📢 কপি</button>
+            <button class="action-btn-sm" style="background: #0284c7; color: #fff; font-size: 0.75rem; border: none;" onclick="promptQuickStockPrice(${p.id}, ${p.stock}, ${p.regular_price})">⚡ স্টক/দাম</button>
             ${p.is_active ? `<button class="action-btn-sm btn-cancel" onclick="deleteProduct(${p.id})">ডিলিট</button>` : ''}
           </div>
         </td>
@@ -1049,8 +1059,7 @@ function compressImageFile(file, maxWidth = 1600, maxHeight = 1600, quality = 0.
 }
 
 // Direct Product Image File Upload Handler with Instant Preview and Client Compression
-async function handleProductImageSelect(event) {
-  const file = event.target.files && event.target.files[0];
+async function processProductImageFile(file) {
   if (!file) return;
 
   if (!file.type.startsWith('image/')) {
@@ -1062,6 +1071,7 @@ async function handleProductImageSelect(event) {
   const previewWrap = document.getElementById('prodImagePreviewWrap');
   const placeholder = document.getElementById('prodImagePlaceholder');
   const statusEl = document.getElementById('prodUploadStatus');
+  const aiBox = document.getElementById('aiImageInspectActionBox');
 
   // Instant local preview for zero-delay visual confirmation
   try {
@@ -1069,6 +1079,7 @@ async function handleProductImageSelect(event) {
     if (preview) preview.src = objectUrl;
     if (previewWrap) previewWrap.style.display = 'block';
     if (placeholder) placeholder.style.display = 'none';
+    if (aiBox) aiBox.style.display = 'block';
   } catch {
     // fallback if createObjectURL not available
   }
@@ -1083,9 +1094,10 @@ async function handleProductImageSelect(event) {
     if (!dataUrl) throw new Error('ফাইল পড়তে ব্যর্থ হয়েছে');
 
     // Update preview with compressed data URL if needed
-    if (preview && !preview.src) preview.src = dataUrl;
+    if (preview) preview.src = dataUrl;
     if (previewWrap) previewWrap.style.display = 'block';
     if (placeholder) placeholder.style.display = 'none';
+    if (aiBox) aiBox.style.display = 'block';
 
     const res = await fetch(api('/api/admin/upload-image'), {
       method: 'POST',
@@ -1104,6 +1116,7 @@ async function handleProductImageSelect(event) {
         statusEl.textContent = '✅ ছবি আপলোড সম্পন্ন!';
         statusEl.style.color = '#16a34a';
       }
+      if (aiBox) aiBox.style.display = 'block';
     } else {
       if (statusEl) {
         statusEl.textContent = '❌ আপলোড ব্যর্থ';
@@ -1121,6 +1134,11 @@ async function handleProductImageSelect(event) {
   }
 }
 
+async function handleProductImageSelect(event) {
+  const file = event.target.files && event.target.files[0];
+  if (file) await processProductImageFile(file);
+}
+
 function toggleManualUrlInput() {
   const wrap = document.getElementById('manualUrlWrapper');
   if (wrap) {
@@ -1134,21 +1152,24 @@ function toggleManualUrlInput() {
 }
 
 function handleManualUrlInput(val) {
-  const url = (val || '').trim();
-  document.getElementById('prodImageUrl').value = url;
+  const trimmed = val ? val.trim() : '';
   const preview = document.getElementById('prodImagePreview');
   const previewWrap = document.getElementById('prodImagePreviewWrap');
   const placeholder = document.getElementById('prodImagePlaceholder');
   const statusEl = document.getElementById('prodUploadStatus');
+  const aiBox = document.getElementById('aiImageInspectActionBox');
 
-  if (url) {
-    if (preview) preview.src = safeAdminImageUrl(url);
+  document.getElementById('prodImageUrl').value = trimmed;
+
+  if (trimmed) {
+    if (preview) preview.src = safeAdminImageUrl(trimmed);
     if (previewWrap) previewWrap.style.display = 'block';
     if (placeholder) placeholder.style.display = 'none';
     if (statusEl) {
-      statusEl.textContent = 'ছবির লিঙ্ক যুক্ত হয়েছে';
+      statusEl.textContent = 'সরাসরি লিঙ্ক সক্রিয়';
       statusEl.style.color = '#2563eb';
     }
+    if (aiBox) aiBox.style.display = 'block';
   } else {
     if (preview) preview.src = '';
     if (previewWrap) previewWrap.style.display = 'none';
@@ -1157,6 +1178,7 @@ function handleManualUrlInput(val) {
       statusEl.textContent = 'ছবি নির্বাচন করুন';
       statusEl.style.color = '';
     }
+    if (aiBox) aiBox.style.display = 'none';
   }
 }
 
@@ -1201,8 +1223,22 @@ function openAddProductModal() {
   document.getElementById('prodMaterials').value = 'সুপার এস বোর্ড (Super S Board)';
   document.getElementById('prodFinish').value = 'White Carrara Marble';
   document.getElementById('prodDesc').value = '';
+  const capInput = document.getElementById('prodCaption');
+  if (capInput) capInput.value = '';
   loadAdminShopOptions(1);
   updateLiveProfitCalculator();
+
+  const aiBox = document.getElementById('aiImageInspectActionBox');
+  if (aiBox) aiBox.style.display = 'none';
+  initImageDragAndDropAndPaste();
+
+  const catEl = document.getElementById('prodCategory');
+  if (catEl) catEl.onchange = checkFurnitureCutlistVisibility;
+  checkFurnitureCutlistVisibility();
+  const tbody = document.getElementById('furniturePartsTableBody');
+  if (tbody) tbody.innerHTML = '';
+  recalculateFurnitureCutlist();
+
   openModal('addProductModal');
 }
 
@@ -1263,8 +1299,25 @@ function editProductModal(id) {
   document.getElementById('prodMaterials').value = p.materials || '';
   document.getElementById('prodFinish').value = p.finish || '';
   document.getElementById('prodDesc').value = p.description || '';
+  const capEl = document.getElementById('prodCaption');
+  if (capEl) capEl.value = p.caption || '';
   loadAdminShopOptions(p.shop_id);
   updateLiveProfitCalculator();
+
+  const aiBox = document.getElementById('aiImageInspectActionBox');
+  if (aiBox) aiBox.style.display = p.image_url ? 'block' : 'none';
+  initImageDragAndDropAndPaste();
+
+  const catEl = document.getElementById('prodCategory');
+  if (catEl) catEl.onchange = checkFurnitureCutlistVisibility;
+  checkFurnitureCutlistVisibility();
+  const tbody = document.getElementById('furniturePartsTableBody');
+  if (tbody) tbody.innerHTML = '';
+  if (p.furniture_cutlist && Array.isArray(p.furniture_cutlist.parts)) {
+    p.furniture_cutlist.parts.forEach(part => addManualFurniturePartRow(part));
+  }
+  recalculateFurnitureCutlist();
+
   openModal('addProductModal');
 }
 
@@ -1289,8 +1342,16 @@ async function submitProductForm() {
     image_url: imageUrlVal || 'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?auto=format&fit=crop&w=800&q=80',
     materials: document.getElementById('prodMaterials').value.trim(),
     finish: document.getElementById('prodFinish').value.trim(),
+    caption: document.getElementById('prodCaption')?.value.trim() || '',
     description: document.getElementById('prodDesc').value.trim()
   };
+
+  const cutlistData = recalculateFurnitureCutlist();
+  if (cutlistData.parts && cutlistData.parts.length > 0) {
+    payload.furniture_cutlist = cutlistData;
+  } else {
+    payload.furniture_cutlist = null;
+  }
 
   if (!payload.title || !payload.sku || isNaN(payload.regular_price)) {
     return alert('প্রয়োজনীয় ফিল্ডগুলো পূরণ করুন');
@@ -1510,11 +1571,11 @@ async function loadAdminAnnouncements() {
       <tr>
         <td>#${a.id}</td>
         <td><strong>${escapeAdminHtml(a.title)}</strong></td>
-        <td style="max-width: 250px;">${escapeAdminHtml(a.message)}</td>
-        <td><span style="background: #38332f; padding: 2px 6px; border-radius: 4px; font-size: 0.75rem;">${escapeAdminHtml(a.type)}</span></td>
-        <td><span style="color: ${a.is_active ? '#10b981' : '#ef4444'}; font-weight: 700;">${a.is_active ? 'সক্রিয়' : 'নিষ্ক্রিয়'}</span></td>
+        <td style="max-width: 260px;">${escapeAdminHtml(a.message)}</td>
+        <td><span class="adm-pill-neutral">${escapeAdminHtml(a.type)}</span></td>
+        <td><span style="color: ${a.is_active ? '#047857' : '#dc2626'}; font-weight: 700;">${a.is_active ? 'সক্রিয়' : 'নিষ্ক্রিয়'}</span></td>
         <td>
-          <div style="display: flex; gap: 4px;">
+          <div style="display: flex; gap: 6px;">
             <button class="action-btn-sm btn-ship" onclick="editAnnouncementModal(${a.id})">এডিট</button>
             <button class="action-btn-sm btn-cancel" onclick="deleteAnnouncement(${a.id})">মুছুন</button>
           </div>
@@ -1657,12 +1718,12 @@ async function loadAdminBackupsList() {
     window._adminBackups = data.backups;
 
     container.innerHTML = firebaseNotice + data.backups.map((b) => `
-      <div style="background: #1c1917; border: 1px solid var(--sbf-border); padding: 8px 12px; border-radius: var(--radius-sm); margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center;">
+      <div class="adm-backup-item">
         <div>
-          <strong style="color: #fde68a; font-size: 0.85rem;">${escapeAdminHtml(b.filename)}</strong>
-          <div style="font-size: 0.75rem; color: var(--sbf-text-muted); margin-top: 2px;">সাইজ: ${b.sizeFormatted} • সময়: ${new Date(b.createdAt).toLocaleString('bn-BD')}</div>
+          <strong class="adm-backup-filename">${escapeAdminHtml(b.filename)}</strong>
+          <div class="adm-cell-meta">সাইজ: ${b.sizeFormatted} • সময়: ${new Date(b.createdAt).toLocaleString('bn-BD')}</div>
         </div>
-        <button onclick="downloadBackupFile(${data.backups.indexOf(b)})" class="action-btn-sm btn-ship" style="cursor: pointer; padding: 4px 10px;">⬇️ ডাউনলোড</button>
+        <button onclick="downloadBackupFile(${data.backups.indexOf(b)})" class="action-btn-sm btn-ship" style="padding: 7px 14px;">⬇️ ডাউনলোড</button>
       </div>
     `).join('');
   } catch (err) {
@@ -1691,6 +1752,637 @@ async function downloadBackupFile(index) {
     showToast('✅ ব্যাকআপ ফাইল সফলভাবে ডাউনলোড হয়েছে!');
   } catch (err) {
     showToast('ব্যাকআপ ফাইল ডাউনলোড ব্যর্থ হয়েছে। আবার চেষ্টা করুন।');
+  }
+}
+
+// ================= FURNITURE AI CUTLIST & BOARD CALCULATOR =================
+function isFurnitureCategory(cat) {
+  if (!cat) return false;
+  const s = String(cat).toLowerCase();
+  return s.includes('ফার্নিচার') || s.includes('ডেকোরেশন') || s.includes('furniture') || s.includes('decoration');
+}
+
+function checkFurnitureCutlistVisibility() {
+  const catEl = document.getElementById('prodCategory');
+  const box = document.getElementById('furnitureAiCutlistBox');
+  if (!box || !catEl) return;
+  box.style.display = isFurnitureCategory(catEl.value) ? 'block' : 'none';
+}
+
+function addManualFurniturePartRow(part = null) {
+  const tbody = document.getElementById('furniturePartsTableBody');
+  if (!tbody) return;
+
+  const row = document.createElement('tr');
+  row.style.borderBottom = '1px solid #fef3c7';
+  row.innerHTML = `
+    <td style="padding: 4px;">
+      <input type="text" class="form-control part-name" style="padding: 4px 6px; font-size: 0.78rem;" placeholder="পার্টসের নাম" value="${part ? escapeHtml(part.name) : ''}">
+    </td>
+    <td style="padding: 4px;">
+      <input type="number" class="form-control part-length" style="padding: 4px 6px; font-size: 0.78rem;" placeholder="দৈর্ঘ্য" value="${part ? part.length : ''}" step="0.1" min="1" oninput="recalculateFurnitureCutlist()">
+    </td>
+    <td style="padding: 4px;">
+      <input type="number" class="form-control part-width" style="padding: 4px 6px; font-size: 0.78rem;" placeholder="প্রস্থ" value="${part ? part.width : ''}" step="0.1" min="1" oninput="recalculateFurnitureCutlist()">
+    </td>
+    <td style="padding: 4px;">
+      <input type="number" class="form-control part-qty" style="padding: 4px 6px; font-size: 0.78rem;" placeholder="পিস" value="${part ? part.qty : 1}" min="1" oninput="recalculateFurnitureCutlist()">
+    </td>
+    <td style="padding: 4px; text-align: center;">
+      <button type="button" class="btn-text-link" style="color: #ef4444; font-size: 0.9rem; font-weight: bold;" onclick="removeManualFurniturePartRow(this)">&times;</button>
+    </td>
+  `;
+  tbody.appendChild(row);
+  recalculateFurnitureCutlist();
+}
+
+function removeManualFurniturePartRow(btn) {
+  const tr = btn.closest('tr');
+  if (tr) {
+    tr.remove();
+    recalculateFurnitureCutlist();
+  }
+}
+
+function getCollectedFurnitureParts() {
+  const rows = document.querySelectorAll('#furniturePartsTableBody tr');
+  const parts = [];
+  rows.forEach((r, idx) => {
+    const name = r.querySelector('.part-name')?.value.trim() || `পার্ট #${idx + 1}`;
+    const length = parseFloat(r.querySelector('.part-length')?.value) || 0;
+    const width = parseFloat(r.querySelector('.part-width')?.value) || 0;
+    const qty = parseInt(r.querySelector('.part-qty')?.value, 10) || 1;
+    if (length > 0 && width > 0) {
+      parts.push({ name, length, width, qty });
+    }
+  });
+  return parts;
+}
+
+function recalculateFurnitureCutlist() {
+  const parts = getCollectedFurnitureParts();
+  const boardPrice = parseFloat(document.getElementById('furnBoardPrice')?.value) || 1800;
+
+  let totalAreaSqIn = 0;
+  parts.forEach(p => {
+    totalAreaSqIn += (p.length * p.width * p.qty);
+  });
+
+  const totalAreaSqFt = (totalAreaSqIn / 144).toFixed(1);
+  const totalBoards = parts.length > 0 ? Math.max(1, Math.ceil((totalAreaSqIn * 1.12) / (48 * 96))) : 0;
+  const boardCapacity = totalBoards * 48 * 96;
+  const efficiency = totalBoards > 0 ? Math.min(100, Math.round((totalAreaSqIn / boardCapacity) * 100)) : 0;
+  const wastage = totalBoards > 0 ? (100 - efficiency) : 0;
+  const totalCost = totalBoards * boardPrice;
+
+  const boardsBadge = document.getElementById('furnTotalBoardsBadge');
+  const wastageBadge = document.getElementById('furnWastageBadge');
+  const costText = document.getElementById('furnBoardCostText');
+
+  if (boardsBadge) boardsBadge.textContent = `${totalBoards} টি`;
+  if (wastageBadge) wastageBadge.textContent = `(মোট: ${totalAreaSqFt} sq.ft, অপচয়: ${wastage}%)`;
+  if (costText) costText.textContent = `${totalCost} ৳`;
+
+  return { parts, total_boards: totalBoards, board_price: boardPrice, estimated_board_cost: totalCost, total_area_sqft: totalAreaSqFt, wastage_pct: wastage };
+}
+
+function applyFurnitureBoardCostToWholesale() {
+  const calc = recalculateFurnitureCutlist();
+  if (calc.estimated_board_cost > 0) {
+    const wholesaleInput = document.getElementById('prodWholesalePrice');
+    if (wholesaleInput) {
+      wholesaleInput.value = calc.estimated_board_cost;
+      updateLiveProfitCalculator();
+      showToast(`✅ বোর্ডের খরচ ${calc.estimated_board_cost}৳ পাইকারি মূল্যে যুক্ত হয়েছে!`);
+    }
+  } else {
+    alert('প্রথমে পার্টস যুক্ত করে বোর্ডের খরচ হিসাব করুন');
+  }
+}
+
+async function runFurnitureAiEstimate() {
+  const btn = document.getElementById('btnRunFurnitureAi');
+  const title = document.getElementById('prodTitle')?.value.trim() || 'ফার্নিচার';
+  const height = parseFloat(document.getElementById('furnDimHeight')?.value) || 72;
+  const width = parseFloat(document.getElementById('furnDimWidth')?.value) || 36;
+  const depth = parseFloat(document.getElementById('furnDimDepth')?.value) || 18;
+  const boardPrice = parseFloat(document.getElementById('furnBoardPrice')?.value) || 1800;
+
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '⏳ হিসাব হচ্ছে...';
+  }
+
+  try {
+    const res = await fetch(api('/api/admin/furniture/estimate'), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`
+      },
+      body: JSON.stringify({
+        furniture_type: title,
+        height,
+        width,
+        depth,
+        board_price: boardPrice
+      })
+    });
+
+    const data = await res.json();
+    if (data.success && Array.isArray(data.parts)) {
+      const tbody = document.getElementById('furniturePartsTableBody');
+      if (tbody) tbody.innerHTML = '';
+      data.parts.forEach(part => addManualFurniturePartRow(part));
+      recalculateFurnitureCutlist();
+
+      const providerBadge = document.getElementById('furnAiProviderBadge');
+      if (providerBadge) {
+        providerBadge.style.display = 'block';
+        providerBadge.textContent = `মডেল: ${data.provider_used || 'AI'}`;
+      }
+      showToast(`🤖 AI সফলভাবে ${data.parts.length}টি পার্টস ও ${data.total_boards}টি বোর্ডের হিসাব প্রস্তুত করেছে!`);
+    } else {
+      alert(data.message || 'হিসাব করতে সমস্যা হয়েছে');
+    }
+  } catch (err) {
+    console.error('AI estimate error:', err);
+    alert('এআই সার্ভারে সংযোগ পাওয়া যায়নি।');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '⚡ AI দিয়ে কাট-লিস্ট হিসাব করুন';
+    }
+  }
+}
+
+// ================= AI VISION PRODUCT AUTOLISTING & DRAG-AND-DROP =================
+let dragDropInitialized = false;
+
+function initImageDragAndDropAndPaste() {
+  if (dragDropInitialized) return;
+  dragDropInitialized = true;
+
+  const dropzone = document.getElementById('prodUploadDropzone');
+  if (dropzone) {
+    ['dragenter', 'dragover'].forEach(eventName => {
+      dropzone.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropzone.style.borderColor = '#7c3aed';
+        dropzone.style.background = '#f5f3ff';
+      }, false);
+    });
+
+    ['dragleave', 'drop'].forEach(eventName => {
+      dropzone.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropzone.style.borderColor = '';
+        dropzone.style.background = '';
+      }, false);
+    });
+
+    dropzone.addEventListener('drop', (e) => {
+      const dt = e.dataTransfer;
+      const file = dt && dt.files && dt.files[0];
+      if (file && file.type.startsWith('image/')) {
+        processProductImageFile(file);
+      }
+    });
+  }
+
+  // Global paste handler when modal is active
+  window.addEventListener('paste', (e) => {
+    const modal = document.getElementById('addProductModal');
+    if (!modal || modal.style.display === 'none') return;
+    const items = (e.clipboardData || e.originalEvent?.clipboardData)?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type && items[i].type.indexOf('image') !== -1) {
+        const file = items[i].getAsFile();
+        if (file) {
+          e.preventDefault();
+          processProductImageFile(file);
+          showToast('📋 ক্লিপবোর্ড থেকে ছবি পেস্ট করা হয়েছে!');
+          break;
+        }
+      }
+    }
+  });
+}
+
+async function runAiProductImageInspection() {
+  const btn = document.getElementById('btnAiInspectImage');
+  const statusText = document.getElementById('aiVisionStatusText');
+  const imageUrl = document.getElementById('prodImageUrl')?.value?.trim();
+  const preview = document.getElementById('prodImagePreview');
+  const boardPrice = parseFloat(document.getElementById('furnBoardPrice')?.value) || 1800;
+
+  let imagePayload = null;
+  if (imageUrl) {
+    imagePayload = { image_url: imageUrl, board_price: boardPrice };
+  } else if (preview && preview.src && preview.src.startsWith('data:image')) {
+    imagePayload = { image: preview.src, board_price: boardPrice };
+  } else {
+    return alert('অনুগ্রহ করে প্রথমে একটি ছবি আপলোড করুন');
+  }
+
+  if (btn) btn.disabled = true;
+  if (statusText) {
+    statusText.style.display = 'block';
+    statusText.innerHTML = '🔍 AI যেকোনো পণ্যের ছবি (গ্যাজেট বা ফার্নিচার) বিশ্লেষণ করছে...';
+  }
+
+  try {
+    const res = await fetch(api('/api/admin/ai/inspect-image'), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`
+      },
+      body: JSON.stringify(imagePayload)
+    });
+
+    const data = await res.json();
+    if (!data.success || !data.analysis) {
+      throw new Error(data.message || 'বিশ্লেষণ ব্যর্থ হয়েছে');
+    }
+
+    const a = data.analysis;
+
+    // 1. Populate basic product details & captions
+    if (a.title) document.getElementById('prodTitle').value = a.title;
+    if (a.materials) document.getElementById('prodMaterials').value = a.materials;
+    if (a.finish) document.getElementById('prodFinish').value = a.finish;
+    if (a.description) document.getElementById('prodDesc').value = a.description;
+    const capEl = document.getElementById('prodCaption');
+    if (capEl && a.caption) capEl.value = a.caption;
+
+    // 2. Select category & brand
+    if (a.category) {
+      const catSelect = document.getElementById('prodCategory');
+      if (catSelect) {
+        let matched = false;
+        for (let i = 0; i < catSelect.options.length; i++) {
+          if (catSelect.options[i].value === a.category || catSelect.options[i].text.includes(a.category)) {
+            catSelect.selectedIndex = i;
+            matched = true;
+            break;
+          }
+        }
+        if (!matched) {
+          catSelect.value = a.is_furniture ? 'হোম ও অফিস ফার্নিচার' : 'ওয়্যারলেস অডিও ও গ্যাজেটস';
+        }
+      }
+    }
+
+    const brandSelect = document.getElementById('prodBrand');
+    if (brandSelect) {
+      brandSelect.value = a.is_furniture ? 'SB Furniture' : 'SB POWER';
+    }
+
+    // 3. Auto-populate suggested pricing if currently default or empty
+    if (a.suggested_retail_price) {
+      const pInput = document.getElementById('prodPrice');
+      if (pInput && (!pInput.value || pInput.value === '600' || pInput.value === '0')) {
+        pInput.value = a.suggested_retail_price;
+      }
+    }
+    if (a.suggested_wholesale_price) {
+      const wpInput = document.getElementById('prodWholesalePrice');
+      if (wpInput && (!wpInput.value || wpInput.value === '400' || wpInput.value === '0')) {
+        wpInput.value = a.suggested_wholesale_price;
+      }
+    }
+    if (a.suggested_commission) {
+      const cInput = document.getElementById('prodCommission');
+      if (cInput && (!cInput.value || cInput.value === '100' || cInput.value === '0')) {
+        cInput.value = a.suggested_commission;
+      }
+      const commTab = document.getElementById('prodCommTab');
+      if (commTab) {
+        if (a.suggested_commission >= 1000) commTab.value = '1000tk';
+        else if (a.suggested_commission >= 500) commTab.value = '500tk';
+        else if (a.suggested_commission >= 100) commTab.value = '100tk';
+        else commTab.value = '50tk';
+      }
+    }
+    updateLiveProfitCalculator();
+
+    // 4. Toggle furniture cutlist visibility
+    const isFurn = (typeof a.is_furniture === 'boolean') ? a.is_furniture : isFurnitureCategory(document.getElementById('prodCategory')?.value);
+
+    // 5. If furniture, populate dimensions & cutlist
+    if (isFurn) {
+      const cutlistBox = document.getElementById('furnitureAiCutlistBox');
+      if (cutlistBox) cutlistBox.style.display = 'block';
+      if (a.estimated_dimensions) {
+        if (a.estimated_dimensions.height) document.getElementById('furnDimHeight').value = a.estimated_dimensions.height;
+        if (a.estimated_dimensions.width) document.getElementById('furnDimWidth').value = a.estimated_dimensions.width;
+        if (a.estimated_dimensions.depth) document.getElementById('furnDimDepth').value = a.estimated_dimensions.depth;
+      }
+
+      const tbody = document.getElementById('furniturePartsTableBody');
+      if (tbody) tbody.innerHTML = '';
+
+      if (a.cutlist && Array.isArray(a.cutlist.parts) && a.cutlist.parts.length > 0) {
+        a.cutlist.parts.forEach(p => addManualFurniturePartRow(p));
+      }
+
+      recalculateFurnitureCutlist();
+
+      const providerBadge = document.getElementById('furnAiProviderBadge');
+      if (providerBadge) {
+        providerBadge.style.display = 'block';
+        providerBadge.textContent = `ভিশন মডেল: ${a.provider_used || 'AI Vision'}`;
+      }
+    } else {
+      const cutlistBox = document.getElementById('furnitureAiCutlistBox');
+      if (cutlistBox) cutlistBox.style.display = 'none';
+    }
+
+    // 6. Generate a default SKU if empty
+    const skuEl = document.getElementById('prodSku');
+    if (!skuEl.value.trim()) {
+      const prefix = a.is_furniture ? 'FURN' : 'GADGET';
+      skuEl.value = `${prefix}-${Date.now().toString().slice(-6)}`;
+    }
+
+    showToast('✨ AI সফলভাবে পণ্যের বিবরণ, ক্যাপশন, ক্যাটাগরি ও মূল্য নির্ধারণ করেছে!');
+  } catch (err) {
+    console.error('Vision inspection error:', err);
+    alert('ছবি বিশ্লেষণে সমস্যা হয়েছে: ' + (err.message || 'ইন্টারনেট বা সার্ভার চেক করুন'));
+  } finally {
+    if (btn) btn.disabled = false;
+    if (statusText) statusText.style.display = 'none';
+  }
+}
+
+// ================= AI TEXT / KEYWORD COPY GENERATOR =================
+async function runAiCopyFromTitleOrKeywords() {
+  const titleInput = document.getElementById('prodTitle');
+  const keywords = titleInput ? titleInput.value.trim() : '';
+  if (!keywords) {
+    return alert('অনুগ্রহ করে পণ্যের নাম বা কিছু কীওয়ার্ড টাইপ করুন (যেমন: T900 Ultra 2 Smartwatch অথবা ৩ দরজার মেলামাইন আলমারি)');
+  }
+
+  const btn = document.getElementById('btnAiGenCopy');
+  const statusText = document.getElementById('aiTextGenStatus');
+  const catVal = document.getElementById('prodCategory')?.value || '';
+  const boardPrice = parseFloat(document.getElementById('furnBoardPrice')?.value) || 1800;
+
+  if (btn) btn.disabled = true;
+  if (statusText) {
+    statusText.style.display = 'block';
+    statusText.innerHTML = '⏳ AI টাইটেল বিশ্লেষণ করে বাংলা বিবরণ, ক্যাপশন ও মূল্য প্রস্তুত করছে...';
+  }
+
+  try {
+    const res = await fetch(api('/api/admin/ai/generate-copy'), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`
+      },
+      body: JSON.stringify({ keywords, category: catVal, board_price: boardPrice })
+    });
+
+    const data = await res.json();
+    if (!data.success || !data.analysis) {
+      throw new Error(data.message || 'বিবরণ তৈরিতে ব্যর্থ হয়েছে');
+    }
+
+    const a = data.analysis;
+
+    if (a.title) titleInput.value = a.title;
+    if (a.caption && document.getElementById('prodCaption')) document.getElementById('prodCaption').value = a.caption;
+    if (a.description && document.getElementById('prodDesc')) document.getElementById('prodDesc').value = a.description;
+    if (a.materials && document.getElementById('prodMaterials')) document.getElementById('prodMaterials').value = a.materials;
+    if (a.finish && document.getElementById('prodFinish')) document.getElementById('prodFinish').value = a.finish;
+
+    if (a.category) {
+      const catSelect = document.getElementById('prodCategory');
+      if (catSelect) {
+        let matched = false;
+        for (let i = 0; i < catSelect.options.length; i++) {
+          if (catSelect.options[i].value === a.category || catSelect.options[i].text.includes(a.category)) {
+            catSelect.selectedIndex = i;
+            matched = true;
+            break;
+          }
+        }
+        if (!matched) {
+          catSelect.value = a.is_furniture ? 'হোম ও অফিস ফার্নিচার' : 'ওয়্যারলেস অডিও ও গ্যাজেটস';
+        }
+      }
+    }
+
+    const brandSelect = document.getElementById('prodBrand');
+    if (brandSelect) {
+      brandSelect.value = a.is_furniture ? 'SB Furniture' : 'SB POWER';
+    }
+
+    if (a.suggested_retail_price) document.getElementById('prodPrice').value = a.suggested_retail_price;
+    if (a.suggested_wholesale_price) document.getElementById('prodWholesalePrice').value = a.suggested_wholesale_price;
+    if (a.suggested_commission) {
+      document.getElementById('prodCommission').value = a.suggested_commission;
+      const commTab = document.getElementById('prodCommTab');
+      if (commTab) {
+        if (a.suggested_commission >= 1000) commTab.value = '1000tk';
+        else if (a.suggested_commission >= 500) commTab.value = '500tk';
+        else if (a.suggested_commission >= 100) commTab.value = '100tk';
+        else commTab.value = '50tk';
+      }
+    }
+
+    updateLiveProfitCalculator();
+    const isFurnText = (typeof a.is_furniture === 'boolean') ? a.is_furniture : isFurnitureCategory(document.getElementById('prodCategory')?.value);
+
+    if (isFurnText) {
+      const cutlistBox = document.getElementById('furnitureAiCutlistBox');
+      if (cutlistBox) cutlistBox.style.display = 'block';
+      if (a.estimated_dimensions) {
+        if (a.estimated_dimensions.height) document.getElementById('furnDimHeight').value = a.estimated_dimensions.height;
+        if (a.estimated_dimensions.width) document.getElementById('furnDimWidth').value = a.estimated_dimensions.width;
+        if (a.estimated_dimensions.depth) document.getElementById('furnDimDepth').value = a.estimated_dimensions.depth;
+      }
+      const tbody = document.getElementById('furniturePartsTableBody');
+      if (tbody) tbody.innerHTML = '';
+      if (a.cutlist && Array.isArray(a.cutlist.parts) && a.cutlist.parts.length > 0) {
+        a.cutlist.parts.forEach(p => addManualFurniturePartRow(p));
+      }
+      recalculateFurnitureCutlist();
+    } else {
+      const cutlistBox = document.getElementById('furnitureAiCutlistBox');
+      if (cutlistBox) cutlistBox.style.display = 'none';
+    }
+
+    const skuEl = document.getElementById('prodSku');
+    if (!skuEl.value.trim()) {
+      const prefix = a.is_furniture ? 'FURN' : 'GADGET';
+      skuEl.value = `${prefix}-${Date.now().toString().slice(-6)}`;
+    }
+
+    showToast('✨ AI বিবরণ, সোশ্যাল ক্যাপশন ও মূল্য সফলভাবে পূরণ করেছে!');
+  } catch (err) {
+    alert('AI কপি জেনারেশনে ত্রুটি: ' + (err.message || 'ইন্টারনেট বা সার্ভার চেক করুন'));
+  } finally {
+    if (btn) btn.disabled = false;
+    if (statusText) statusText.style.display = 'none';
+  }
+}
+
+function copyFieldValue(fieldId, successMsg = 'কপি হয়েছে!') {
+  const el = document.getElementById(fieldId);
+  if (!el || !el.value) return;
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(el.value).then(() => showToast(`📋 ${successMsg}`));
+  } else {
+    el.select();
+    document.execCommand('copy');
+    showToast(`📋 ${successMsg}`);
+  }
+}
+
+// ================= BUSINESS GROWTH ACCELERATORS =================
+let currentMarketingData = null;
+let currentMarketingTab = 'fb';
+
+function fallbackMarketingCopy(p) {
+  const isFurniture = p.brand === 'SB Furniture' || (p.category && p.category.includes('ফার্নিচার'));
+  const contactPhone = isFurniture ? '01929621855' : '01634664224';
+  const siteUrl = window.location.origin;
+  const link = `${siteUrl}/?sku=${encodeURIComponent(p.sku)}`;
+
+  let fb = `🔥 ${p.title}\n`;
+  fb += `━━━━━━━━━━━━━━━━━━━━━\n`;
+  fb += `💵 বিক্রয় মূল্য: ${p.regular_price} ৳\n`;
+  if (p.reseller_commission > 0) fb += `💰 রিসেলার কমিশন: ${p.reseller_commission} ৳\n`;
+  if (p.materials) fb += `🪵 উপাদান: ${p.materials}\n`;
+  if (p.finish) fb += `🎨 কালার/ফিনিশ: ${p.finish}\n`;
+  fb += `📦 বর্তমান স্টক: ${p.stock} টি এভেইলেবল\n`;
+  fb += `━━━━━━━━━━━━━━━━━━━━━\n`;
+  if (p.caption) fb += `✨ ${p.caption}\n\n`;
+  if (p.description) fb += `📌 বিস্তারিত বিবরণ:\n${p.description}\n\n`;
+  fb += `✅ ১০০% কোয়ালিটি ও নিরাপদ ক্যাশ অন ডেলিভারি নিশ্চয়তা\n`;
+  fb += `🌐 সরাসরি অর্ডার করুন: ${link}\n`;
+  fb += `📞 ইনবক্স বা WhatsApp: ${contactPhone}`;
+
+  let tiktok = `🎬 [শর্ট ভিডিও স্ক্রিপ্ট — ১৫ থেকে ৩০ সেকেন্ড]\n\n[ভিজ্যুয়াল হুক]: ${p.title} এর সেরা লুক দেখান!\n[ভয়েসওভার]: "খুঁজছেন সেরা কোয়ালিটির প্রোডাক্ট? মাত্র ${p.regular_price} টাকায় পেয়ে যাচ্ছেন ক্যাশ অন ডেলিভারিতে!"\n[কল-টু-অ্যাকশন]: এখনই বায়ো লিংকে যান বা ইনবক্স করুন।`;
+
+  let reseller = `💼 [রিসেলার প্রমোশন টিপস]\n\nপণ্য: ${p.title}\nকমিশন: প্রতি পিসে ${p.reseller_commission || 100} ৳ লাভ!\nআপনার ফেসবুক গ্রুপ ও মার্কেটপ্লেসে এখনই শেয়ার করুন এবং অর্ডার আসলে সরাসরি বুক করুন।`;
+
+  return {
+    facebook_whatsapp: fb,
+    tiktok_reels: tiktok,
+    reseller_pitch: reseller
+  };
+}
+
+async function openMarketingCopyModal(productId) {
+  const p = adminProductsList.find(item => item.id === productId);
+  if (!p) return;
+
+  openModal('marketingCopyModal');
+  const textarea = document.getElementById('marketingCopyTextarea');
+  if (textarea) textarea.value = '⏳ AI থেকে মাল্টি-চ্যানেল মার্কেটিং কপি প্রস্তুত করা হচ্ছে...';
+
+  try {
+    const res = await fetch(api('/api/admin/ai/marketing-copy'), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`
+      },
+      body: JSON.stringify({ productId: p.id, product: p })
+    });
+    const data = await res.json();
+    if (data.success && data.copy) {
+      currentMarketingData = data.copy;
+    } else {
+      currentMarketingData = fallbackMarketingCopy(p);
+    }
+  } catch (e) {
+    currentMarketingData = fallbackMarketingCopy(p);
+  }
+
+  setMarketingTab(currentMarketingTab || 'fb');
+}
+
+function setMarketingTab(tab) {
+  currentMarketingTab = tab;
+  const textarea = document.getElementById('marketingCopyTextarea');
+  if (!textarea || !currentMarketingData) return;
+
+  document.querySelectorAll('.mkt-tab-btn').forEach(btn => {
+    const active = btn.dataset.tab === tab;
+    btn.style.background = active ? '#7c3aed' : '#f1f5f9';
+    btn.style.color = active ? '#fff' : '#475569';
+  });
+
+  if (tab === 'fb') {
+    textarea.value = currentMarketingData.facebook_whatsapp || '';
+  } else if (tab === 'tiktok') {
+    textarea.value = currentMarketingData.tiktok_reels || '';
+  } else if (tab === 'reseller') {
+    textarea.value = currentMarketingData.reseller_pitch || '';
+  }
+}
+
+async function copyMarketingText() {
+  const textarea = document.getElementById('marketingCopyTextarea');
+  if (!textarea || !textarea.value) return;
+
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(textarea.value);
+    } else {
+      textarea.select();
+      document.execCommand('copy');
+    }
+    showToast('📋 বিজ্ঞাপন কপি সফলভাবে ক্লিপবোর্ডে কপি হয়েছে!');
+  } catch (e) {
+    textarea.select();
+    document.execCommand('copy');
+    showToast('📋 টেক্সট কপি হয়েছে!');
+  }
+}
+
+async function promptQuickStockPrice(productId, currentStock, currentPrice) {
+  const newStockStr = prompt(`স্টক সংখ্যা আপডেট করুন (বর্তমান: ${currentStock} টি):`, currentStock);
+  if (newStockStr === null) return;
+  const newStock = parseInt(newStockStr, 10);
+  if (isNaN(newStock) || newStock < 0) {
+    return alert('সঠিক স্টক সংখ্যা দিন');
+  }
+
+  const newPriceStr = prompt(`বিক্রয় মূল্য আপডেট করুন (বর্তমান: ${currentPrice} ৳):`, currentPrice);
+  if (newPriceStr === null) return;
+  const newPrice = parseFloat(newPriceStr);
+  if (isNaN(newPrice) || newPrice < 1) {
+    return alert('সঠিক বিক্রয় মূল্য দিন');
+  }
+
+  try {
+    const res = await fetch(api(`/api/admin/products/${productId}/quick-update`), {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`
+      },
+      body: JSON.stringify({ stock: newStock, regular_price: newPrice })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast('✅ স্টক ও মূল্য সফলভাবে আপডেট হয়েছে!');
+      loadAdminProducts();
+    } else {
+      alert(data.message || 'আপডেট ব্যর্থ হয়েছে');
+    }
+  } catch (err) {
+    alert('সার্ভারে যোগাযোগ করতে ব্যর্থ হয়েছে');
   }
 }
 
@@ -1725,5 +2417,21 @@ window.instantReleaseCommissionAndRefreshModal = instantReleaseCommissionAndRefr
 window.openModal = openModal;
 window.closeModal = closeModal;
 window.handleProductImageSelect = handleProductImageSelect;
+window.processProductImageFile = processProductImageFile;
 window.toggleManualUrlInput = toggleManualUrlInput;
 window.handleManualUrlInput = handleManualUrlInput;
+window.isFurnitureCategory = isFurnitureCategory;
+window.checkFurnitureCutlistVisibility = checkFurnitureCutlistVisibility;
+window.addManualFurniturePartRow = addManualFurniturePartRow;
+window.removeManualFurniturePartRow = removeManualFurniturePartRow;
+window.recalculateFurnitureCutlist = recalculateFurnitureCutlist;
+window.applyFurnitureBoardCostToWholesale = applyFurnitureBoardCostToWholesale;
+window.runFurnitureAiEstimate = runFurnitureAiEstimate;
+window.runAiProductImageInspection = runAiProductImageInspection;
+window.runAiCopyFromTitleOrKeywords = runAiCopyFromTitleOrKeywords;
+window.copyFieldValue = copyFieldValue;
+window.setMarketingTab = setMarketingTab;
+window.openMarketingCopyModal = openMarketingCopyModal;
+window.copyMarketingText = copyMarketingText;
+window.promptQuickStockPrice = promptQuickStockPrice;
+window.initImageDragAndDropAndPaste = initImageDragAndDropAndPaste;

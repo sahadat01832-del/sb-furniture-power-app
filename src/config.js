@@ -6,7 +6,9 @@ const isProduction = NODE_ENV === 'production';
 const configuredJwtSecret = process.env.JWT_SECRET && process.env.JWT_SECRET.trim();
 const configuredAdminPhone = process.env.ADMIN_PHONE && process.env.ADMIN_PHONE.trim();
 const configuredAdminPassword = process.env.ADMIN_PASSWORD && process.env.ADMIN_PASSWORD.trim();
-const rawCorsOrigins = (process.env.CORS_ORIGINS || '')
+const configuredPort = Number(process.env.PORT || 3000);
+const rawCorsOrigins = [process.env.CORS_ORIGIN || '', process.env.CORS_ORIGINS || '']
+  .join(',')
   .split(',')
   .map((origin) => origin.trim().replace(/\/$/, ''))
   .filter(Boolean);
@@ -14,13 +16,18 @@ const invalidCorsOrigin = rawCorsOrigins.find((origin) => {
   if (origin === 'capacitor://localhost') return false;
   try {
     const parsed = new URL(origin);
-    const allowedProtocol = parsed.protocol === 'https:' || (!isProduction && parsed.protocol === 'http:');
+    const isLocalOrigin = ['localhost', '127.0.0.1', '::1'].includes(parsed.hostname);
+    const allowedProtocol = parsed.protocol === 'https:' || (isLocalOrigin && parsed.protocol === 'http:');
     return !allowedProtocol || parsed.username !== '' || parsed.password !== '' ||
       parsed.pathname !== '/' || parsed.search !== '' || parsed.hash !== '' || parsed.origin !== origin;
   } catch (error) {
     return true;
   }
 });
+
+if (!Number.isInteger(configuredPort) || configuredPort < 1 || configuredPort > 65535) {
+  throw new Error('PORT must be an integer between 1 and 65535.');
+}
 
 if (!configuredJwtSecret || configuredJwtSecret.length < 32) {
   throw new Error('Set JWT_SECRET to a random value with at least 32 characters.');
@@ -31,11 +38,11 @@ if (isProduction) {
     throw new Error('Production requires ADMIN_PHONE and a unique ADMIN_PASSWORD with at least 12 characters.');
   }
   if (rawCorsOrigins.length === 0) {
-    throw new Error('Production requires an explicit CORS_ORIGINS allowlist.');
+    throw new Error('Production requires CORS_ORIGIN or CORS_ORIGINS with an explicit site origin.');
   }
 }
 if (invalidCorsOrigin) {
-  throw new Error('CORS_ORIGINS must contain only exact HTTPS site origins (and capacitor://localhost for native apps).');
+  throw new Error('CORS_ORIGIN(S) must contain exact HTTPS site origins, localhost development origins, or capacitor://localhost.');
 }
 
 const corsOrigins = new Set(rawCorsOrigins);
@@ -50,7 +57,7 @@ if (!isProduction) {
 }
 
 module.exports = {
-  PORT: process.env.PORT || 3000,
+  PORT: configuredPort,
   NODE_ENV,
   JWT_SECRET: configuredJwtSecret,
   CORS_ORIGINS: [...corsOrigins],

@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const http = require('node:http');
 const crypto = require('node:crypto');
 const app = require('../src/server');
-const { initDb, run, get } = require('../src/db');
+const { initDb, run, get, closeDb } = require('../src/db');
 const { hashPassword } = require('../src/auth');
 
 let server;
@@ -116,6 +116,7 @@ after(async () => {
   if (server) {
     await new Promise((resolve) => server.close(resolve));
   }
+  await closeDb();
 });
 
 test('Admin Users 1: Authentication & Authorization controls', async () => {

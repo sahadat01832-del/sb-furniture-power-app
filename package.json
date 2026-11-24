@@ -3,22 +3,32 @@
   "version": "1.0.0",
   "description": "SB Furniture & Power App - E-commerce, Reseller Tabs, Referral Program & Cloud Catalog",
   "main": "src/server.js",
+  "engines": {
+    "node": ">=24.15.0"
+  },
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "seed": "node src/seed.js",
+    "seed:demo": "node src/seed.js --demo",
     "backup": "node src/backup.js",
-    "test": "node --test --test-concurrency=1 tests/api.test.js tests/features.test.js tests/adminUsers.test.js tests/apkPwa.test.js",
+    "test": "node --test --test-concurrency=1 tests/api.test.js tests/features.test.js tests/marketplaceBusiness.test.js tests/adminUsers.test.js tests/apkPwa.test.js tests/firebaseBackup.test.js tests/firebaseConnection.test.js tests/apiResolver.test.js tests/configureFirebaseClient.test.js tests/resellerPermissions.test.js tests/furnitureAiCutlist.test.js tests/aiVisionAutolist.test.js",
+    "restore:firebase": "node scripts/restore-firebase-backup.js",
+    "firebase:make-backup-key": "node scripts/generate-firebase-backup-key.js",
+    "phone:set-api": "node scripts/set-phone-api-url.js",
+    "phone:publish-api": "node scripts/publish-phone-api-url.js",
+    "phone:configure-client": "node scripts/configure-firebase-client.js",
+    "phone:package": "node scripts/package-phone-server.js",
     "build:apks": "node scripts/run-apk-build.js all",
     "build:apk:client": "node scripts/run-apk-build.js client",
     "build:apk:admin": "node scripts/run-apk-build.js admin",
     "daemon:start": "mkdir -p logs && nohup node src/server.js > logs/out.log 2> logs/err.log & echo $! > logs/app.pid",
     "daemon:stop": "kill $(cat logs/app.pid 2>/dev/null) 2>/dev/null || true",
     "daemon:status": "ps aux | grep 'node src/server.js' | grep -v grep || echo 'Daemon not running'",
-    "pm2:start": "pm2 start ecosystem.config.js",
-    "pm2:stop": "pm2 stop sb-power-app",
-    "pm2:restart": "pm2 restart sb-power-app",
-    "pm2:logs": "pm2 logs sb-power-app",
+    "pm2:start": "pm2 startOrRestart ecosystem.config.js --update-env && pm2 save",
+    "pm2:stop": "pm2 stop all",
+    "pm2:restart": "pm2 restart all --update-env",
+    "pm2:logs": "pm2 logs --lines 100",
     "pm2:status": "pm2 status"
   },
   "keywords": [
@@ -40,10 +50,17 @@
     "dotenv": "17.4.2",
     "express": "5.3.0",
     "express-rate-limit": "8.7.5",
+    "firebase-admin": "14.5.1",
     "helmet": "8.3.0",
     "jsonwebtoken": "9.0.3",
     "pm2": "7.1.2",
     "sqlite3": "5.1.7"
+  },
+  "overrides": {
+    "sqlite3": {
+      "node-gyp": "^13.1.0",
+      "tar": "^7.5.23"
+    }
   },
   "devDependencies": {
     "@capacitor/android": "8.6.2",

@@ -158,15 +158,20 @@ function addToCartFromModal(productId) {
 
 function saveCart() {
   localStorage.setItem('sb_cart', JSON.stringify(cart));
-  updateCartBadges();
+  updateCartBadges(true);
 }
 
-function updateCartBadges() {
+function updateCartBadges(animate = false) {
   const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
-  const b1 = document.getElementById('cartBadge');
-  const b2 = document.getElementById('floatCartBadge');
-  if (b1) b1.textContent = totalItems;
-  if (b2) b2.textContent = totalItems;
+  [document.getElementById('cartBadge'), document.getElementById('floatCartBadge')].forEach((badgeEl) => {
+    if (!badgeEl) return;
+    badgeEl.textContent = totalItems;
+    if (animate) {
+      badgeEl.classList.remove('is-badge-pop');
+      void badgeEl.offsetWidth;
+      badgeEl.classList.add('is-badge-pop');
+    }
+  });
 }
 
 function openCartModal() {
@@ -198,21 +203,21 @@ function renderCartModal() {
   }
 
   container.innerHTML = cart.map((item, index) => `
-    <div style="display: flex; align-items: center; justify-content: space-between; background: #292524; padding: 10px; border-radius: var(--radius-sm); margin-bottom: 8px;">
-      <div style="flex: 1; margin-right: 10px;">
-        <div style="font-size: 0.88rem; font-weight: 600; color: #fff;">${escapeAppHtml(item.product.title)}</div>
-        <div style="font-size: 0.75rem; color: var(--sbf-text-muted);">
+    <div class="cart-item-card">
+      <div style="flex: 1; min-width: 0;">
+        <div class="cart-item-title">${escapeAppHtml(item.product.title)}</div>
+        <div class="cart-item-sku">
           SKU: ${escapeAppHtml(item.product.sku)} ${item.selected_color ? `• কালার: ${escapeAppHtml(item.selected_color)}` : ''}
         </div>
-        <div style="font-size: 0.85rem; color: var(--sbp-yellow); font-weight: 700;">
+        <div class="cart-item-price">
           ${escapeAppHtml(item.product.regular_price)} ৳ × ${escapeAppHtml(item.quantity)} = ${escapeAppHtml(item.product.regular_price * item.quantity)} ৳
         </div>
       </div>
-      <div style="display: flex; align-items: center; gap: 6px;">
-        <button class="btn-nav" style="padding: 4px 8px;" onclick="changeCartQty(${index}, -1)">-</button>
-        <span style="font-weight: 700; min-width: 20px; text-align: center;">${item.quantity}</span>
-        <button class="btn-nav" style="padding: 4px 8px;" onclick="changeCartQty(${index}, 1)">+</button>
-        <button class="btn-nav" style="padding: 4px 8px; color: var(--sbp-red);" onclick="removeCartItem(${index})">🗑️</button>
+      <div class="cart-qty-controls">
+        <button type="button" class="btn-nav" style="min-height: 36px; padding: 4px 10px;" onclick="changeCartQty(${index}, -1)" aria-label="পরিমাণ কমান">-</button>
+        <span class="cart-qty-val">${item.quantity}</span>
+        <button type="button" class="btn-nav" style="min-height: 36px; padding: 4px 10px;" onclick="changeCartQty(${index}, 1)" aria-label="পরিমাণ বাড়ান">+</button>
+        <button type="button" class="btn-nav" style="min-height: 36px; padding: 4px 9px; color: var(--brand-danger);" onclick="removeCartItem(${index})" aria-label="মুছে ফেলুন">🗑️</button>
       </div>
     </div>
   `).join('');
@@ -786,11 +791,14 @@ async function loadCustomerOrderHistory() {
     }
     window._lastTrackOrders = data.orders;
     resultDiv.innerHTML = `
-      <div style="font-size: 0.88rem; color: #fff; margin-bottom: 8px;">আপনার মোট ${data.orders.length}টি অর্ডার পাওয়া গেছে:</div>
+      <div style="font-size: 0.88rem; color: var(--text-primary); font-weight: 600; margin-bottom: 8px;">আপনার মোট ${data.orders.length}টি অর্ডার পাওয়া গেছে:</div>
       ${data.orders.map((o) => `
-        <div style="background: #292524; padding: 10px; border-radius: var(--radius-sm); border: 1px solid var(--sbf-border); margin-bottom: 8px; cursor: pointer;" onclick="renderSingleOrderTrackingFromData(${o.id})">
-          <div style="display: flex; justify-content: space-between;"><strong>#${escapeAppHtml(o.order_number)}</strong><span style="color: ${getStatusBadgeBg(o.status)}; font-weight: 700; font-size: 0.8rem;">${escapeAppHtml(getStatusInBangla(o.status))}</span></div>
-          <div style="font-size: 0.78rem; color: var(--sbf-text-muted); margin-top: 4px;">মোট: ${escapeAppHtml(o.total_amount)}৳ • তারিখ: ${new Date(o.created_at).toLocaleDateString('bn-BD')}</div>
+        <div class="track-order-list-item" onclick="renderSingleOrderTrackingFromData(${o.id})">
+          <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+            <strong>#${escapeAppHtml(o.order_number)}</strong>
+            <span style="color: ${getStatusBadgeBg(o.status)}; font-weight: 700; font-size: 0.8rem;">${escapeAppHtml(getStatusInBangla(o.status))}</span>
+          </div>
+          <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 4px;">মোট: ${escapeAppHtml(o.total_amount)}৳ • তারিখ: ${new Date(o.created_at).toLocaleDateString('bn-BD')}</div>
         </div>
       `).join('')}
     `;
@@ -850,26 +858,26 @@ function renderSingleOrderTrackingFromData(orderId) {
 
 function renderSingleOrderTracking(o, container) {
   container.innerHTML = `
-    <div style="background: #292524; padding: 14px; border-radius: var(--radius-sm); border: 1px solid var(--sbf-border);">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-        <h4 style="color: #fff;">অর্ডার #${escapeAppHtml(o.order_number)}</h4>
-        <span style="background: ${getStatusBadgeBg(o.status)}; color: #fff; padding: 3px 10px; border-radius: 20px; font-size: 0.78rem; font-weight: 700;">
+    <div class="track-order-card">
+      <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px;">
+        <h4 style="color: var(--text-primary); margin: 0;">অর্ডার #${escapeAppHtml(o.order_number)}</h4>
+        <span style="background: ${getStatusBadgeBg(o.status)}; color: #fff; padding: 3px 10px; border-radius: 999px; font-size: 0.76rem; font-weight: 700;">
           ${escapeAppHtml(getStatusInBangla(o.status))}
         </span>
       </div>
-      <div style="font-size: 0.85rem; line-height: 1.6; color: #d6d3d1;">
+      <div style="font-size: 0.86rem; line-height: 1.65; color: var(--text-secondary);">
         <div><strong>গ্রাহকের নাম:</strong> ${escapeAppHtml(o.customer_name)}</div>
         <div><strong>মোবাইল:</strong> ${escapeAppHtml(o.customer_phone)}</div>
         <div><strong>ঠিকানা:</strong> ${escapeAppHtml(o.delivery_address)} (${o.delivery_city === 'inside_dhaka' ? 'ঢাকা ভেতরে' : 'ঢাকা বাইরে'})</div>
         <div><strong>সর্বমোট:</strong> ${escapeAppHtml(o.total_amount)} ৳ (অগ্রিম: ${escapeAppHtml(o.advance_paid)} ৳)</div>
         ${o.advance_trx_id ? `<div><strong>অগ্রিম TrxID:</strong> ${escapeAppHtml(o.advance_trx_id)}</div>` : ''}
       </div>
-      <div style="margin-top: 12px; border-top: 1px solid var(--sbf-border); padding-top: 8px;">
-        <strong style="font-size: 0.82rem; color: #fff;">পণ্যসমূহ:</strong>
+      <div style="margin-top: 12px; border-top: 1px solid var(--border-subtle); padding-top: 10px;">
+        <strong style="font-size: 0.84rem; color: var(--text-primary);">পণ্যসমূহ:</strong>
         ${(o.items || []).map((it) => `
-          <div style="font-size: 0.8rem; color: var(--sbf-text-muted); display: flex; justify-content: space-between; margin-top: 4px;">
+          <div style="font-size: 0.82rem; color: var(--text-secondary); display: flex; justify-content: space-between; margin-top: 4px;">
             <span>${escapeAppHtml(it.title)} × ${escapeAppHtml(it.quantity)}</span>
-            <span>${escapeAppHtml(it.total_price)} ৳</span>
+            <span class="tabular" style="font-weight: 600;">${escapeAppHtml(it.total_price)} ৳</span>
           </div>
         `).join('')}
       </div>
@@ -950,21 +958,21 @@ async function loadOrdersView() {
 
   if (!currentUser || !authToken) {
     container.innerHTML = `
-      <div style="background: #1c1917; border: 1px solid var(--sbf-border); border-radius: var(--radius-md); padding: 20px; text-align: center; margin-bottom: 20px;">
-        <div style="font-size: 2.2rem; margin-bottom: 8px;">💼</div>
-        <h3 style="color: #fff; font-size: 1.1rem; margin-bottom: 6px;">অর্ডারের তালিকা দেখতে লগইন করুন</h3>
-        <p style="font-size: 0.85rem; color: #a1a1aa; margin-bottom: 14px;">কাস্টমার অ্যাকাউন্টে নিজের অর্ডার, আর অনুমোদিত রিসেলার অ্যাকাউন্টে বিক্রির হিসাব দেখা যাবে।</p>
-        <button type="button" class="btn-submit" style="max-width: 220px; margin: 0 auto;" onclick="switchMainTab('profile')">অ্যাকাউন্ট লগইন / তৈরি</button>
+      <div class="empty-state-card">
+        <div class="empty-icon">💼</div>
+        <h3>অর্ডারের তালিকা দেখতে লগইন করুন</h3>
+        <p>কাস্টমার অ্যাকাউন্টে নিজের অর্ডার, আর অনুমোদিত রিসেলার অ্যাকাউন্টে বিক্রির হিসাব দেখা যাবে।</p>
+        <button type="button" class="btn-submit" style="max-width: 240px; margin: 0 auto;" onclick="switchMainTab('profile')">অ্যাকাউন্ট লগইন / তৈরি</button>
       </div>
 
-      <div style="background: #292524; border: 1px solid var(--sbf-border); border-radius: var(--radius-md); padding: 18px;">
-        <h4 style="color: #fbbf24; font-size: 1rem; margin-bottom: 10px;">🔍 যেকোনো অর্ডার ট্র্যাক করুন</h4>
+      <div class="surface-card">
+        <h4 style="color: var(--text-primary); font-size: 1rem; margin-bottom: 12px;">🔍 যেকোনো অর্ডার ট্র্যাক করুন</h4>
         <div class="form-group">
-          <label class="form-label" style="font-size: 0.8rem;">অর্ডার নম্বর (যেমন: SB-123456-789)</label>
+          <label class="form-label" style="font-size: 0.82rem;" for="inlineTrackOrder">অর্ডার নম্বর (যেমন: SB-123456-789)</label>
           <input type="text" id="inlineTrackOrder" class="form-control" placeholder="SB-XXXXXX-XXX">
         </div>
         <div class="form-group">
-          <label class="form-label" style="font-size: 0.8rem;">অর্ডারে দেওয়া মোবাইল নম্বর</label>
+          <label class="form-label" style="font-size: 0.82rem;" for="inlineTrackPhone">অর্ডারে দেওয়া মোবাইল নম্বর</label>
           <input type="tel" id="inlineTrackPhone" class="form-control" placeholder="01XXXXXXXXX">
         </div>
         <button type="button" class="btn-submit" onclick="inlineTrackOrderSubmit()">অর্ডার ট্র্যাক করুন</button>
@@ -974,7 +982,7 @@ async function loadOrdersView() {
     return;
   }
 
-  container.innerHTML = '<div style="text-align: center; padding: 40px; color: #a1a1aa;"><span class="spinner"></span> আপনার অর্ডারের তালিকা লোড হচ্ছে...</div>';
+  container.innerHTML = '<div class="reseller-loading"><span class="spinner"></span> আপনার অর্ডারের তালিকা লোড হচ্ছে...</div>';
 
   try {
     const res = await fetch(api('/api/orders/my-orders'), {
@@ -983,7 +991,7 @@ async function loadOrdersView() {
     const data = await res.json();
 
     if (!data.success) {
-      container.innerHTML = `<div style="color: #ef4444; padding: 20px; text-align: center;">${escapeAppHtml(data.message)}</div>`;
+      container.innerHTML = `<div class="reseller-state reseller-state-error">${escapeAppHtml(data.message)}</div>`;
       return;
     }
 
@@ -993,39 +1001,39 @@ async function loadOrdersView() {
 
     let ordersHtml = `
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
-        <span style="font-size: 0.9rem; color: #d4d4d8;">${orderCountLabel}: <strong>${orders.length}টি</strong></span>
-        <button type="button" class="btn-nav" style="padding: 6px 12px; font-size: 0.78rem;" onclick="loadOrdersView()">🔄 রিফ্রেশ</button>
+        <span style="font-size: 0.92rem; color: var(--text-secondary);">${orderCountLabel}: <strong style="color: var(--text-primary);">${orders.length}টি</strong></span>
+        <button type="button" class="btn-nav" onclick="loadOrdersView()">🔄 রিফ্রেশ</button>
       </div>
     `;
 
     if (orders.length === 0) {
       ordersHtml += `
-        <div style="background: #1c1917; border: 1px solid var(--sbf-border); border-radius: var(--radius-md); padding: 30px; text-align: center;">
-          <div style="font-size: 2rem; margin-bottom: 10px;">🛒</div>
-          <h4 style="color: #fff; margin-bottom: 6px;">এখনও কোনো অর্ডার আসেনি</h4>
-          <p style="font-size: 0.85rem; color: #a1a1aa; margin-bottom: 14px;">আপনার করা অর্ডার এখানে দেখা যাবে। পণ্য দেখতে ক্যাটালগে যান।</p>
-          <button type="button" class="btn-submit" style="max-width: 200px; margin: 0 auto;" onclick="switchMainTab('shop')">পণ্য দেখতে যান</button>
+        <div class="empty-state-card">
+          <div class="empty-icon">🛒</div>
+          <h4>এখনও কোনো অর্ডার আসেনি</h4>
+          <p>আপনার করা অর্ডার এখানে দেখা যাবে। পণ্য দেখতে ক্যাটালগে যান।</p>
+          <button type="button" class="btn-submit" style="max-width: 220px; margin: 0 auto;" onclick="switchMainTab('shop')">পণ্য দেখতে যান</button>
         </div>
       `;
     } else {
       ordersHtml += orders.map((o) => `
-        <article class="reseller-order-card" style="background: #27272a; border: 1px solid #3f3f46; border-radius: 12px; padding: 14px; margin-bottom: 12px;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-            <strong style="color: #fff; font-size: 0.95rem;">#${escapeAppHtml(o.order_number)}</strong>
-            <span style="background: ${getStatusBadgeBg(o.status)}; color: #fff; padding: 3px 10px; border-radius: 20px; font-size: 0.74rem; font-weight: 700;">
+        <article class="surface-card">
+          <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px;">
+            <strong style="color: var(--text-primary); font-size: 0.96rem;">#${escapeAppHtml(o.order_number)}</strong>
+            <span style="background: ${getStatusBadgeBg(o.status)}; color: #fff; padding: 3px 10px; border-radius: 999px; font-size: 0.74rem; font-weight: 700;">
               ${escapeAppHtml(getStatusInBangla(o.status))}
             </span>
           </div>
-          <div style="font-size: 0.85rem; color: #d4d4d8; margin-bottom: 6px;">
-            <span>${customerLabel}: <strong>${escapeAppHtml(o.customer_name)}</strong></span> • <span>${escapeAppHtml(o.customer_phone)}</span>
+          <div style="font-size: 0.86rem; color: var(--text-secondary); margin-bottom: 8px;">
+            <span>${customerLabel}: <strong style="color: var(--text-primary);">${escapeAppHtml(o.customer_name)}</strong></span> • <span>${escapeAppHtml(o.customer_phone)}</span>
           </div>
           ${(o.items && o.items.length) ? `
-            <div style="background: #18181b; padding: 8px 10px; border-radius: 6px; font-size: 0.8rem; color: #a1a1aa; margin-bottom: 8px;">
+            <div class="surface-inset" style="font-size: 0.82rem; color: var(--text-secondary); margin-bottom: 10px;">
               ${o.items.map(it => `${escapeAppHtml(it.title)} × ${escapeAppHtml(it.quantity)}`).join('<br>')}
             </div>
           ` : ''}
-          <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #3f3f46; padding-top: 8px; font-size: 0.88rem;">
-            <span>অর্ডার মোট: <strong>${escapeAppHtml(o.total_amount)}৳</strong></span>
+          <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border-subtle); padding-top: 10px; font-size: 0.9rem;">
+            <span class="tabular">অর্ডার মোট: <strong>${escapeAppHtml(o.total_amount)}৳</strong></span>
             ${hasResellerAccess() ? `<span class="badge-profit-pill">কমিশন: ৳${escapeAppHtml(o.reseller_commission || 0)}</span>` : ''}
           </div>
         </article>
@@ -1046,7 +1054,7 @@ async function inlineTrackOrderSubmit() {
   const resContainer = document.getElementById('inlineTrackResult');
   if (!orderNum || !phone) return alert('অর্ডার নম্বর ও ফোন নম্বর প্রদান করুন');
 
-  if (resContainer) resContainer.innerHTML = '<div style="text-align: center; color: #a1a1aa;"><span class="spinner"></span> খোঁজা হচ্ছে...</div>';
+  if (resContainer) resContainer.innerHTML = '<div style="text-align: center; color: var(--text-muted);"><span class="spinner"></span> খোঁজা হচ্ছে...</div>';
   try {
     const res = await fetch(api('/api/orders/track'), {
       method: 'POST',
@@ -1071,11 +1079,11 @@ async function loadWalletView() {
 
   if (!currentUser || !authToken) {
     container.innerHTML = `
-      <div style="background: #1c1917; border: 1px solid var(--sbf-border); border-radius: var(--radius-md); padding: 24px; text-align: center;">
-        <div style="font-size: 2.2rem; margin-bottom: 8px;">💰</div>
-        <h3 style="color: #fff; font-size: 1.15rem; margin-bottom: 6px;">রিসেলার ওয়ালেটে প্রবেশ করুন</h3>
-        <p style="font-size: 0.85rem; color: #a1a1aa; margin-bottom: 14px;">বিকাশ ও নগদে সরাসরি কমিশন ক্যাশআউট করতে আপনার অ্যাকাউন্টে লগইন করুন।</p>
-        <button type="button" class="btn-submit" style="max-width: 220px; margin: 0 auto;" onclick="switchMainTab('profile')">লগইন / রেজিস্ট্রেশন</button>
+      <div class="empty-state-card">
+        <div class="empty-icon">💰</div>
+        <h3>রিসেলার ওয়ালেটে প্রবেশ করুন</h3>
+        <p>বিকাশ ও নগদে সরাসরি কমিশন ক্যাশআউট করতে আপনার অ্যাকাউন্টে লগইন করুন।</p>
+        <button type="button" class="btn-submit" style="max-width: 240px; margin: 0 auto;" onclick="switchMainTab('profile')">লগইন / রেজিস্ট্রেশন</button>
       </div>
     `;
     return;
@@ -1083,15 +1091,15 @@ async function loadWalletView() {
 
   if (!hasResellerAccess()) {
     container.innerHTML = `
-      <div style="background:#1c1917; border:1px solid var(--sbf-border); border-radius:var(--radius-md); padding:24px; text-align:center;">
-        <h3 style="color:#fff; font-size:1.1rem; margin-bottom:6px;">রিসেলার অনুমতি প্রয়োজন</h3>
-        <p style="font-size:.85rem; color:#a1a1aa;">অ্যাডমিন রিসেলার অনুমতি দিলে কমিশন ও ক্যাশআউট এখানে দেখা যাবে।</p>
+      <div class="empty-state-card">
+        <h3>রিসেলার অনুমতি প্রয়োজন</h3>
+        <p>অ্যাডমিন রিসেলার অনুমতি দিলে কমিশন ও ক্যাশআউট এখানে দেখা যাবে।</p>
       </div>
     `;
     return;
   }
 
-  container.innerHTML = '<div style="text-align: center; padding: 40px; color: #a1a1aa;"><span class="spinner"></span> ওয়ালেট হিসাব লোড হচ্ছে...</div>';
+  container.innerHTML = '<div class="reseller-loading"><span class="spinner"></span> ওয়ালেট হিসাব লোড হচ্ছে...</div>';
 
   try {
     const [summaryRes, txRes] = await Promise.all([
@@ -1102,7 +1110,7 @@ async function loadWalletView() {
     const txData = await txRes.json();
 
     if (!summaryData.success) {
-      container.innerHTML = `<div style="color: #ef4444; text-align: center; padding: 20px;">${escapeAppHtml(summaryData.message)}</div>`;
+      container.innerHTML = `<div class="reseller-state reseller-state-error">${escapeAppHtml(summaryData.message)}</div>`;
       return;
     }
 
@@ -1111,38 +1119,38 @@ async function loadWalletView() {
 
     container.innerHTML = `
       <!-- Big 3 Wallet KPI Cards -->
-      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 16px;">
-        <div style="background: linear-gradient(135deg, #064e3b, #047857); border-radius: 14px; padding: 14px; color: #fff;">
-          <div style="font-size: 0.8rem; color: #a7f3d0; margin-bottom: 4px;">উত্তোলনযোগ্য ব্যালেন্স</div>
-          <div style="font-size: 1.5rem; font-weight: 800;">${escapeAppHtml(s.available_balance)} ৳</div>
-          <div style="font-size: 0.72rem; color: #d1fae5; margin-top: 2px;">✓ সরাসরি ক্যাশআউট করা যাবে</div>
+      <div class="wallet-kpi-grid">
+        <div class="wallet-kpi-card is-available">
+          <div class="wallet-kpi-label" style="color: #065f46;">উত্তোলনযোগ্য ব্যালেন্স</div>
+          <div class="wallet-kpi-value" style="color: #047857;">${escapeAppHtml(s.available_balance)} ৳</div>
+          <div class="wallet-kpi-sub" style="color: #059669;">✓ সরাসরি ক্যাশআউট করা যাবে</div>
         </div>
-        <div style="background: linear-gradient(135deg, #78350f, #b45309); border-radius: 14px; padding: 14px; color: #fff;">
-          <div style="font-size: 0.8rem; color: #fde68a; margin-bottom: 4px;">পেন্ডিং কমিশন</div>
-          <div style="font-size: 1.5rem; font-weight: 800;">${escapeAppHtml(s.pending_commission)} ৳</div>
-          <div style="font-size: 0.72rem; color: #fef3c7; margin-top: 2px;">⏳ ডেলিভারির পর যোগ হবে</div>
+        <div class="wallet-kpi-card is-pending">
+          <div class="wallet-kpi-label" style="color: #92400e;">পেন্ডিং কমিশন</div>
+          <div class="wallet-kpi-value" style="color: #b45309;">${escapeAppHtml(s.pending_commission)} ৳</div>
+          <div class="wallet-kpi-sub" style="color: #b45309;">⏳ ডেলিভারির পর যোগ হবে</div>
         </div>
-        <div style="background: linear-gradient(135deg, #1e3a8a, #1d4ed8); border-radius: 14px; padding: 14px; color: #fff;">
-          <div style="font-size: 0.8rem; color: #bfdbfe; margin-bottom: 4px;">মোট অর্জিত আয়</div>
-          <div style="font-size: 1.5rem; font-weight: 800;">${escapeAppHtml(s.total_earned)} ৳</div>
-          <div style="font-size: 0.72rem; color: #dbeafe; margin-top: 2px;">উত্তোলিত: ${escapeAppHtml(s.total_withdrawn)} ৳</div>
+        <div class="wallet-kpi-card is-earned">
+          <div class="wallet-kpi-label" style="color: #1e40af;">মোট অর্জিত আয়</div>
+          <div class="wallet-kpi-value" style="color: #1d4ed8;">${escapeAppHtml(s.total_earned)} ৳</div>
+          <div class="wallet-kpi-sub" style="color: #1e40af;">উত্তোলিত: ${escapeAppHtml(s.total_withdrawn)} ৳</div>
         </div>
       </div>
 
       <!-- Cashout Request Card -->
-      <div style="background: #1c1917; border: 1px solid var(--sbf-border); border-radius: var(--radius-md); padding: 16px; margin-bottom: 16px;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-          <h4 style="color: #fbbf24; font-size: 0.95rem; margin: 0;">💸 ক্যাশআউট রিকোয়েস্ট (বিকাশ / নগদ / রকেট)</h4>
-          <span style="font-size: 0.75rem; color: #a1a1aa;">ন্যূনতম: ${escapeAppHtml(s.min_cashout)} ৳</span>
+      <div class="surface-card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <h4 style="color: var(--text-primary); font-size: 0.98rem; margin: 0;">💸 ক্যাশআউট রিকোয়েস্ট (বিকাশ / নগদ / রকেট)</h4>
+          <span style="font-size: 0.76rem; color: var(--text-muted); font-weight: 600;">ন্যূনতম: ${escapeAppHtml(s.min_cashout)} ৳</span>
         </div>
 
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
           <div class="form-group">
-            <label class="form-label" style="font-size: 0.8rem;">টাকার পরিমাণ (৳)</label>
+            <label class="form-label" style="font-size: 0.8rem;" for="inlinePayoutAmount">টাকার পরিমাণ (৳)</label>
             <input type="number" id="inlinePayoutAmount" class="form-control" min="${escapeAppHtml(s.min_cashout)}" placeholder="যেমন ৫০০">
           </div>
           <div class="form-group">
-            <label class="form-label" style="font-size: 0.8rem;">পেমেন্ট মেথড</label>
+            <label class="form-label" style="font-size: 0.8rem;" for="inlinePayoutMethod">পেমেন্ট মেথড</label>
             <select id="inlinePayoutMethod" class="form-control">
               <option value="bkash">বিকাশ (bKash)</option>
               <option value="nagad">নগদ (Nagad)</option>
@@ -1151,28 +1159,28 @@ async function loadWalletView() {
           </div>
         </div>
         <div class="form-group">
-          <label class="form-label" style="font-size: 0.8rem;">টাকা গ্রহণের মোবাইল নম্বর</label>
+          <label class="form-label" style="font-size: 0.8rem;" for="inlinePayoutAccount">টাকা গ্রহণের মোবাইল নম্বর</label>
           <input type="tel" id="inlinePayoutAccount" class="form-control" placeholder="01XXXXXXXXX" value="${escapeAppHtml(currentUser.payout_number || currentUser.phone || '')}">
         </div>
         <button type="button" class="btn-submit" onclick="submitInlinePayout(${s.available_balance})">টাকা তোলার রিকোয়েস্ট পাঠান</button>
       </div>
 
       <!-- Transaction History Table -->
-      <div style="background: #27272a; border: 1px solid #3f3f46; border-radius: 12px; padding: 14px;">
-        <h4 style="color: #fff; font-size: 0.95rem; margin-bottom: 10px;">📜 সাম্প্রতিক লেনদেন হিস্ট্রি</h4>
-        ${transactions.length === 0 ? '<div style="color: #a1a1aa; font-size: 0.85rem; text-align: center; padding: 14px;">কোনো লেনদেন রেকর্ড নেই</div>' : `
+      <div class="surface-card">
+        <h4 style="color: var(--text-primary); font-size: 0.98rem; margin-bottom: 10px;">📜 সাম্প্রতিক লেনদেন হিস্ট্রি</h4>
+        ${transactions.length === 0 ? '<div class="reseller-state">কোনো লেনদেন রেকর্ড নেই</div>' : `
           <div style="display: flex; flex-direction: column; gap: 8px;">
             ${transactions.map((tx) => {
               const isCredit = tx.type === 'commission' || tx.type === 'referral_commission' || tx.type === 'referral_bonus' || tx.type === 'team_bonus';
               const sign = isCredit ? '+' : '-';
-              const color = isCredit ? '#34d399' : '#f87171';
+              const color = isCredit ? '#047857' : '#dc2626';
               return `
-                <div style="display: flex; justify-content: space-between; align-items: center; background: #18181b; padding: 10px 12px; border-radius: 8px; font-size: 0.82rem;">
+                <div class="wallet-tx-row">
                   <div>
-                    <div style="font-weight: 600; color: #fff;">${escapeAppHtml(tx.notes || (isCredit ? 'কমিশন আয়' : 'ক্যাশআউট'))}</div>
-                    <div style="font-size: 0.72rem; color: #a1a1aa;">${escapeAppHtml(new Date(tx.created_at).toLocaleDateString('bn-BD'))} • স্ট্যাটাস: ${escapeAppHtml(getStatusInBangla(tx.status))}</div>
+                    <div style="font-weight: 700; color: var(--text-primary);">${escapeAppHtml(tx.notes || (isCredit ? 'কমিশন আয়' : 'ক্যাশআউট'))}</div>
+                    <div style="font-size: 0.74rem; color: var(--text-muted);">${escapeAppHtml(new Date(tx.created_at).toLocaleDateString('bn-BD'))} • স্ট্যাটাস: ${escapeAppHtml(getStatusInBangla(tx.status))}</div>
                   </div>
-                  <div style="font-weight: 700; font-size: 0.95rem; color: ${color};">
+                  <div class="tabular" style="font-weight: 700; font-size: 0.96rem; color: ${color};">
                     ${sign}${escapeAppHtml(tx.amount)} ৳
                   </div>
                 </div>
@@ -1234,20 +1242,20 @@ function loadProfileView() {
   if (!currentUser || !authToken) {
     // Show Login & Register forms
     container.innerHTML = `
-      <div style="background: #1c1917; border: 1px solid var(--sbf-border); border-radius: var(--radius-md); padding: 18px; max-width: 480px; margin: 0 auto;">
-        <div style="display: flex; gap: 8px; margin-bottom: 16px;">
-          <button type="button" id="tabLoginBtn" class="tab-btn active" style="flex: 1;" onclick="toggleAuthTab('login')">লগইন</button>
-          <button type="button" id="tabRegBtn" class="tab-btn" style="flex: 1;" onclick="toggleAuthTab('register')">নতুন রেজিস্ট্রেশন</button>
+      <div class="surface-card" style="max-width: 480px; margin: 0 auto;">
+        <div class="reseller-auth-tabs" style="margin-bottom: 16px;">
+          <button type="button" id="tabLoginBtn" class="tab-btn active" onclick="toggleAuthTab('login')">লগইন</button>
+          <button type="button" id="tabRegBtn" class="tab-btn" onclick="toggleAuthTab('register')">নতুন রেজিস্ট্রেশন</button>
         </div>
 
         <!-- Login Form -->
         <div id="inlineLoginForm">
           <div class="form-group">
-            <label class="form-label" style="font-size: 0.8rem;">মোবাইল নম্বর (১১ ডিজিট)</label>
+            <label class="form-label" style="font-size: 0.82rem;" for="inLoginPhone">মোবাইল নম্বর (১১ ডিজিট)</label>
             <input type="tel" id="inLoginPhone" class="form-control" placeholder="01XXXXXXXXX">
           </div>
           <div class="form-group">
-            <label class="form-label" style="font-size: 0.8rem;">পাসওয়ার্ড</label>
+            <label class="form-label" style="font-size: 0.82rem;" for="inLoginPass">পাসওয়ার্ড</label>
             <input type="password" id="inLoginPass" class="form-control" placeholder="আপনার পাসওয়ার্ড">
           </div>
           <button type="button" class="btn-submit" onclick="submitInlineLogin()">লগইন করুন</button>
@@ -1256,19 +1264,19 @@ function loadProfileView() {
         <!-- Register Form -->
         <div id="inlineRegForm" style="display: none;">
           <div class="form-group">
-            <label class="form-label" style="font-size: 0.8rem;">আপনার পূর্ণ নাম *</label>
+            <label class="form-label" style="font-size: 0.82rem;" for="inRegName">আপনার পূর্ণ নাম *</label>
             <input type="text" id="inRegName" class="form-control" placeholder="যেমন: মো: শাহীন">
           </div>
           <div class="form-group">
-            <label class="form-label" style="font-size: 0.8rem;">মোবাইল নম্বর (১১ ডিজিট) *</label>
+            <label class="form-label" style="font-size: 0.82rem;" for="inRegPhone">মোবাইল নম্বর (১১ ডিজিট) *</label>
             <input type="tel" id="inRegPhone" class="form-control" placeholder="01XXXXXXXXX">
           </div>
           <div class="form-group">
-            <label class="form-label" style="font-size: 0.8rem;">পাসওয়ার্ড (কমপক্ষে ৮ অক্ষর) *</label>
+            <label class="form-label" style="font-size: 0.82rem;" for="inRegPass">পাসওয়ার্ড (কমপক্ষে ৮ অক্ষর) *</label>
             <input type="password" id="inRegPass" class="form-control" placeholder="পাসওয়ার্ড দিন">
           </div>
           <div class="form-group">
-            <label class="form-label" style="font-size: 0.8rem;">রেফারেল কোড (ঐচ্ছিক)</label>
+            <label class="form-label" style="font-size: 0.82rem;" for="inRegRef">রেফারেল কোড (ঐচ্ছিক)</label>
             <input type="text" id="inRegRef" class="form-control" placeholder="কোড থাকলে লিখুন" value="${escapeAppHtml(localStorage.getItem('sb_ref_code') || '')}">
           </div>
           <button type="button" class="btn-submit" onclick="submitInlineRegister()">অ্যাকাউন্ট তৈরি করুন</button>
@@ -1280,24 +1288,24 @@ function loadProfileView() {
 
   if (!hasResellerAccess()) {
     container.innerHTML = `
-      <div style="display:flex; flex-direction:column; gap:14px; max-width:600px; margin:0 auto;">
-        <div style="background:#27272a; border:1px solid #3f3f46; border-radius:14px; padding:16px;">
-          <h3 style="color:#fff; font-size:1.05rem; margin:0 0 8px;">${escapeAppHtml(currentUser.name)}</h3>
-          <div style="font-size:.85rem; color:#a1a1aa;">📞 ${escapeAppHtml(currentUser.phone)}</div>
-          <span class="badge" style="display:inline-block; margin-top:8px; background:#10b981; color:#fff; font-size:.72rem; padding:3px 8px;">কাস্টমার অ্যাকাউন্ট</span>
-          <p style="font-size:.85rem; color:#d4d4d8; margin:12px 0 0;">আপনি পণ্য কিনতে পারবেন। রিসেলার হিসেবে কমিশন দেখতে ও পণ্য শেয়ার করতে অ্যাডমিনের অনুমতি প্রয়োজন।</p>
-          <div style="display:flex; gap:8px; margin-top:12px;">
+      <div class="profile-stack">
+        <div class="surface-card">
+          <h3 style="color: var(--text-primary); font-size: 1.08rem; margin: 0 0 6px;">${escapeAppHtml(currentUser.name)}</h3>
+          <div style="font-size: 0.86rem; color: var(--text-muted);">📞 ${escapeAppHtml(currentUser.phone)}</div>
+          <span class="badge-profit-pill" style="margin-top: 10px;">কাস্টমার অ্যাকাউন্ট</span>
+          <p style="font-size: 0.86rem; color: var(--text-secondary); margin: 12px 0 0;">আপনি পণ্য কিনতে পারবেন। রিসেলার হিসেবে কমিশন দেখতে ও পণ্য শেয়ার করতে অ্যাডমিনের অনুমতি প্রয়োজন।</p>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 14px;">
             <button type="button" class="btn-submit" onclick="switchMainTab('orders')">আমার অর্ডার</button>
-            <button type="button" class="btn-nav" onclick="switchMainTab('shop')">পণ্য দেখুন</button>
+            <button type="button" class="btn-secondary-solid" onclick="switchMainTab('shop')">পণ্য দেখুন</button>
           </div>
         </div>
-        <div style="background:#27272a; border:1px solid #3f3f46; border-radius:14px; padding:16px;">
-          <h4 style="color:#fff; font-size:.95rem; margin-bottom:10px;">🔒 পাসওয়ার্ড পরিবর্তন</h4>
+        <div class="surface-card">
+          <h4 style="color: var(--text-primary); font-size: 0.96rem; margin-bottom: 10px;">🔒 পাসওয়ার্ড পরিবর্তন</h4>
           <div class="form-group"><label class="form-label" for="inlineOldPass">বর্তমান পাসওয়ার্ড</label><input type="password" id="inlineOldPass" class="form-control" autocomplete="current-password"></div>
           <div class="form-group"><label class="form-label" for="inlineNewPass">নতুন পাসওয়ার্ড (কমপক্ষে ৮ অক্ষর)</label><input type="password" id="inlineNewPass" class="form-control" autocomplete="new-password"></div>
           <button type="button" class="btn-submit" onclick="submitInlinePasswordChange()">পাসওয়ার্ড আপডেট করুন</button>
         </div>
-        <button type="button" class="btn-submit" style="background:#7f1d1d; color:#fecaca;" onclick="resellerLogout()">অ্যাকাউন্ট থেকে লগআউট</button>
+        <button type="button" class="btn-danger-soft" onclick="resellerLogout()">🚪 অ্যাকাউন্ট থেকে লগআউট</button>
       </div>
     `;
     return;
@@ -1306,40 +1314,40 @@ function loadProfileView() {
   // Profile Dashboard View
   const refLink = `${window.location.origin}/?ref=${currentUser.referral_code || ''}`;
   container.innerHTML = `
-    <div style="display: flex; flex-direction: column; gap: 14px; max-width: 600px; margin: 0 auto;">
+    <div class="profile-stack">
       <!-- Profile Card -->
-      <div style="background: #27272a; border: 1px solid #3f3f46; border-radius: 14px; padding: 16px;">
-        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
-          <div style="width: 52px; height: 52px; border-radius: 50%; background: #b45309; color: #fff; font-size: 1.5rem; display: flex; align-items: center; justify-content: center; font-weight: 700;">
+      <div class="surface-card">
+        <div style="display: flex; align-items: center; gap: 14px; margin-bottom: 14px;">
+          <div class="profile-avatar">
             ${escapeAppHtml(currentUser.name.charAt(0))}
           </div>
           <div>
-            <h3 style="color: #fff; font-size: 1.1rem; margin: 0;">${escapeAppHtml(currentUser.name)}</h3>
-            <div style="font-size: 0.82rem; color: #a1a1aa;">📞 ${escapeAppHtml(currentUser.phone)}</div>
-            <div style="display: flex; gap: 6px; margin-top: 4px;">
-              <span class="badge" style="background: #059669; color: #fff; font-size: 0.68rem; padding: 2px 6px;">রিসেলার</span>
-              <span class="badge" style="background: rgba(16, 185, 129, 0.2); color: #34d399; font-size: 0.68rem; padding: 2px 6px;">অ্যাকাউন্ট সক্রিয়</span>
+            <h3 style="color: var(--text-primary); font-size: 1.12rem; margin: 0;">${escapeAppHtml(currentUser.name)}</h3>
+            <div style="font-size: 0.84rem; color: var(--text-muted); margin-top: 2px;">📞 ${escapeAppHtml(currentUser.phone)}</div>
+            <div style="display: flex; gap: 6px; margin-top: 6px;">
+              <span class="badge-profit-pill">💼 অনুমোদিত রিসেলার</span>
+              <span class="badge-stock in-stock">অ্যাকাউন্ট সক্রিয়</span>
             </div>
           </div>
         </div>
 
         <!-- Referral Link Card -->
-        <div style="background: #18181b; border: 1px solid rgba(245, 158, 11, 0.25); border-radius: 10px; padding: 12px; margin-top: 10px;">
-          <div style="font-size: 0.8rem; font-weight: 700; color: #fbbf24; margin-bottom: 4px;">🔗 আপনার পার্সোনাল রেফারেল লিংক</div>
+        <div class="surface-inset" style="margin-top: 10px;">
+          <div style="font-size: 0.82rem; font-weight: 700; color: var(--brand-primary-hv); margin-bottom: 6px;">🔗 আপনার পার্সোনাল রেফারেল লিংক</div>
           <div style="display: flex; gap: 8px;">
-            <input type="text" readonly value="${escapeAppHtml(refLink)}" class="form-control" style="font-size: 0.78rem;" id="inlineRefLink">
-            <button type="button" class="btn-nav" style="background: var(--sbf-amber); white-space: nowrap; padding: 6px 12px;" onclick="copyInlineRefLink()">কপি</button>
+            <input type="text" readonly value="${escapeAppHtml(refLink)}" class="form-control" style="font-size: 0.8rem;" id="inlineRefLink">
+            <button type="button" class="btn-copy-link" style="min-height: 46px;" onclick="copyInlineRefLink()">কপি</button>
           </div>
-          <div style="font-size: 0.76rem; color: #a1a1aa; margin-top: 6px;">রেফারেল কোড: <strong style="color: #fff;">${escapeAppHtml(currentUser.referral_code || '')}</strong></div>
+          <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 6px;">রেফারেল কোড: <strong style="color: var(--text-primary);">${escapeAppHtml(currentUser.referral_code || '')}</strong></div>
         </div>
       </div>
 
       <!-- Payout Settings Card -->
-      <div style="background: #27272a; border: 1px solid #3f3f46; border-radius: 14px; padding: 16px;">
-        <h4 style="color: #fbbf24; font-size: 0.95rem; margin-bottom: 10px;">📱 স্থায়ী ক্যাশআউট অ্যাকাউন্ট সেটিংস</h4>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+      <div class="surface-card">
+        <h4 style="color: var(--text-primary); font-size: 0.98rem; margin-bottom: 12px;">📱 স্থায়ী ক্যাশআউট অ্যাকাউন্ট সেটিংস</h4>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
           <div class="form-group">
-            <label class="form-label" style="font-size: 0.8rem;">পেমেন্ট মেথড</label>
+            <label class="form-label" style="font-size: 0.8rem;" for="setPayoutMethod">পেমেন্ট মেথড</label>
             <select id="setPayoutMethod" class="form-control">
               <option value="bkash" ${currentUser.payout_method === 'bkash' ? 'selected' : ''}>বিকাশ (bKash)</option>
               <option value="nagad" ${currentUser.payout_method === 'nagad' ? 'selected' : ''}>নগদ (Nagad)</option>
@@ -1347,29 +1355,29 @@ function loadProfileView() {
             </select>
           </div>
           <div class="form-group">
-            <label class="form-label" style="font-size: 0.8rem;">মোবাইল নম্বর</label>
+            <label class="form-label" style="font-size: 0.8rem;" for="setPayoutNumber">মোবাইল নম্বর</label>
             <input type="tel" id="setPayoutNumber" class="form-control" placeholder="01XXXXXXXXX" value="${escapeAppHtml(currentUser.payout_number || '')}">
           </div>
         </div>
-        <button type="button" class="btn-submit" style="padding: 10px;" onclick="savePayoutSettings()">ক্যাশআউট তথ্য সংরক্ষণ করুন</button>
+        <button type="button" class="btn-submit" onclick="savePayoutSettings()">ক্যাশআউট তথ্য সংরক্ষণ করুন</button>
       </div>
 
       <!-- Security & Password -->
-      <div style="background: #27272a; border: 1px solid #3f3f46; border-radius: 14px; padding: 16px;">
-        <h4 style="color: #fff; font-size: 0.95rem; margin-bottom: 10px;">🔒 পাসওয়ার্ড পরিবর্তন</h4>
+      <div class="surface-card">
+        <h4 style="color: var(--text-primary); font-size: 0.98rem; margin-bottom: 12px;">🔒 পাসওয়ার্ড পরিবর্তন</h4>
         <div class="form-group">
-          <label class="form-label" style="font-size: 0.8rem;">বর্তমান পাসওয়ার্ড</label>
+          <label class="form-label" style="font-size: 0.8rem;" for="inlineOldPass">বর্তমান পাসওয়ার্ড</label>
           <input type="password" id="inlineOldPass" class="form-control" placeholder="পুরাতন পাসওয়ার্ড">
         </div>
         <div class="form-group">
-          <label class="form-label" style="font-size: 0.8rem;">নতুন পাসওয়ার্ড (কমপক্ষে ৮ অক্ষর)</label>
+          <label class="form-label" style="font-size: 0.8rem;" for="inlineNewPass">নতুন পাসওয়ার্ড (কমপক্ষে ৮ অক্ষর)</label>
           <input type="password" id="inlineNewPass" class="form-control" placeholder="নতুন পাসওয়ার্ড">
         </div>
-        <button type="button" class="btn-submit" style="background: #3f3f46; padding: 10px;" onclick="submitInlinePasswordChange()">পাসওয়ার্ড আপডেট করুন</button>
+        <button type="button" class="btn-secondary-solid" style="width: 100%;" onclick="submitInlinePasswordChange()">পাসওয়ার্ড আপডেট করুন</button>
       </div>
 
       <!-- Logout Button -->
-      <button type="button" class="btn-submit" style="background: #7f1d1d; color: #fecaca; padding: 12px; margin-top: 6px;" onclick="resellerLogout()">
+      <button type="button" class="btn-danger-soft" onclick="resellerLogout()">
         🚪 অ্যাকাউন্ট থেকে লগআউট
       </button>
     </div>
