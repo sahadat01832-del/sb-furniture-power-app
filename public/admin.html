@@ -12,7 +12,7 @@
   <link rel="stylesheet" href="/css/style.css?v=3.1.1">
   <link rel="stylesheet" href="/css/admin.css?v=3.1.4">
   <link rel="stylesheet" href="/css/pwa-splash.css?v=1.0.0">
-  <link rel="stylesheet" href="/css/pwa-install.css?v=3.1.0">
+  <link rel="stylesheet" href="/css/pwa-install.css?v=3.1.1">
 </head>
 <body>
 
@@ -1017,57 +1017,6 @@
 
   <div id="toast" class="toast-msg"></div>
 
-  <!-- Android APK Installation Helper & Visual Guidance Modal -->
-  <div class="modal-overlay" id="apkDownloadModal" role="dialog" aria-modal="true" aria-labelledby="apkModalTitle">
-    <div class="modal-dialog modal-dialog-guide">
-      <div class="modal-header">
-        <div>
-          <h3 id="apkModalTitle" style="font-size: 1.15rem; color: #0f172a;">🛡️ SB Admin Panel এডমিন অ্যাপ</h3>
-          <span id="apkModalBadge" class="modal-badge-release">অফিসিয়াল এডমিন রিলিজ • v1.0.1</span>
-        </div>
-        <button class="btn-close" onclick="closeApkDownloadModal()">&times;</button>
-      </div>
-      <div class="modal-body">
-        <!-- Android APK Direct Download Guide -->
-        <div class="apk-guide-box">
-          <div class="apk-guide-title">
-            <span>📦</span> <span>অ্যান্ড্রয়েড APK অফলাইন ইনস্টলেশন নির্দেশিকা</span>
-          </div>
-          <ul class="apk-step-list">
-            <li class="apk-step-item">
-              <span class="apk-step-num">১</span>
-              <div>
-                <strong>পুরনো অ্যাপ থাকলে আনইনস্টল করুন:</strong> আপনার ফোনে আগে থেকে কোনো পুরনো টেস্ট বিল্ড ইনস্টল থাকলে সেটি আনইনস্টল করে নিন, যাতে নতুন অফিশিয়াল সার্টিফিকেটের সাথে "App not installed" কনফ্লিক্ট না হয়।
-              </div>
-            </li>
-            <li class="apk-step-item">
-              <span class="apk-step-num">২</span>
-              <div>
-                <strong>অফিসিয়াল APK ডাউনলোড করুন:</strong> নিচের বাটনে চেপে লেটেস্ট রিলিজ প্যাকেজ ডাউনলোড সম্পন্ন করুন।
-              </div>
-            </li>
-            <li class="apk-step-item">
-              <span class="apk-step-num">৩</span>
-              <div>
-                <strong>প্লে প্রোটেক্টে "Install anyway" চাপুন:</strong> ডাউনলোড শেষে ওপেন করে "Install" চাপুন। যদি গুগল প্লে প্রোটেক্ট পপ-আপ আসে, তবে <em>"More details"</em> চেপে <em>"Install anyway"</em> দিন।
-              </div>
-            </li>
-          </ul>
-
-          <div class="apk-warning-callout">
-            🛡️ <strong>১০০% নিরাপদ বিল্ড:</strong> এই APK টি SB Furniture Ltd-এর নিজস্ব স্থায়ী প্রোডাকশন কি (RSA 4096-bit, SHA-256) দ্বারা সাইন করা এবং এতে কোনো ডিবাগ কোড নেই।
-          </div>
-
-          <div style="margin-top: 14px;">
-            <a id="btnStartDirectApk" href="/download/admin-apk" class="btn-apk-direct" onclick="startApkDownload(event, 'admin')">
-              <span>📥</span> <span>সরাসরি APK ফাইল ডাউনলোড শুরু করুন</span>
-            </a>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <!-- PWA 1-Click Install Fixed Bottom Banner -->
   <div id="pwaInstallBanner" class="pwa-install-banner" style="display: none;">
     <div class="pwa-banner-icon">📱</div>
@@ -1089,7 +1038,7 @@
   <script src="/js/admin.js?v=3.2.3"></script>
   <script src="/js/admin-referrals.js?v=1.0.1"></script>
   <script src="/js/admin-users.js?v=3.2.1"></script>
-  <script src="/js/pwa-install.js?v=3.2.1" defer></script>
+  <script src="/js/pwa-install.js?v=3.2.2" defer></script>
   <script src="/js/pwa-splash.js?v=1.0.0"></script>
   <script>
     if ('serviceWorker' in navigator) {

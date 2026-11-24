@@ -1,9 +1,8 @@
 // ============================================================
-// SB Furniture & SB POWER — PWA 1-Click Install & APK Download Guide
+// SB Furniture & SB POWER — PWA Install Helper
 // ============================================================
 
 let deferredInstallPrompt = null;
-let currentDownloadTarget = (typeof window !== 'undefined' && window.location.pathname.includes('admin')) ? 'admin' : 'reseller';
 
 // Detect standalone display mode (already installed as PWA or native webview)
 function isRunningStandalone() {
@@ -101,72 +100,4 @@ function showPwaManualGuide() {
   } else {
     alert(msg);
   }
-}
-
-// 6. Navbar Install Click Handler
-function handlePwaInstallClick() {
-  if (deferredInstallPrompt) {
-    triggerPwaInstall();
-  } else {
-    openApkDownloadModal('reseller');
-  }
-}
-
-// 7. Open Download Helper Modal with Visual Guidance
-function openApkDownloadModal(target = 'reseller') {
-  currentDownloadTarget = target;
-  const modal = document.getElementById('apkDownloadModal');
-  const titleElem = document.getElementById('apkModalTitle');
-  const badgeElem = document.getElementById('apkModalBadge');
-  const directBtn = document.getElementById('btnStartDirectApk');
-
-  if (target === 'admin') {
-    if (titleElem) titleElem.textContent = '🛡️ SB Admin Panel এডমিন অ্যাপ';
-    if (badgeElem) badgeElem.textContent = 'অফিসিয়াল এডমিন রিলিজ • v1.0.1';
-    if (directBtn) directBtn.href = api('/download/admin-apk');
-  } else {
-    if (titleElem) titleElem.textContent = '📱 SB Furniture & SB POWER কাস্টমার অ্যাপ';
-    if (badgeElem) badgeElem.textContent = 'অফিসিয়াল প্রোডাকশন রিলিজ • v1.0.1';
-    if (directBtn) directBtn.href = api('/download/reseller-apk');
-  }
-
-  if (modal) {
-    modal.classList.add('active');
-    document.body.style.overflow = 'hidden';
-  }
-}
-
-// 8. Close APK Download Modal
-function closeApkDownloadModal() {
-  const modal = document.getElementById('apkDownloadModal');
-  if (modal) {
-    modal.classList.remove('active');
-    document.body.style.overflow = '';
-  }
-}
-
-// 9. Start Download & Provide Feedback
-function startApkDownload(e, target) {
-  if (e && typeof e.preventDefault === 'function') {
-    e.preventDefault();
-  }
-  const app = target || currentDownloadTarget;
-  const url = api(app === 'admin' ? '/download/admin-apk' : '/download/reseller-apk');
-  const filename = app === 'admin' ? 'sb-power-admin.apk' : 'sb-power-reseller.apk';
-  
-  if (typeof showToast === 'function') {
-    showToast('📥 অফিসিয়াল APK ফাইল ডাউনলোড শুরু হয়েছে... ডাউনলোড শেষে ইনস্টল করুন।');
-  }
-
-  // Trigger download cleanly once
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-
-  setTimeout(() => {
-    closeApkDownloadModal();
-  }, 1200);
 }
