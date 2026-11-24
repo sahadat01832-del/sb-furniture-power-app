@@ -123,11 +123,11 @@ function openApkDownloadModal(target = 'reseller') {
   if (target === 'admin') {
     if (titleElem) titleElem.textContent = '🛡️ SB Admin Panel এডমিন অ্যাপ';
     if (badgeElem) badgeElem.textContent = 'অফিসিয়াল এডমিন রিলিজ • v1.0.1';
-    if (directBtn) directBtn.href = '/download/admin-apk';
+    if (directBtn) directBtn.href = api('/download/admin-apk');
   } else {
-    if (titleElem) titleElem.textContent = '📱 SB Furniture & SB POWER রিসেলার অ্যাপ';
+    if (titleElem) titleElem.textContent = '📱 SB Furniture & SB POWER কাস্টমার অ্যাপ';
     if (badgeElem) badgeElem.textContent = 'অফিসিয়াল প্রোডাকশন রিলিজ • v1.0.1';
-    if (directBtn) directBtn.href = '/download/reseller-apk';
+    if (directBtn) directBtn.href = api('/download/reseller-apk');
   }
 
   if (modal) {
@@ -151,7 +151,7 @@ function startApkDownload(e, target) {
     e.preventDefault();
   }
   const app = target || currentDownloadTarget;
-  const url = app === 'admin' ? '/download/admin-apk' : '/download/reseller-apk';
+  const url = api(app === 'admin' ? '/download/admin-apk' : '/download/reseller-apk');
   const filename = app === 'admin' ? 'sb-power-admin.apk' : 'sb-power-reseller.apk';
   
   if (typeof showToast === 'function') {

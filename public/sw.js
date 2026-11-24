@@ -1,21 +1,30 @@
-const CACHE_NAME = 'sb-furniture-v4';
+const CACHE_NAME = 'sb-furniture-v18';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
   '/admin.html',
   '/css/style.css',
+  '/css/admin.css',
   '/css/pwa-install.css',
+  '/css/pwa-splash.css',
   '/js/api.js',
+  '/js/app-config.js',
   '/js/catalog.js',
   '/js/leaderboard.js',
   '/js/app.js',
   '/js/pwa-install.js',
+  '/js/pwa-splash.js',
+  '/js/referrals.js',
+  '/js/admin-referrals.js',
   '/js/admin.js',
   '/manifest.json',
   '/manifest-admin.json',
   '/icons/icon.svg',
   '/icons/icon-192.png',
-  '/icons/icon-512.png'
+  '/icons/icon-512.png',
+  '/icons/admin-icon.svg',
+  '/icons/admin-icon-192.png',
+  '/icons/admin-icon-512.png'
 ];
 
 self.addEventListener('install', (event) => {
@@ -49,13 +58,24 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(event.request.url);
 
+  // The active phone API address must always come from Firestore, never a stale cache.
+  if (url.hostname === 'firestore.googleapis.com') {
+    return;
+  }
+
   // Bypass non-http protocols (e.g. chrome-extension, file, capacitor)
   if (!url.protocol.startsWith('http')) {
     return;
   }
 
-  // Bypass multi-megabyte native APK downloads from Service Worker cache storage
-  if (url.pathname.startsWith('/download/') || url.pathname.startsWith('/dist-apk/')) {
+  // Bypass multi-megabyte native APK downloads and dynamic uploads from Service Worker cache storage
+  if (url.pathname.startsWith('/download/') || url.pathname.startsWith('/dist-apk/') || url.pathname.startsWith('/uploads/')) {
+    return;
+  }
+
+  // Product responses may contain reseller-only commissions when authenticated.
+  // Never place personalized catalog data in a shared offline cache.
+  if (url.pathname.startsWith('/api/products') && event.request.headers.has('authorization')) {
     return;
   }
 
@@ -101,6 +121,21 @@ self.addEventListener('fetch', (event) => {
 
   // 3. Bypass all other /api/ endpoints (auth, orders, wallet, admin) - direct live server connection
   if (url.pathname.startsWith('/api/')) {
+    return;
+  }
+
+  // Keep the public API endpoint fresh when a phone tunnel is reconfigured.
+  if (url.pathname === '/js/app-config.js' || url.pathname === '/js/api.js') {
+    event.respondWith(
+      fetch(event.request, { cache: 'no-store' })
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, networkResponse.clone()));
+          }
+          return networkResponse;
+        })
+        .catch(() => caches.match(event.request))
+    );
     return;
   }
 

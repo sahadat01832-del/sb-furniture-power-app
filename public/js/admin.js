@@ -9,6 +9,14 @@ let adminProductsList = [];
 const api = (path) => (typeof window.apiUrl === 'function' ? window.apiUrl(path) : path);
 const escapeAdminHtml = (value) => window.sbEscapeHtml(value);
 const safeAdminImageUrl = (value) => window.sbSafeImageUrl(value);
+const adminStatusLabels = {
+  pending: 'অপেক্ষমাণ',
+  confirmed: 'নিশ্চিত',
+  shipped: 'পাঠানো হয়েছে',
+  delivered: 'ডেলিভারি সম্পন্ন',
+  cancelled: 'বাতিল'
+};
+const payoutStatusLabels = { pending: 'অপেক্ষমাণ', approved: 'পরিশোধ সম্পন্ন', rejected: 'বাতিল' };
 
 document.addEventListener('DOMContentLoaded', () => {
   if (adminToken) {
@@ -29,6 +37,8 @@ function showToast(message) {
 function showLoginView() {
   document.getElementById('adminLoginSection').style.display = 'block';
   document.getElementById('adminDashboardSection').style.display = 'none';
+  const error = document.getElementById('adminLoginError');
+  if (error) { error.textContent = ''; error.hidden = true; }
 }
 
 function showDashboardView() {
@@ -42,8 +52,13 @@ function showDashboardView() {
 async function submitAdminLogin() {
   const phone = document.getElementById('adminPhoneInput').value.trim();
   const password = document.getElementById('adminPassInput').value;
+  const error = document.getElementById('adminLoginError');
+  if (error) { error.textContent = ''; error.hidden = true; }
 
-  if (!phone || !password) return alert('ফোন ও পাসওয়ার্ড দিন');
+  if (!phone || !password) {
+    if (error) { error.textContent = 'ফোন নম্বর ও পাসওয়ার্ড—দুটিই লিখুন।'; error.hidden = false; }
+    return;
+  }
 
   try {
     const res = await fetch(api('/api/auth/login'), {
@@ -59,11 +74,14 @@ async function submitAdminLogin() {
       showDashboardView();
       showToast('👑 এডমিন লগইন সফল হয়েছে!');
     } else {
-      alert(data.user && data.user.role !== 'admin' ? 'আপনার এডমিন অ্যাক্সেস নেই' : data.message);
+      if (error) {
+        error.textContent = data.user && data.user.role !== 'admin' ? 'এই অ্যাকাউন্টে অ্যাডমিন অনুমতি নেই।' : (data.message || 'ফোন নম্বর বা পাসওয়ার্ড মিলছে না।');
+        error.hidden = false;
+      }
     }
   } catch (err) {
     console.error(err);
-    alert('এডমিন লগইন ব্যর্থ হয়েছে');
+    if (error) { error.textContent = 'সার্ভারে সংযোগ হচ্ছে না। ইন্টারনেট দেখে আবার চেষ্টা করুন।'; error.hidden = false; }
   }
 }
 
@@ -89,10 +107,12 @@ function adminLogout() {
   showToast('লগআউট করা হয়েছে');
 }
 
-// Switch Sections (Orders, Payouts, Products, Analytics, Announcements, Backups, Users, Guide)
+// Switch Sections (Orders, Profit, Shops, Referrals, Payouts, Products, Analytics, Announcements, Backups, Users, Guide)
 function switchAdminSection(section) {
   currentAdminSection = section;
-  const sections = ['orders', 'payouts', 'products', 'analytics', 'announcements', 'backups', 'users', 'guide'];
+  const select = document.getElementById('adminSectionSelect');
+  if (select) select.value = section;
+  const sections = ['orders', 'profit', 'shops', 'referrals', 'payouts', 'products', 'analytics', 'announcements', 'backups', 'users', 'guide'];
   sections.forEach((s) => {
     const capitalized = s.charAt(0).toUpperCase() + s.slice(1);
     const secEl = document.getElementById(`admin${capitalized}Section`);
@@ -101,8 +121,15 @@ function switchAdminSection(section) {
     if (tabEl) tabEl.classList.toggle('active', section === s);
   });
   const loaders = {
-    orders: loadAdminOrders, payouts: loadAdminPayouts, products: loadAdminProducts,
-    analytics: loadAdminAnalytics, announcements: loadAdminAnnouncements, backups: loadAdminBackupsList,
+    orders: loadAdminOrders,
+    profit: loadAdminProfitDashboard,
+    shops: loadAdminShops,
+    referrals: () => window.loadAdminReferrals && window.loadAdminReferrals(),
+    payouts: loadAdminPayouts,
+    products: loadAdminProducts,
+    analytics: loadAdminAnalytics,
+    announcements: loadAdminAnnouncements,
+    backups: loadAdminBackupsList,
     users: () => window.loadAdminUsers && window.loadAdminUsers(),
     guide: () => window.loadAdminContentGuide && window.loadAdminContentGuide()
   };
@@ -130,6 +157,8 @@ async function loadAdminStats() {
   }
 }
 
+let adminOrdersList = [];
+
 // ================= SECTION 1: ORDERS =================
 async function loadAdminOrders() {
   const tbody = document.getElementById('adminOrdersTableBody');
@@ -144,37 +173,104 @@ async function loadAdminOrders() {
     const data = await res.json();
 
     if (!data.success || data.orders.length === 0) {
+      adminOrdersList = [];
       tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 20px; color: var(--sbf-text-muted);">কোনো অর্ডার নেই।</td></tr>';
       return;
     }
 
-    tbody.innerHTML = data.orders.map((o) => `
+    adminOrdersList = data.orders;
+
+    tbody.innerHTML = data.orders.map((o) => {
+      const commissionAmount = o.total_reseller_commission !== undefined ? o.total_reseller_commission : (o.reseller_commission || 0);
+      const isCommissionReleased = Boolean(o.commission_released);
+      const referralCommission = Number(o.referral_commission_amount || 0);
+      const referralCredit = Number(o.referral_credit_amount || 0);
+      const referralDiscount = Number(o.discount_amount || 0);
+
+      return `
       <tr>
-        <td><strong>#${escapeAdminHtml(o.order_number)}</strong><br><span style="font-size: 0.72rem; color: #a8a29e;">${new Date(o.created_at).toLocaleDateString('bn-BD')}</span></td>
-        <td><strong>${escapeAdminHtml(o.customer_name)}</strong><br><a href="tel:${escapeAdminHtml(String(o.customer_phone).replace(/\D/g, ''))}" style="color: var(--sbp-yellow);">${escapeAdminHtml(o.customer_phone)}</a></td>
-        <td>${escapeAdminHtml(o.delivery_address)}<br><span style="color: #38bdf8;">(${o.delivery_city === 'inside_dhaka' ? 'ঢাকা ভেতরে' : 'ঢাকা বাইরে'})</span></td>
-        <td><strong>${escapeAdminHtml(o.total_amount)} ৳</strong><br><span style="font-size: 0.75rem; color: #a8a29e;">(অগ্রিম: ${escapeAdminHtml(o.advance_paid)}৳)</span></td>
-        <td>${o.advance_trx_id ? `<strong style="color: #34d399;">${escapeAdminHtml(o.advance_trx_id)}</strong>` : '<span style="color: #ef4444;">নেই</span>'}</td>
-        <td>${o.reseller_name ? `${escapeAdminHtml(o.reseller_name)}<br><span style="font-size: 0.75rem; color: #a8a29e;">${escapeAdminHtml(o.reseller_phone)}</span>` : '<span style="color: #a8a29e;">সরাসরি</span>'}</td>
-        <td>
-          <span style="background: ${getStatusBadgeBg(o.status)}; color: #fff; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 700;">
-            ${escapeAdminHtml(o.status)}
-          </span>
+        <td data-label="অর্ডার">
+          <strong>#${escapeAdminHtml(o.order_number)}</strong>
+          <br><span class="admin-cell-muted">${new Date(o.created_at).toLocaleDateString('bn-BD')}</span>
         </td>
-        <td>
-          <div style="display: flex; gap: 4px; flex-wrap: wrap;">
-            ${o.status === 'pending' ? `<button class="action-btn-sm btn-confirm" onclick="updateOrderStatus(${o.id}, 'confirmed')">কনফার্ম</button>` : ''}
-            ${['pending', 'confirmed'].includes(o.status) ? `<button class="action-btn-sm btn-ship" onclick="updateOrderStatus(${o.id}, 'shipped')">শিপড</button>` : ''}
-            ${['pending', 'confirmed', 'shipped'].includes(o.status) ? `<button class="action-btn-sm btn-deliver" onclick="updateOrderStatus(${o.id}, 'delivered')">ডেলিভার্ড</button>` : ''}
-            ${o.status !== 'delivered' && o.status !== 'cancelled' ? `<button class="action-btn-sm btn-cancel" onclick="updateOrderStatus(${o.id}, 'cancelled')">বাতিল</button>` : ''}
-            <button class="action-btn-sm" style="background: #475569; color: #fff;" onclick="viewOrderAuditTrail(${o.id})">অডিট</button>
+        <td data-label="ক্রেতা">
+          <strong>${escapeAdminHtml(o.customer_name)}</strong>
+          <br><a href="tel:${escapeAdminHtml(String(o.customer_phone).replace(/\D/g, ''))}" style="color: #2563eb; font-weight: 600;">📞 ${escapeAdminHtml(o.customer_phone)}</a>
+        </td>
+        <td data-label="ডেলিভারি ঠিকানা">
+          ${escapeAdminHtml(o.delivery_address)}
+          <br><span class="admin-cell-muted">${o.delivery_city === 'inside_dhaka' ? 'ঢাকার ভেতরে (৮০৳)' : 'ঢাকার বাইরে (১৫০৳)'}</span>
+        </td>
+        <td data-label="সর্বমোট ও অগ্রিম">
+          <strong style="color: #ea580c; font-size: 0.95rem;">${escapeAdminHtml(o.total_amount)} ৳</strong>
+          ${referralDiscount > 0 ? `<br><span class="admin-cell-success">রেফারেল ছাড়: -${escapeAdminHtml(referralDiscount)}৳</span>` : ''}
+          <br><span class="admin-cell-muted">অগ্রিম: ${escapeAdminHtml(o.advance_paid)}৳</span>
+          ${o.advance_trx_id ? `<br><span class="admin-cell-success" style="font-size: 0.72rem;">Trx: ${escapeAdminHtml(o.advance_trx_id)}</span>` : ''}
+        </td>
+        <td data-label="লাভ ও পাইকারি">
+          <span style="font-size: 0.75rem; color: #64748b;">পাইকারি: ${escapeAdminHtml(o.total_wholesale_amount || 0)}৳</span>
+          <br><strong style="color: #16a34a; font-size: 0.88rem;">নিট লাভ: ${escapeAdminHtml(o.platform_net_profit || 0)} ৳</strong>
+        </td>
+        <td data-label="রিসেলার ও কমিশন">
+          ${o.reseller_name ? `<strong>${escapeAdminHtml(o.reseller_name)}</strong><br><span class="admin-cell-muted">${escapeAdminHtml(o.reseller_phone)}</span>` : '<span class="admin-cell-muted">সরাসরি অর্ডার</span>'}
+          <br><span class="admin-commission-badge" style="margin-top: 3px;">কমিশন: ${escapeAdminHtml(commissionAmount)}৳</span>
+          ${referralCommission > 0 ? `<br><span class="admin-commission-badge">রেফারেল কমিশন: ${escapeAdminHtml(referralCommission)}৳</span>` : ''}
+          ${referralCredit > 0 ? `<br><span class="admin-commission-badge">কাস্টমার ছাড়ের জমা: ${escapeAdminHtml(referralCredit)}৳</span>` : ''}
+        </td>
+        <td data-label="স্ট্যাটাস">
+          <span style="background: ${getStatusBadgeBg(o.status)}; color: #fff; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 700;">
+            ${escapeAdminHtml(adminStatusLabels[o.status] || o.status)}
+          </span>
+          <div style="margin-top: 4px;">
+            ${isCommissionReleased
+              ? '<span style="background: #16a34a; color: #fff; padding: 1px 6px; border-radius: 4px; font-size: 0.68rem; font-weight: 700;">✅ কমিশন ছাড় সম্পন্ন</span>'
+              : (o.status !== 'cancelled' ? '<span style="background: #d97706; color: #fff; padding: 1px 6px; border-radius: 4px; font-size: 0.68rem; font-weight: 700;">⏳ কমিশন পেন্ডিং</span>' : '')
+            }
+          </div>
+        </td>
+        <td data-label="করণীয়">
+          <div style="display: flex; gap: 4px; flex-wrap: wrap; align-items: center;">
+            <button class="action-btn-sm" style="background: #2563eb; color: #fff; font-weight: 600;" onclick="viewOrderDetail(${o.id})">👁️ বিস্তারিত</button>
+            ${o.status === 'pending' ? `<button class="action-btn-sm btn-confirm" onclick="updateOrderStatus(${o.id}, 'confirmed')">✓ কনফার্ম</button>` : ''}
+            ${['pending', 'confirmed'].includes(o.status) ? `<button class="action-btn-sm btn-ship" onclick="updateOrderStatus(${o.id}, 'shipped')">🚚 শিপড</button>` : ''}
+            ${['pending', 'confirmed', 'shipped'].includes(o.status) ? `<button class="action-btn-sm btn-deliver" onclick="updateOrderStatus(${o.id}, 'delivered')">✅ ডেলিভার্ড</button>` : ''}
+            ${!isCommissionReleased && o.status !== 'cancelled' && commissionAmount > 0 ? `<button class="action-btn-sm" style="background: #16a34a; color: #fff; font-weight: 700;" onclick="instantReleaseCommission(${o.id}, ${commissionAmount})">⚡ ছাড়</button>` : ''}
+            ${o.status !== 'delivered' && o.status !== 'cancelled' ? `<button class="action-btn-sm btn-cancel" onclick="updateOrderStatus(${o.id}, 'cancelled')">✕ বাতিল</button>` : ''}
+            <button class="action-btn-sm" style="background: #64748b; color: #fff;" onclick="viewOrderAuditTrail(${o.id})">📋 অডিট</button>
           </div>
         </td>
       </tr>
-    `).join('');
+      `;
+    }).join('');
   } catch (err) {
     console.error(err);
     tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: var(--sbp-red);">লোড ব্যর্থ হয়েছে।</td></tr>';
+  }
+}
+
+async function instantReleaseCommission(orderId, commissionAmount) {
+  const ok = confirm(`আপনি কি এই অর্ডারের রিসেলার কমিশন (৳${commissionAmount}) তাৎক্ষণিকভাবে রিসেলারের ওয়ালেটে যুক্ত করতে চান?`);
+  if (!ok) return;
+
+  try {
+    const res = await fetch(api(`/api/admin/orders/${orderId}/release-commission`), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`
+      }
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(data.message || '✅ কমিশন সফলভাবে ছাড় করা হয়েছে!');
+      loadAdminOrders();
+      loadAdminStats();
+    } else {
+      alert(data.message || 'কমিশন ছাড় ব্যর্থ হয়েছে');
+    }
+  } catch (err) {
+    console.error('Release Commission Error:', err);
+    alert('কমিশন ছাড় ব্যর্থ হয়েছে');
   }
 }
 
@@ -207,6 +303,472 @@ async function updateOrderStatus(orderId, newStatus) {
   }
 }
 
+// 1-Click Customer & Order Details Modal View
+function viewOrderDetail(orderId) {
+  const o = adminOrdersList.find((item) => item.id === orderId);
+  if (!o) {
+    alert('অর্ডারের তথ্য পাওয়া যায়নি');
+    return;
+  }
+
+  const titleEl = document.getElementById('orderDetailModalTitle');
+  if (titleEl) titleEl.textContent = `📦 অর্ডার #${escapeAdminHtml(o.order_number)}`;
+
+  const commissionAmount = o.total_reseller_commission !== undefined ? o.total_reseller_commission : (o.reseller_commission || 0);
+  const isCommissionReleased = Boolean(o.commission_released);
+  const referralCommission = Number(o.referral_commission_amount || 0);
+  const referralCredit = Number(o.referral_credit_amount || 0);
+  const referralDiscount = Number(o.discount_amount || 0);
+
+  const bodyEl = document.getElementById('orderDetailModalBody');
+  if (!bodyEl) return;
+
+  const itemsList = Array.isArray(o.items) && o.items.length > 0 ? o.items : [];
+
+  bodyEl.innerHTML = `
+    <!-- Top Meta & Status Banner -->
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px 16px; margin-bottom: 16px;">
+      <div>
+        <div style="font-size: 0.82rem; color: #64748b;">অর্ডার তারিখ: <strong>${new Date(o.created_at).toLocaleString('bn-BD')}</strong></div>
+        <div style="font-size: 0.82rem; color: #64748b; margin-top: 2px;">অর্ডার আইডি: <strong>#${escapeAdminHtml(o.id)}</strong> (${escapeAdminHtml(o.order_number)})</div>
+      </div>
+      <div style="text-align: right;">
+        <span style="background: ${getStatusBadgeBg(o.status)}; color: #fff; padding: 4px 12px; border-radius: 6px; font-size: 0.85rem; font-weight: 700;">
+          ${escapeAdminHtml(adminStatusLabels[o.status] || o.status)}
+        </span>
+        <div style="margin-top: 4px;">
+          ${isCommissionReleased
+            ? '<span style="background: #16a34a; color: #fff; padding: 2px 8px; border-radius: 4px; font-size: 0.72rem; font-weight: 700;">✅ কমিশন ছাড় সম্পন্ন</span>'
+            : (o.status !== 'cancelled' ? '<span style="background: #d97706; color: #fff; padding: 2px 8px; border-radius: 4px; font-size: 0.72rem; font-weight: 700;">⏳ কমিশন পেন্ডিং</span>' : '')
+          }
+        </div>
+      </div>
+    </div>
+
+    <!-- Customer & Delivery Card -->
+    <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
+      <h4 style="font-size: 0.95rem; color: #0f172a; margin-bottom: 12px; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px;">
+        👤 গ্রাহক ও ডেলিভারি বিবরণ (Customer & Delivery)
+      </h4>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; font-size: 0.85rem;">
+        <div>
+          <span style="color: #64748b; display: block; font-size: 0.75rem;">গ্রাহকের নাম:</span>
+          <strong style="color: #0f172a; font-size: 1rem;">${escapeAdminHtml(o.customer_name)}</strong>
+        </div>
+        <div>
+          <span style="color: #64748b; display: block; font-size: 0.75rem;">ফোন নম্বর:</span>
+          <div style="display: flex; gap: 8px; align-items: center; margin-top: 2px;">
+            <a href="tel:${escapeAdminHtml(String(o.customer_phone).replace(/\D/g, ''))}" style="color: #2563eb; font-weight: 700; text-decoration: underline;">
+              📞 ${escapeAdminHtml(o.customer_phone)}
+            </a>
+            <a href="https://wa.me/88${escapeAdminHtml(String(o.customer_phone).replace(/\D/g, ''))}" target="_blank" style="background: #16a34a; color: #fff; padding: 2px 8px; border-radius: 6px; font-size: 0.75rem; text-decoration: none; font-weight: 600;">
+              💬 WhatsApp
+            </a>
+          </div>
+        </div>
+        <div>
+          <span style="color: #64748b; display: block; font-size: 0.75rem;">ডেলিভারি এরিয়া:</span>
+          <strong style="color: #334155;">${o.delivery_city === 'inside_dhaka' ? 'ঢাকার ভেতরে (ডেলিভারি ৮০৳)' : 'ঢাকার বাইরে (ডেলিভারি ১৫০৳)'}</strong>
+        </div>
+        <div>
+          <span style="color: #64748b; display: block; font-size: 0.75rem;">সম্পূর্ণ ঠিকানা:</span>
+          <strong style="color: #0f172a;">${escapeAdminHtml(o.delivery_address)}</strong>
+        </div>
+      </div>
+      ${o.customer_notes ? `
+        <div style="margin-top: 10px; padding: 8px 12px; background: #fffbeb; border: 1px solid #fef3c7; border-radius: 8px; font-size: 0.82rem; color: #92400e;">
+          📝 <strong>গ্রাহকের বিশেষ নোট:</strong> ${escapeAdminHtml(o.customer_notes)}
+        </div>
+      ` : ''}
+    </div>
+
+    <!-- Ordered Items Table -->
+    <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
+      <h4 style="font-size: 0.95rem; color: #0f172a; margin-bottom: 12px; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px;">
+        🛍️ অর্ডারকৃত পণ্যের তালিকা (Ordered Products)
+      </h4>
+      <div class="table-responsive">
+        <table>
+          <thead>
+            <tr>
+              <th>SKU</th>
+              <th>পণ্যের নাম</th>
+              <th style="text-align: right;">একক মূল্য</th>
+              <th style="text-align: center;">পরিমাণ</th>
+              <th style="text-align: right;">মোট মূল্য</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${itemsList.length > 0 ? itemsList.map((item) => `
+              <tr>
+                <td><strong>${escapeAdminHtml(item.product_sku || item.sku || '-')}</strong></td>
+                <td>${escapeAdminHtml(item.product_title || item.title || 'পণ্য')}</td>
+                <td style="text-align: right;">${escapeAdminHtml(item.unit_price || item.price || 0)} ৳</td>
+                <td style="text-align: center;"><span style="background: #f1f5f9; padding: 2px 8px; border-radius: 4px; font-weight: 700;">${escapeAdminHtml(item.quantity)}টি</span></td>
+                <td style="text-align: right;"><strong>${escapeAdminHtml(item.total_price || (item.unit_price * item.quantity) || 0)} ৳</strong></td>
+              </tr>
+            `).join('') : `
+              <tr><td colspan="5" style="text-align: center; color: #64748b;">পণ্যের তথ্য পাওয়া যায়নি</td></tr>
+            `}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Financial Breakdown & Reseller Commission -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; margin-bottom: 18px;">
+      <!-- Payment Ledger -->
+      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px;">
+        <h5 style="font-size: 0.88rem; color: #0f172a; margin-bottom: 10px;">💳 পেমেন্ট ও ডেলিভারি হিসাব</h5>
+        <div style="display: flex; justify-content: space-between; font-size: 0.82rem; margin-bottom: 6px;">
+          <span style="color: #64748b;">পণ্য মূল্য (Subtotal):</span>
+          <strong>${escapeAdminHtml(o.subtotal_amount || 0)} ৳</strong>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-size: 0.82rem; margin-bottom: 6px;">
+          <span style="color: #64748b;">ডেলিভারি ফি:</span>
+          <strong>+${escapeAdminHtml(o.delivery_fee || 0)} ৳</strong>
+        </div>
+        ${referralDiscount > 0 ? `<div style="display: flex; justify-content: space-between; font-size: 0.82rem; margin-bottom: 6px; color: #15803d;"><span>ব্যবহৃত রেফারেল ছাড়:</span><strong>-${escapeAdminHtml(referralDiscount)} ৳</strong></div>` : ''}
+        <div style="display: flex; justify-content: space-between; font-size: 0.88rem; margin-bottom: 6px; border-top: 1px solid #e2e8f0; padding-top: 6px;">
+          <span style="font-weight: 700; color: #0f172a;">সর্বমোট অর্ডার মূল্য:</span>
+          <strong style="color: #ea580c; font-size: 1rem;">${escapeAdminHtml(o.total_amount)} ৳</strong>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-size: 0.82rem; margin-bottom: 6px;">
+          <span style="color: #16a34a;">অগ্রিম পরিশোধিত:</span>
+          <strong style="color: #16a34a;">-${escapeAdminHtml(o.advance_paid || 0)} ৳</strong>
+        </div>
+        ${o.advance_trx_id ? `
+          <div style="font-size: 0.75rem; color: #059669; background: #ecfdf5; padding: 4px 8px; border-radius: 4px; margin-bottom: 6px;">
+            TrxID: <strong>${escapeAdminHtml(o.advance_trx_id)}</strong>
+          </div>
+        ` : ''}
+        <div style="display: flex; justify-content: space-between; font-size: 0.9rem; border-top: 1px dashed #cbd5e1; padding-top: 8px; margin-top: 6px;">
+          <span style="font-weight: 700; color: #0f172a;">ক্যাশ অন ডেলিভারিতে প্রাপ্য:</span>
+          <strong style="color: #2563eb; font-size: 1.05rem;">${escapeAdminHtml(Math.max(0, (o.total_amount || 0) - (o.advance_paid || 0)))} ৳</strong>
+        </div>
+      </div>
+
+      <!-- Reseller & Profit Ledger -->
+      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px;">
+        <h5 style="font-size: 0.88rem; color: #0f172a; margin-bottom: 10px;">📈 পাইকারি, রিসেলার ও প্ল্যাটফর্ম লাভ</h5>
+        <div style="display: flex; justify-content: space-between; font-size: 0.82rem; margin-bottom: 6px;">
+          <span style="color: #64748b;">মোট পাইকারি ক্রয়মূল্য:</span>
+          <strong style="color: #6546a5;">${escapeAdminHtml(o.total_wholesale_amount || 0)} ৳</strong>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-size: 0.82rem; margin-bottom: 6px;">
+          <span style="color: #64748b;">অর্ডারকারী রিসেলার:</span>
+          <strong>${o.reseller_name ? `${escapeAdminHtml(o.reseller_name)} (${escapeAdminHtml(o.reseller_phone)})` : 'সরাসরি বিক্রয়'}</strong>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-size: 0.82rem; margin-bottom: 6px;">
+          <span style="color: #64748b;">রিসেলার কমিশন:</span>
+          <strong style="color: #d97706;">${escapeAdminHtml(commissionAmount)} ৳</strong>
+        </div>
+        ${referralCommission > 0 ? `<div style="display: flex; justify-content: space-between; font-size: 0.82rem; margin-bottom: 6px;"><span style="color: #64748b;">রিসেলার রেফারেল কমিশন:</span><strong style="color: #0f766e;">${escapeAdminHtml(referralCommission)} ৳</strong></div>` : ''}
+        ${referralCredit > 0 ? `<div style="display: flex; justify-content: space-between; font-size: 0.82rem; margin-bottom: 6px;"><span style="color: #64748b;">কাস্টমার রেফারেল ছাড়:</span><strong style="color: #0f766e;">${escapeAdminHtml(referralCredit)} ৳</strong></div>` : ''}
+        <div style="display: flex; justify-content: space-between; align-items: center; background: #ecfdf5; border: 1px solid #86efac; border-radius: 8px; padding: 10px; margin-top: 10px;">
+          <span style="color: #166534; font-weight: 700; font-size: 0.85rem;">💎 প্ল্যাটফর্ম নিট লাভ:</span>
+          <strong style="color: #15803d; font-size: 1.2rem;">${escapeAdminHtml(o.platform_net_profit || 0)} ৳</strong>
+        </div>
+      </div>
+    </div>
+
+    <!-- 1-Click Status Transition Action Bar -->
+    <div style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 12px; padding: 14px; text-align: center;">
+      <div style="font-size: 0.82rem; font-weight: 700; color: #334155; margin-bottom: 10px;">
+        ⚡ ১-ক্লিকে স্ট্যাটাস পরিবর্তন করুন (1-Click Status Transition)
+      </div>
+      <div style="display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;">
+        ${o.status === 'pending' ? `<button class="action-btn-sm btn-confirm" style="padding: 8px 16px; font-size: 0.85rem;" onclick="updateOrderStatusAndRefreshModal(${o.id}, 'confirmed')">✓ নিশ্চিত করুন</button>` : ''}
+        ${['pending', 'confirmed'].includes(o.status) ? `<button class="action-btn-sm btn-ship" style="padding: 8px 16px; font-size: 0.85rem;" onclick="updateOrderStatusAndRefreshModal(${o.id}, 'shipped')">🚚 কুরিয়ারে পাঠান (Shipped)</button>` : ''}
+        ${['pending', 'confirmed', 'shipped'].includes(o.status) ? `<button class="action-btn-sm btn-deliver" style="padding: 8px 16px; font-size: 0.85rem;" onclick="updateOrderStatusAndRefreshModal(${o.id}, 'delivered')">✅ ডেলিভার্ড সম্পন্ন করুন</button>` : ''}
+        ${!isCommissionReleased && o.status !== 'cancelled' && commissionAmount > 0 ? `<button class="action-btn-sm" style="background: #16a34a; color: #fff; font-weight: 700; padding: 8px 16px; font-size: 0.85rem;" onclick="instantReleaseCommissionAndRefreshModal(${o.id}, ${commissionAmount})">⚡ রিসেলার কমিশন ছাড়</button>` : ''}
+        ${o.status !== 'delivered' && o.status !== 'cancelled' ? `<button class="action-btn-sm btn-cancel" style="padding: 8px 16px; font-size: 0.85rem;" onclick="updateOrderStatusAndRefreshModal(${o.id}, 'cancelled')">✕ বাতিল করুন</button>` : ''}
+        <button class="action-btn-sm" style="background: #64748b; color: #fff; padding: 8px 16px; font-size: 0.85rem;" onclick="viewOrderAuditTrail(${o.id})">📋 অডিট হিস্ট্রি</button>
+      </div>
+    </div>
+  `;
+
+  openModal('orderDetailModal');
+}
+
+async function updateOrderStatusAndRefreshModal(orderId, newStatus) {
+  await updateOrderStatus(orderId, newStatus);
+  closeModal('orderDetailModal');
+}
+
+async function instantReleaseCommissionAndRefreshModal(orderId, commissionAmount) {
+  await instantReleaseCommission(orderId, commissionAmount);
+  closeModal('orderDetailModal');
+}
+
+// ================= SECTION: PROFIT DASHBOARD =================
+async function loadAdminProfitDashboard() {
+  try {
+    const res = await fetch(api('/api/admin/analytics'), {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    const data = await res.json();
+    if (!data.success || !data.analytics || !data.analytics.profit_dashboard) return;
+    const p = data.analytics.profit_dashboard;
+
+    // Today
+    const today = p.today || {};
+    const elTOrders = document.getElementById('profitTodayOrders');
+    if (elTOrders) elTOrders.textContent = `${today.order_count || 0}টি অর্ডার`;
+    const elTRev = document.getElementById('profitTodayRevenue');
+    if (elTRev) elTRev.textContent = `${today.total_revenue || 0} ৳`;
+    const elTWhl = document.getElementById('profitTodayWholesale');
+    if (elTWhl) elTWhl.textContent = `${today.total_wholesale || 0} ৳`;
+    const elTCom = document.getElementById('profitTodayCommission');
+    if (elTCom) elTCom.textContent = `${today.total_reseller_commission || 0} ৳`;
+    const elTNet = document.getElementById('profitTodayNet');
+    if (elTNet) elTNet.textContent = `${today.net_profit || 0} ৳`;
+
+    // This Month
+    const month = p.this_month || {};
+    const elMOrders = document.getElementById('profitMonthOrders');
+    if (elMOrders) elMOrders.textContent = `${month.order_count || 0}টি অর্ডার`;
+    const elMRev = document.getElementById('profitMonthRevenue');
+    if (elMRev) elMRev.textContent = `${month.total_revenue || 0} ৳`;
+    const elMWhl = document.getElementById('profitMonthWholesale');
+    if (elMWhl) elMWhl.textContent = `${month.total_wholesale || 0} ৳`;
+    const elMCom = document.getElementById('profitMonthCommission');
+    if (elMCom) elMCom.textContent = `${month.total_reseller_commission || 0} ৳`;
+    const elMNet = document.getElementById('profitMonthNet');
+    if (elMNet) elMNet.textContent = `${month.net_profit || 0} ৳`;
+
+    // All Time
+    const allTime = p.all_time || {};
+    const elAOrders = document.getElementById('profitAllOrders');
+    if (elAOrders) elAOrders.textContent = `${allTime.order_count || 0}টি অর্ডার`;
+    const elARev = document.getElementById('profitAllRevenue');
+    if (elARev) elARev.textContent = `${allTime.total_revenue || 0} ৳`;
+    const elAWhl = document.getElementById('profitAllWholesale');
+    if (elAWhl) elAWhl.textContent = `${allTime.total_wholesale || 0} ৳`;
+    const elACom = document.getElementById('profitAllCommission');
+    if (elACom) elACom.textContent = `${allTime.total_reseller_commission || 0} ৳`;
+    const elANet = document.getElementById('profitAllNet');
+    if (elANet) elANet.textContent = `${allTime.net_profit || 0} ৳`;
+
+    // Partner Ledger
+    const partner = p.partner_settlement || {};
+    const elPWhl = document.getElementById('ledgerPartnerWholesale');
+    if (elPWhl) elPWhl.textContent = `${partner.total_partner_wholesale || 0} ৳`;
+    const elPSet = document.getElementById('ledgerPartnerSettled');
+    if (elPSet) elPSet.textContent = `${partner.total_partner_settled || 0} ৳`;
+    const elPPen = document.getElementById('ledgerPartnerPending');
+    if (elPPen) elPPen.textContent = `${partner.pending_partner_payable || 0} ৳`;
+
+    // Reseller Commission Ledger
+    const comm = p.commission_ledger || {};
+    const elCPen = document.getElementById('ledgerPendingCommission');
+    if (elCPen) elCPen.textContent = `${comm.pending_commission || 0} ৳`;
+    const elCRel = document.getElementById('ledgerReleasedCommission');
+    if (elCRel) elCRel.textContent = `${comm.released_commission || 0} ৳`;
+    const elCPayoutPen = document.getElementById('ledgerPendingPayouts');
+    if (elCPayoutPen) elCPayoutPen.textContent = `${comm.pending_payouts || 0} ৳`;
+    const elCPayoutApp = document.getElementById('ledgerApprovedPayouts');
+    if (elCPayoutApp) elCPayoutApp.textContent = `${comm.approved_payouts || 0} ৳`;
+  } catch (err) {
+    console.error('Profit Dashboard Error:', err);
+  }
+}
+
+// ================= SECTION: SHOPS & PARTNER LEDGER =================
+let adminShopsList = [];
+
+async function loadAdminShops() {
+  const tbody = document.getElementById('adminShopsTableBody');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; padding: 20px;">দোকান ও লেজার তথ্য লোড হচ্ছে...</td></tr>';
+
+  try {
+    const res = await fetch(api('/api/admin/shops'), {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    const data = await res.json();
+    if (!data.success || !data.shops || data.shops.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; padding: 20px; color: var(--sbf-text-muted);">কোনো দোকান তালিকা পাওয়া যায়নি।</td></tr>';
+      return;
+    }
+
+    adminShopsList = data.shops;
+    tbody.innerHTML = data.shops.map((s) => {
+      const isOwn = s.shop_type === 'own';
+      const typeBadge = isOwn
+        ? '<span style="background: #2563eb; color: #fff; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 700;">নিজস্ব ব্র্যান্ড</span>'
+        : '<span style="background: #059669; color: #fff; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 700;">পার্টনার শপ</span>';
+
+      return `
+        <tr>
+          <td data-label="দোকানের নাম">
+            <strong>${escapeAdminHtml(s.name)}</strong>
+            ${s.address ? `<br><span class="admin-cell-muted">📍 ${escapeAdminHtml(s.address)}</span>` : ''}
+          </td>
+          <td data-label="ধরন">${typeBadge}</td>
+          <td data-label="যোগাযোগ">
+            <strong>${escapeAdminHtml(s.contact_person || '-')}</strong>
+            <br><a href="tel:${escapeAdminHtml(String(s.phone || '').replace(/\D/g, ''))}">${escapeAdminHtml(s.phone || '-')}</a>
+          </td>
+          <td data-label="মোট পণ্য"><strong>${escapeAdminHtml(s.products_count || 0)} টি</strong></td>
+          <td data-label="ডেলিভার্ড ইউনিট"><strong style="color: #2563eb;">${escapeAdminHtml(s.delivered_units_count || 0)} টি</strong></td>
+          <td data-label="মোট পাইকারি পাওনা"><strong class="admin-cell-money">${escapeAdminHtml(s.total_wholesale_amount || 0)} ৳</strong></td>
+          <td data-label="পরিশোধিত"><strong style="color: #059669;">${escapeAdminHtml(s.total_settled_amount || 0)} ৳</strong></td>
+          <td data-label="বর্তমান বকেয়া">
+            <strong style="color: ${s.pending_payable > 0 ? '#b45309' : '#059669'}; font-size: 0.95rem;">
+              ${escapeAdminHtml(s.pending_payable || 0)} ৳
+            </strong>
+          </td>
+          <td data-label="করণীয়">
+            <div style="display: flex; gap: 4px; flex-wrap: wrap;">
+              ${!isOwn ? `
+                <button class="action-btn-sm btn-deliver" onclick="openSettleShopModal(${s.id}, '${escapeAdminHtml(s.name).replace(/'/g, "\\'")}', ${s.pending_payable || 0})">💸 পাওনা পরিশোধ</button>
+              ` : ''}
+              <button class="action-btn-sm btn-ship" onclick="viewShopSettlements(${s.id}, '${escapeAdminHtml(s.name).replace(/'/g, "\\'")}')">📜 হিস্ট্রি</button>
+            </div>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  } catch (err) {
+    console.error('Shops Load Error:', err);
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: var(--sbp-red);">দোকান তালিকা লোড ব্যর্থ হয়েছে।</td></tr>';
+  }
+}
+
+function openAddShopModal() {
+  document.getElementById('shopNameInput').value = '';
+  document.getElementById('shopTypeInput').value = 'partner';
+  document.getElementById('shopContactInput').value = '';
+  document.getElementById('shopPhoneInput').value = '';
+  document.getElementById('shopCommissionRateInput').value = '0';
+  document.getElementById('shopAddressInput').value = '';
+  document.getElementById('shopNotesInput').value = '';
+  openModal('addShopModal');
+}
+
+async function submitAddShopForm() {
+  const name = document.getElementById('shopNameInput').value.trim();
+  const shop_type = document.getElementById('shopTypeInput').value;
+  const contact_person = document.getElementById('shopContactInput').value.trim();
+  const phone = document.getElementById('shopPhoneInput').value.trim();
+  const commission_rate = parseFloat(document.getElementById('shopCommissionRateInput').value) || 0;
+  const address = document.getElementById('shopAddressInput').value.trim();
+  const notes = document.getElementById('shopNotesInput').value.trim();
+
+  if (!name) return alert('দোকানের নাম লিখুন');
+  if (!phone || !/^01[3-9]\d{8}$/.test(phone)) return alert('সঠিক ১১ ডিজিটের মোবাইল নম্বর দিন (01XXXXXXXXX)');
+
+  try {
+    const res = await fetch(api('/api/admin/shops'), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`
+      },
+      body: JSON.stringify({ name, shop_type, contact_person, phone, commission_rate, address, notes })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(data.message || 'নতুন দোকান সফলভাবে যুক্ত হয়েছে!');
+      closeModal('addShopModal');
+      loadAdminShops();
+    } else {
+      alert(data.message || 'দোকান যোগ করতে সমস্যা হয়েছে');
+    }
+  } catch (err) {
+    alert('সার্ভার যোগাযোগে ত্রুটি ঘটেছে');
+  }
+}
+
+function openSettleShopModal(shopId, shopName, pendingPayable) {
+  document.getElementById('settleShopId').value = shopId;
+  document.getElementById('settleShopName').textContent = shopName;
+  document.getElementById('settlePendingAmount').textContent = `${pendingPayable} ৳`;
+  document.getElementById('settleAmountInput').value = pendingPayable > 0 ? pendingPayable : '';
+  document.getElementById('settleTrxIdInput').value = '';
+  document.getElementById('settleNotesInput').value = '';
+  openModal('settleShopModal');
+}
+
+async function submitShopSettlement() {
+  const shopId = document.getElementById('settleShopId').value;
+  const amount = parseFloat(document.getElementById('settleAmountInput').value);
+  const trx_id = document.getElementById('settleTrxIdInput').value.trim();
+  const notes = document.getElementById('settleNotesInput').value.trim();
+
+  if (isNaN(amount) || amount <= 0) return alert('সঠিক পরিশোধের টাকার পরিমাণ লিখুন');
+
+  try {
+    const res = await fetch(api(`/api/admin/shops/${shopId}/settle`), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`
+      },
+      body: JSON.stringify({ amount, trx_id, notes })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(data.message || 'পাওনা পরিশোধ সফলভাবে রেকর্ড হয়েছে!');
+      closeModal('settleShopModal');
+      loadAdminShops();
+      if (currentAdminSection === 'profit') loadAdminProfitDashboard();
+    } else {
+      alert(data.message || 'পরিশোধ রেকর্ড ব্যর্থ হয়েছে');
+    }
+  } catch (err) {
+    alert('সার্ভারে যোগাযোগ সমস্যা হয়েছে');
+  }
+}
+
+async function viewShopSettlements(shopId, shopName) {
+  document.getElementById('historyModalTitle').textContent = `📜 ${shopName} — পেমেন্ট হিস্ট্রি`;
+  const body = document.getElementById('shopSettlementsBody');
+  body.innerHTML = '<div style="text-align: center; padding: 20px;"><span class="spinner"></span> হিস্ট্রি লোড হচ্ছে...</div>';
+  openModal('shopSettlementsModal');
+
+  try {
+    const res = await fetch(api(`/api/admin/shops/${shopId}/settlements`), {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    const data = await res.json();
+    if (!data.success || !data.settlements || data.settlements.length === 0) {
+      body.innerHTML = '<div style="text-align: center; padding: 16px; color: var(--sbf-text-muted);">এই দোকানের পূর্বে কোনো পরিশোধের রেকর্ড নেই।</div>';
+      return;
+    }
+
+    body.innerHTML = `
+      <div class="table-responsive">
+        <table>
+          <thead>
+            <tr>
+              <th>তারিখ</th>
+              <th>পরিশোধের পরিমাণ</th>
+              <th>TrxID / রেফারেন্স</th>
+              <th>পরিশোধকারী এডমিন</th>
+              <th>নোট</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${data.settlements.map((s) => `
+              <tr>
+                <td style="font-size: 0.8rem;">${new Date(s.created_at).toLocaleString('bn-BD')}</td>
+                <td><strong style="color: #059669; font-size: 0.95rem;">${escapeAdminHtml(s.amount)} ৳</strong></td>
+                <td>${s.trx_id ? `<strong class="admin-cell-success">${escapeAdminHtml(s.trx_id)}</strong>` : '<span class="admin-cell-muted">-</span>'}</td>
+                <td>${escapeAdminHtml(s.admin_name || 'এডমিন')}</td>
+                <td style="font-size: 0.8rem;">${escapeAdminHtml(s.notes || '-')}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  } catch (err) {
+    body.innerHTML = '<div style="color: var(--sbp-red); text-align: center; padding: 16px;">লোড ব্যর্থ হয়েছে।</div>';
+  }
+}
+
 // ================= SECTION 2: PAYOUTS =================
 async function loadAdminPayouts() {
   const tbody = document.getElementById('adminPayoutsTableBody');
@@ -227,19 +789,19 @@ async function loadAdminPayouts() {
 
     tbody.innerHTML = data.payouts.map((p) => `
       <tr>
-        <td>#${p.id}</td>
-        <td><strong>${escapeAdminHtml(p.user_name)}</strong></td>
-        <td>${escapeAdminHtml(p.user_phone)}</td>
-        <td><strong style="color: var(--sbp-yellow);">${escapeAdminHtml(p.amount)} ৳</strong></td>
-        <td><span style="text-transform: uppercase; font-weight: 700;">${escapeAdminHtml(p.payment_method)}</span></td>
-        <td><strong style="color: #38bdf8;">${escapeAdminHtml(p.account_number)}</strong></td>
-        <td>
+        <td data-label="রিকোয়েস্ট">#${p.id}</td>
+        <td data-label="রিসেলার"><strong>${escapeAdminHtml(p.user_name)}</strong></td>
+        <td data-label="রিসেলারের ফোন">${escapeAdminHtml(p.user_phone)}</td>
+        <td data-label="পরিমাণ"><strong class="admin-cell-money">${escapeAdminHtml(p.amount)} ৳</strong></td>
+        <td data-label="পেমেন্ট মাধ্যম"><span style="text-transform: uppercase; font-weight: 700;">${escapeAdminHtml(p.payment_method)}</span></td>
+        <td data-label="যে নম্বরে পাঠাবেন"><strong>${escapeAdminHtml(p.account_number)}</strong></td>
+        <td data-label="স্ট্যাটাস">
           <span style="background: ${p.status === 'approved' ? '#10b981' : p.status === 'pending' ? '#f59e0b' : '#ef4444'}; color: #fff; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 700;">
-            ${escapeAdminHtml(p.status)}
+            ${escapeAdminHtml(payoutStatusLabels[p.status] || p.status)}
           </span>
         </td>
-        <td>${escapeAdminHtml(p.admin_trx_id || '-')}<br><span style="font-size: 0.7rem; color: #a8a29e;">${new Date(p.created_at).toLocaleDateString('bn-BD')}</span></td>
-        <td>
+        <td data-label="TrxID ও তারিখ">${escapeAdminHtml(p.admin_trx_id || 'এখনও দেওয়া হয়নি')}<br><span class="admin-cell-muted">${new Date(p.created_at).toLocaleDateString('bn-BD')}</span></td>
+        <td data-label="করণীয়">
           ${p.status === 'pending' ? `
             <div style="display: flex; gap: 4px;">
               <button class="action-btn-sm btn-deliver" onclick="approvePayoutPrompt(${p.id})">অনুমোদন</button>
@@ -315,7 +877,7 @@ async function rejectPayoutPrompt(payoutId) {
 // ================= SECTION 3: PRODUCTS (CRUD) =================
 async function loadAdminProducts() {
   const tbody = document.getElementById('adminProductsTableBody');
-  tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 20px;">ক্যাটালগ লোড হচ্ছে...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; padding: 20px;">ক্যাটালগ লোড হচ্ছে...</td></tr>';
 
   try {
     const res = await fetch(api('/api/admin/products'), {
@@ -324,31 +886,43 @@ async function loadAdminProducts() {
     const data = await res.json();
 
     if (!data.success || data.products.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 20px;">কোনো প্রোডাক্ট নেই।</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; padding: 20px;">কোনো প্রোডাক্ট নেই।</td></tr>';
       return;
     }
 
     adminProductsList = data.products;
 
     tbody.innerHTML = data.products.map((p) => {
-      const isPartner = p.shop_name && !['SB Furniture', 'SB POWER'].includes(p.shop_name);
+      const isPartner = p.shop_type === 'partner' || (p.shop_name && !['SB Furniture', 'SB POWER'].includes(p.shop_name));
+      const wholesale = p.wholesale_price || 0;
+      const commission = p.reseller_commission || 0;
+      const netProfit = p.regular_price - wholesale - commission;
+
       return `
       <tr style="${p.is_active ? '' : 'opacity: 0.65; background: rgba(239, 68, 68, 0.05);'}">
-        <td><img src="${escapeAdminHtml(safeAdminImageUrl(p.image_url))}" alt="${escapeAdminHtml(p.title)}" style="width: 44px; height: 36px; object-fit: cover; border-radius: 4px;"></td>
-        <td><strong>${escapeAdminHtml(p.sku)}</strong>${p.is_active ? '' : '<br><span style="background: #ef4444; color: #fff; padding: 1px 4px; border-radius: 3px; font-size: 0.68rem;">নিষ্ক্রিয়</span>'}</td>
-        <td><strong>${escapeAdminHtml(p.title)}</strong></td>
-        <td>
-          <span style="color: ${p.brand === 'SB Furniture' ? '#f59e0b' : '#38bdf8'}; font-weight: 700;">${escapeAdminHtml(p.brand)}</span>
-          ${isPartner ? `<br><span style="font-size: 0.75rem; color: #34d399; font-weight: 600;">🏪 ${escapeAdminHtml(p.shop_name)}</span>` : ''}
-          ${p.vendor_phone ? `<br><span style="font-size: 0.72rem; color: #a8a29e;">📞 ${escapeAdminHtml(p.vendor_phone)}</span>` : ''}
-          <br><span style="font-size: 0.72rem; color: #a8a29e;">${escapeAdminHtml(p.category)}</span>
+        <td data-label="ছবি"><img class="admin-product-thumb" src="${escapeAdminHtml(safeAdminImageUrl(p.image_url))}" alt="${escapeAdminHtml(p.title)}"></td>
+        <td data-label="SKU"><strong>${escapeAdminHtml(p.sku)}</strong>${p.is_active ? '' : '<br><span class="admin-inactive-badge">নিষ্ক্রিয়</span>'}</td>
+        <td data-label="পণ্যের নাম"><strong>${escapeAdminHtml(p.title)}</strong></td>
+        <td data-label="দোকান ও ক্যাটাগরি">
+          <span style="color: ${p.brand === 'SB Furniture' ? '#ea580c' : '#0284c7'}; font-weight: 700;">${escapeAdminHtml(p.shop_name || p.brand)}</span>
+          ${isPartner ? '<br><span style="font-size: 0.72rem; color: #16a34a; font-weight: 600;">🏪 পার্টনার শপ</span>' : '<br><span style="font-size: 0.72rem; color: #2563eb; font-weight: 600;">🏢 নিজস্ব ব্র্যান্ড</span>'}
+          ${p.vendor_phone ? `<br><span style="font-size: 0.72rem; color: #64748b;">📞 ${escapeAdminHtml(p.vendor_phone)}</span>` : ''}
+          <br><span style="font-size: 0.72rem; color: #64748b;">${escapeAdminHtml(p.category)}</span>
         </td>
-        <td><strong>${escapeAdminHtml(p.regular_price)} ৳</strong></td>
-        <td><span style="background: #059669; color: #fff; padding: 2px 6px; border-radius: 4px; font-size: 0.75rem;">+${escapeAdminHtml(p.reseller_commission)}৳ (${escapeAdminHtml(p.commission_tab)})</span></td>
-        <td>${escapeAdminHtml(p.stock)}</td>
-        <td>
-          <div style="display: flex; gap: 4px;">
-            <button class="action-btn-sm btn-ship" onclick="editProductModal(${p.id})">এডিট</button>
+        <td data-label="মূল্য ও পাইকারি">
+          <strong>${escapeAdminHtml(p.regular_price)} ৳</strong>
+          <br><span style="font-size: 0.72rem; color: #6546a5;">পাইকারি: ${escapeAdminHtml(wholesale)}৳</span>
+        </td>
+        <td data-label="রিসেলার কমিশন"><span class="admin-commission-badge">${escapeAdminHtml(commission)}৳ (${escapeAdminHtml(p.commission_tab)})</span></td>
+        <td data-label="নিট লাভ">
+          <strong style="color: ${netProfit > 0 ? '#059669' : '#dc2626'}; font-size: 0.95rem;">
+            ${netProfit > 0 ? '+' : ''}${escapeAdminHtml(netProfit)} ৳
+          </strong>
+        </td>
+        <td data-label="স্টক">${escapeAdminHtml(p.stock)}</td>
+        <td data-label="করণীয়">
+          <div style="display: flex; gap: 4px; align-items: center;">
+            <button class="action-btn-sm btn-edit-product" onclick="editProductModal(${p.id})">✏️ এডিট</button>
             ${p.is_active ? `<button class="action-btn-sm btn-cancel" onclick="deleteProduct(${p.id})">ডিলিট</button>` : ''}
           </div>
         </td>
@@ -357,27 +931,278 @@ async function loadAdminProducts() {
     }).join('');
   } catch (err) {
     console.error(err);
-    tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: var(--sbp-red);">লোড ব্যর্থ হয়েছে।</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: var(--sbp-red);">লোড ব্যর্থ হয়েছে।</td></tr>';
+  }
+}
+
+function updateLiveProfitCalculator() {
+  const price = parseFloat(document.getElementById('prodPrice').value) || 0;
+  const wholesale = parseFloat(document.getElementById('prodWholesalePrice').value) || 0;
+  const commission = parseFloat(document.getElementById('prodCommission').value) || 0;
+
+  const netProfit = price - wholesale - commission;
+  const margin = price > 0 ? ((netProfit / price) * 100).toFixed(1) : '0';
+
+  const elPrice = document.getElementById('calcPriceDisplay');
+  if (elPrice) elPrice.textContent = `${price} ৳`;
+  const elWholesale = document.getElementById('calcWholesaleDisplay');
+  if (elWholesale) elWholesale.textContent = `-${wholesale} ৳`;
+  const elCommission = document.getElementById('calcCommissionDisplay');
+  if (elCommission) elCommission.textContent = `-${commission} ৳`;
+  const elNet = document.getElementById('calcNetProfitDisplay');
+  if (elNet) {
+    elNet.textContent = `${netProfit} ৳`;
+    elNet.style.color = netProfit > 0 ? '#15803d' : '#b91c1c';
+  }
+  const elBadge = document.getElementById('calcMarginBadge');
+  if (elBadge) elBadge.textContent = `মার্জিন: ${margin}%`;
+
+  const warning = document.getElementById('calcProfitWarning');
+  if (warning) {
+    warning.style.display = (price > 0 && netProfit <= 0) ? 'block' : 'none';
+  }
+}
+
+async function loadAdminShopOptions(selectedShopId = null) {
+  const select = document.getElementById('prodShopId');
+  if (!select) return;
+
+  try {
+    const res = await fetch(api('/api/admin/shops'), {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    const data = await res.json();
+    if (data.success && Array.isArray(data.shops)) {
+      adminShopsList = data.shops;
+      select.innerHTML = data.shops.map((s) => `
+        <option value="${s.id}" ${selectedShopId && String(selectedShopId) === String(s.id) ? 'selected' : ''}>
+          ${escapeAdminHtml(s.name)} (${s.shop_type === 'own' ? 'নিজস্ব' : 'পার্টনার শপ'})
+        </option>
+      `).join('');
+    }
+  } catch (err) {
+    console.error('Error loading shop options:', err);
+  }
+}
+
+function onProdShopChange(shopId) {
+  const shop = adminShopsList.find((s) => String(s.id) === String(shopId));
+  if (!shop) return;
+  document.getElementById('prodShopName').value = shop.name;
+  if (shop.shop_type === 'own') {
+    document.getElementById('prodBrand').value = shop.name === 'SB POWER' ? 'SB POWER' : 'SB Furniture';
+    document.getElementById('prodVendorBadge').value = 'নিজস্ব ব্র্যান্ড';
+  } else {
+    document.getElementById('prodBrand').value = 'SB Furniture';
+    document.getElementById('prodVendorBadge').value = 'স্থানীয় পার্টনার শপ';
+  }
+  if (shop.phone) document.getElementById('prodVendorPhone').value = shop.phone;
+  if (shop.address) document.getElementById('prodVendorAddress').value = shop.address;
+}
+
+// Client-Side Canvas Image Compression Helper (Fast, Low-RAM, Mobile-Friendly)
+function compressImageFile(file, maxWidth = 1600, maxHeight = 1600, quality = 0.85) {
+  return new Promise((resolve) => {
+    if (file.type === 'image/gif') {
+      const r = new FileReader();
+      r.onload = () => resolve(r.target.result);
+      r.onerror = () => resolve(null);
+      r.readAsDataURL(file);
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          let width = img.width;
+          let height = img.height;
+
+          if (width > maxWidth || height > maxHeight) {
+            const ratio = Math.min(maxWidth / width, maxHeight / height);
+            width = Math.round(width * ratio);
+            height = Math.round(height * ratio);
+          }
+
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, width, height);
+          ctx.drawImage(img, 0, 0, width, height);
+
+          const compressed = canvas.toDataURL('image/jpeg', quality);
+          resolve(compressed);
+        } catch (canvasErr) {
+          console.warn('Canvas compression fallback:', canvasErr);
+          resolve(e.target.result);
+        }
+      };
+      img.onerror = () => resolve(e.target.result);
+      img.src = e.target.result;
+    };
+    reader.onerror = () => resolve(null);
+    reader.readAsDataURL(file);
+  });
+}
+
+// Direct Product Image File Upload Handler with Instant Preview and Client Compression
+async function handleProductImageSelect(event) {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+
+  if (!file.type.startsWith('image/')) {
+    alert('অনুগ্রহ করে শুধুমাত্র ছবির ফাইল (JPG, PNG, WebP) নির্বাচন করুন');
+    return;
+  }
+
+  const preview = document.getElementById('prodImagePreview');
+  const previewWrap = document.getElementById('prodImagePreviewWrap');
+  const placeholder = document.getElementById('prodImagePlaceholder');
+  const statusEl = document.getElementById('prodUploadStatus');
+
+  // Instant local preview for zero-delay visual confirmation
+  try {
+    const objectUrl = URL.createObjectURL(file);
+    if (preview) preview.src = objectUrl;
+    if (previewWrap) previewWrap.style.display = 'block';
+    if (placeholder) placeholder.style.display = 'none';
+  } catch {
+    // fallback if createObjectURL not available
+  }
+
+  if (statusEl) {
+    statusEl.textContent = '⏳ অপ্টিমাইজ ও আপলোড হচ্ছে...';
+    statusEl.style.color = '#d97706';
+  }
+
+  try {
+    const dataUrl = await compressImageFile(file);
+    if (!dataUrl) throw new Error('ফাইল পড়তে ব্যর্থ হয়েছে');
+
+    // Update preview with compressed data URL if needed
+    if (preview && !preview.src) preview.src = dataUrl;
+    if (previewWrap) previewWrap.style.display = 'block';
+    if (placeholder) placeholder.style.display = 'none';
+
+    const res = await fetch(api('/api/admin/upload-image'), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`
+      },
+      body: JSON.stringify({ image: dataUrl })
+    });
+    const data = await res.json();
+    if (data.success && data.url) {
+      document.getElementById('prodImageUrl').value = data.url;
+      const manualInput = document.getElementById('prodManualImageUrl');
+      if (manualInput) manualInput.value = data.url;
+      if (statusEl) {
+        statusEl.textContent = '✅ ছবি আপলোড সম্পন্ন!';
+        statusEl.style.color = '#16a34a';
+      }
+    } else {
+      if (statusEl) {
+        statusEl.textContent = '❌ আপলোড ব্যর্থ';
+        statusEl.style.color = '#dc2626';
+      }
+      alert(data.message || 'ছবি আপলোড করতে ব্যর্থ হয়েছে');
+    }
+  } catch (err) {
+    console.error('Image upload error:', err);
+    if (statusEl) {
+      statusEl.textContent = '❌ আপলোড ত্রুটি';
+      statusEl.style.color = '#dc2626';
+    }
+    alert('ছবি আপলোড করতে ব্যর্থ হয়েছে। ইন্টারনেট সংযোগ চেক করুন।');
+  }
+}
+
+function toggleManualUrlInput() {
+  const wrap = document.getElementById('manualUrlWrapper');
+  if (wrap) {
+    const isHidden = wrap.style.display === 'none' || !wrap.style.display;
+    wrap.style.display = isHidden ? 'block' : 'none';
+    if (isHidden) {
+      const input = document.getElementById('prodManualImageUrl');
+      if (input) input.focus();
+    }
+  }
+}
+
+function handleManualUrlInput(val) {
+  const url = (val || '').trim();
+  document.getElementById('prodImageUrl').value = url;
+  const preview = document.getElementById('prodImagePreview');
+  const previewWrap = document.getElementById('prodImagePreviewWrap');
+  const placeholder = document.getElementById('prodImagePlaceholder');
+  const statusEl = document.getElementById('prodUploadStatus');
+
+  if (url) {
+    if (preview) preview.src = safeAdminImageUrl(url);
+    if (previewWrap) previewWrap.style.display = 'block';
+    if (placeholder) placeholder.style.display = 'none';
+    if (statusEl) {
+      statusEl.textContent = 'ছবির লিঙ্ক যুক্ত হয়েছে';
+      statusEl.style.color = '#2563eb';
+    }
+  } else {
+    if (preview) preview.src = '';
+    if (previewWrap) previewWrap.style.display = 'none';
+    if (placeholder) placeholder.style.display = 'block';
+    if (statusEl) {
+      statusEl.textContent = 'ছবি নির্বাচন করুন';
+      statusEl.style.color = '';
+    }
   }
 }
 
 function openAddProductModal() {
   document.getElementById('editProductId').value = '';
-  document.getElementById('productFormTitle').textContent = 'নতুন প্রোডাক্ট যোগ করুন';
+  document.getElementById('productFormTitle').textContent = '➕ নতুন প্রোডাক্ট যোগ করুন';
+  const submitBtn = document.getElementById('btnSubmitProduct');
+  if (submitBtn) submitBtn.textContent = '✅ প্রোডাক্ট যুক্ত করুন (1-Click Save)';
+
   document.getElementById('prodTitle').value = '';
   document.getElementById('prodSku').value = '';
   document.getElementById('prodBrand').value = 'SB Furniture';
   document.getElementById('prodShopName').value = 'SB Furniture';
   document.getElementById('prodVendorPhone').value = '';
-  document.getElementById('prodVendorBadge').value = '';
+  document.getElementById('prodVendorBadge').value = 'নিজস্ব ব্র্যান্ড';
   document.getElementById('prodVendorAddress').value = '';
-  document.getElementById('prodPrice').value = '';
-  document.getElementById('prodCommission').value = '500';
+  document.getElementById('prodPrice').value = '600';
+  document.getElementById('prodWholesalePrice').value = '400';
+  document.getElementById('prodCommission').value = '100';
   document.getElementById('prodStock').value = '50';
+
+  // Clear photo inputs & reset preview
+  const fileInput = document.getElementById('prodImageFile');
+  if (fileInput) fileInput.value = '';
   document.getElementById('prodImageUrl').value = '';
+  const manualInput = document.getElementById('prodManualImageUrl');
+  if (manualInput) manualInput.value = '';
+  const preview = document.getElementById('prodImagePreview');
+  if (preview) preview.src = '';
+  const previewWrap = document.getElementById('prodImagePreviewWrap');
+  if (previewWrap) previewWrap.style.display = 'none';
+  const placeholder = document.getElementById('prodImagePlaceholder');
+  if (placeholder) placeholder.style.display = 'block';
+  const statusEl = document.getElementById('prodUploadStatus');
+  if (statusEl) {
+    statusEl.textContent = 'ছবি নির্বাচন করুন';
+    statusEl.style.color = '';
+  }
+  const manualWrap = document.getElementById('manualUrlWrapper');
+  if (manualWrap) manualWrap.style.display = 'none';
+
   document.getElementById('prodMaterials').value = 'সুপার এস বোর্ড (Super S Board)';
   document.getElementById('prodFinish').value = 'White Carrara Marble';
   document.getElementById('prodDesc').value = '';
+  loadAdminShopOptions(1);
+  updateLiveProfitCalculator();
   openModal('addProductModal');
 }
 
@@ -386,7 +1211,10 @@ function editProductModal(id) {
   if (!p) return;
 
   document.getElementById('editProductId').value = p.id;
-  document.getElementById('productFormTitle').textContent = `প্রোডাক্ট এডিট: ${p.sku}`;
+  document.getElementById('productFormTitle').textContent = `✏️ প্রোডাক্ট এডিট: ${p.sku}`;
+  const submitBtn = document.getElementById('btnSubmitProduct');
+  if (submitBtn) submitBtn.textContent = '✅ পরিবর্তন সংরক্ষণ করুন (1-Click Save)';
+
   document.getElementById('prodTitle').value = p.title;
   document.getElementById('prodSku').value = p.sku;
   document.getElementById('prodBrand').value = p.brand;
@@ -397,21 +1225,57 @@ function editProductModal(id) {
   document.getElementById('prodCategory').value = p.category;
   document.getElementById('prodCommTab').value = p.commission_tab;
   document.getElementById('prodPrice').value = p.regular_price;
+  document.getElementById('prodWholesalePrice').value = p.wholesale_price !== undefined ? p.wholesale_price : 0;
   document.getElementById('prodCommission').value = p.reseller_commission;
   document.getElementById('prodStock').value = p.stock;
-  document.getElementById('prodImageUrl').value = p.image_url;
+
+  // Pre-fill image preview with existing product photo
+  const fileInput = document.getElementById('prodImageFile');
+  if (fileInput) fileInput.value = '';
+  document.getElementById('prodImageUrl').value = p.image_url || '';
+  const manualInput = document.getElementById('prodManualImageUrl');
+  if (manualInput) manualInput.value = p.image_url || '';
+  const preview = document.getElementById('prodImagePreview');
+  const previewWrap = document.getElementById('prodImagePreviewWrap');
+  const placeholder = document.getElementById('prodImagePlaceholder');
+  const statusEl = document.getElementById('prodUploadStatus');
+
+  if (p.image_url) {
+    if (preview) preview.src = safeAdminImageUrl(p.image_url);
+    if (previewWrap) previewWrap.style.display = 'block';
+    if (placeholder) placeholder.style.display = 'none';
+    if (statusEl) {
+      statusEl.textContent = 'বর্তমান ছবি সক্রিয়';
+      statusEl.style.color = '#16a34a';
+    }
+  } else {
+    if (preview) preview.src = '';
+    if (previewWrap) previewWrap.style.display = 'none';
+    if (placeholder) placeholder.style.display = 'block';
+    if (statusEl) {
+      statusEl.textContent = 'ছবি নির্বাচন করুন';
+      statusEl.style.color = '';
+    }
+  }
+  const manualWrap = document.getElementById('manualUrlWrapper');
+  if (manualWrap) manualWrap.style.display = 'none';
+
   document.getElementById('prodMaterials').value = p.materials || '';
   document.getElementById('prodFinish').value = p.finish || '';
   document.getElementById('prodDesc').value = p.description || '';
+  loadAdminShopOptions(p.shop_id);
+  updateLiveProfitCalculator();
   openModal('addProductModal');
 }
 
 async function submitProductForm() {
   const id = document.getElementById('editProductId').value;
+  const imageUrlVal = document.getElementById('prodImageUrl').value.trim();
   const payload = {
     title: document.getElementById('prodTitle').value.trim(),
     sku: document.getElementById('prodSku').value.trim().toUpperCase(),
     brand: document.getElementById('prodBrand').value,
+    shop_id: parseInt(document.getElementById('prodShopId').value, 10) || null,
     shop_name: document.getElementById('prodShopName').value.trim(),
     vendor_phone: document.getElementById('prodVendorPhone').value.trim(),
     vendor_badge: document.getElementById('prodVendorBadge').value.trim(),
@@ -419,9 +1283,10 @@ async function submitProductForm() {
     category: document.getElementById('prodCategory').value,
     commission_tab: document.getElementById('prodCommTab').value,
     regular_price: parseFloat(document.getElementById('prodPrice').value),
+    wholesale_price: parseFloat(document.getElementById('prodWholesalePrice').value) || 0,
     reseller_commission: parseFloat(document.getElementById('prodCommission').value),
     stock: parseInt(document.getElementById('prodStock').value, 10),
-    image_url: document.getElementById('prodImageUrl').value.trim(),
+    image_url: imageUrlVal || 'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?auto=format&fit=crop&w=800&q=80',
     materials: document.getElementById('prodMaterials').value.trim(),
     finish: document.getElementById('prodFinish').value.trim(),
     description: document.getElementById('prodDesc').value.trim()
@@ -429,6 +1294,10 @@ async function submitProductForm() {
 
   if (!payload.title || !payload.sku || isNaN(payload.regular_price)) {
     return alert('প্রয়োজনীয় ফিল্ডগুলো পূরণ করুন');
+  }
+
+  if (payload.wholesale_price + payload.reseller_commission > payload.regular_price) {
+    return alert('সতর্কতা: পাইকারি ক্রয়মূল্য (' + payload.wholesale_price + '৳) ও রিসেলার কমিশনের (' + payload.reseller_commission + '৳) যোগফল বিক্রয় মূল্যের (' + payload.regular_price + '৳) চেয়ে বেশি হতে পারে না!');
   }
 
   try {
@@ -539,10 +1408,10 @@ async function loadAdminAnalytics() {
       } else {
         prodTbody.innerHTML = top_products.map((p) => `
           <tr>
-            <td><strong>${escapeAdminHtml(p.sku)}</strong></td>
-            <td>${escapeAdminHtml(p.title)}</td>
-            <td><strong style="color: var(--sbp-yellow);">${escapeAdminHtml(p.total_units_sold)} টি</strong></td>
-            <td><strong>${escapeAdminHtml(p.total_sales_volume)} ৳</strong></td>
+            <td data-label="SKU"><strong>${escapeAdminHtml(p.sku)}</strong></td>
+            <td data-label="পণ্যের নাম">${escapeAdminHtml(p.title)}</td>
+            <td data-label="বিক্রিত পরিমাণ"><strong style="color: var(--sbp-yellow);">${escapeAdminHtml(p.total_units_sold)} টি</strong></td>
+            <td data-label="মোট বিক্রয়"><strong>${escapeAdminHtml(p.total_sales_volume)} ৳</strong></td>
           </tr>
         `).join('');
       }
@@ -554,11 +1423,11 @@ async function loadAdminAnalytics() {
       } else {
         resTbody.innerHTML = top_resellers.map((r) => `
           <tr>
-            <td><strong>${escapeAdminHtml(r.name)}</strong></td>
-            <td>${escapeAdminHtml(r.phone)}</td>
-            <td><strong style="color: #10b981;">${escapeAdminHtml(r.delivered_sales_count)} টি</strong></td>
-            <td><strong>${escapeAdminHtml(r.total_volume)} ৳</strong></td>
-            <td><strong style="color: var(--sbp-yellow);">${escapeAdminHtml(r.total_commission_earned)} ৳</strong></td>
+            <td data-label="রিসেলার"><strong>${escapeAdminHtml(r.name)}</strong></td>
+            <td data-label="মোবাইল নম্বর">${escapeAdminHtml(r.phone)}</td>
+            <td data-label="সফল সেলস"><strong style="color: #10b981;">${escapeAdminHtml(r.delivered_sales_count)} টি</strong></td>
+            <td data-label="মোট সেলস"><strong>${escapeAdminHtml(r.total_volume)} ৳</strong></td>
+            <td data-label="মোট কমিশন"><strong style="color: var(--sbp-yellow);">${escapeAdminHtml(r.total_commission_earned)} ৳</strong></td>
           </tr>
         `).join('');
       }
@@ -743,7 +1612,14 @@ async function triggerInstantBackup() {
     });
     const data = await res.json();
     if (data.success) {
-      showToast(`🎉 ব্যাকআপ সফল! ফাইল: ${escapeAdminHtml(data.backup.filename)}`);
+      const cloud = data.backup && data.backup.cloudBackup;
+      if (cloud && cloud.success) {
+        showToast(`🎉 ফোনে ও Firebase-এ ব্যাকআপ হয়েছে: ${escapeAdminHtml(data.backup.filename)}`);
+      } else if (cloud && cloud.configured) {
+        showToast('ফোনে ব্যাকআপ হয়েছে; Firebase upload ব্যর্থ। পরে আবার চেষ্টা করুন।');
+      } else {
+        showToast(`ফোনে ব্যাকআপ হয়েছে: ${escapeAdminHtml(data.backup.filename)}; Firebase এখনো সেটআপ হয়নি।`);
+      }
       loadAdminBackupsList();
     } else {
       alert(`ব্যাকআপ ব্যর্থ: ${data.message}`);
@@ -764,14 +1640,23 @@ async function loadAdminBackupsList() {
       headers: { Authorization: `Bearer ${adminToken}` }
     });
     const data = await res.json();
+    const firebaseStatus = data.firebaseBackup;
+    let firebaseNotice = '';
+    if (firebaseStatus && firebaseStatus.configured && firebaseStatus.lastSuccessAt) {
+      firebaseNotice = `<div class="admin-backup-cloud-status" role="status">Firebase encrypted backup চালু · শেষ সফল কপি: ${new Date(firebaseStatus.lastSuccessAt).toLocaleString('bn-BD')}${firebaseStatus.lastErrorCode === 'retention_cleanup_failed' ? ' · পুরোনো কপি পরিষ্কার হয়নি' : ''}</div>`;
+    } else if (firebaseStatus && firebaseStatus.configured) {
+      firebaseNotice = '<div class="admin-backup-cloud-status is-pending" role="status">Firebase backup সেটআপ হয়েছে; প্রথম cloud backup-এর অপেক্ষায়।</div>';
+    } else {
+      firebaseNotice = '<div class="admin-backup-cloud-status is-pending" role="status">এখন শুধু ফোনে backup আছে। Firebase cloud backup চালু হয়নি।</div>';
+    }
     if (!data.success || !data.backups || data.backups.length === 0) {
-      container.innerHTML = '<div style="color: var(--sbf-text-muted); padding: 8px;">কোনো ব্যাকআপ পাওয়া যায়নি।</div>';
+      container.innerHTML = `${firebaseNotice}<div style="color: var(--sbf-text-muted); padding: 8px;">কোনো local backup পাওয়া যায়নি।</div>`;
       return;
     }
 
     window._adminBackups = data.backups;
 
-    container.innerHTML = data.backups.map((b) => `
+    container.innerHTML = firebaseNotice + data.backups.map((b) => `
       <div style="background: #1c1917; border: 1px solid var(--sbf-border); padding: 8px 12px; border-radius: var(--radius-sm); margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center;">
         <div>
           <strong style="color: #fde68a; font-size: 0.85rem;">${escapeAdminHtml(b.filename)}</strong>
@@ -808,3 +1693,37 @@ async function downloadBackupFile(index) {
     showToast('ব্যাকআপ ফাইল ডাউনলোড ব্যর্থ হয়েছে। আবার চেষ্টা করুন।');
   }
 }
+
+// Expose globals for window inline events
+window.switchAdminSection = switchAdminSection;
+window.submitAdminLogin = submitAdminLogin;
+window.adminLogout = adminLogout;
+window.loadAdminOrders = loadAdminOrders;
+window.updateOrderStatus = updateOrderStatus;
+window.instantReleaseCommission = instantReleaseCommission;
+window.loadAdminProfitDashboard = loadAdminProfitDashboard;
+window.loadAdminShops = loadAdminShops;
+window.openAddShopModal = openAddShopModal;
+window.submitAddShopForm = submitAddShopForm;
+window.openSettleShopModal = openSettleShopModal;
+window.submitShopSettlement = submitShopSettlement;
+window.viewShopSettlements = viewShopSettlements;
+window.loadAdminPayouts = loadAdminPayouts;
+window.approvePayoutPrompt = approvePayoutPrompt;
+window.rejectPayoutPrompt = rejectPayoutPrompt;
+window.loadAdminProducts = loadAdminProducts;
+window.openAddProductModal = openAddProductModal;
+window.editProductModal = editProductModal;
+window.submitProductForm = submitProductForm;
+window.deleteProduct = deleteProduct;
+window.updateLiveProfitCalculator = updateLiveProfitCalculator;
+window.onProdShopChange = onProdShopChange;
+window.viewOrderAuditTrail = viewOrderAuditTrail;
+window.viewOrderDetail = viewOrderDetail;
+window.updateOrderStatusAndRefreshModal = updateOrderStatusAndRefreshModal;
+window.instantReleaseCommissionAndRefreshModal = instantReleaseCommissionAndRefreshModal;
+window.openModal = openModal;
+window.closeModal = closeModal;
+window.handleProductImageSelect = handleProductImageSelect;
+window.toggleManualUrlInput = toggleManualUrlInput;
+window.handleManualUrlInput = handleManualUrlInput;

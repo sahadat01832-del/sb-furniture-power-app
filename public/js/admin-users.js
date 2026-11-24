@@ -55,50 +55,79 @@ function renderAdminUsersTable(users) {
   tbody.innerHTML = users.map((u) => {
     // Role styling
     let roleBadge = '';
-    let roleActionBtn = '';
+    const roleLabels = {
+      customer: '🛍️ সাধারণ কাস্টমার',
+      reseller: '💼 অনুমোদিত রিসেলার',
+      admin: '👑 অ্যাডমিন'
+    };
+    const currentRole = Object.prototype.hasOwnProperty.call(roleLabels, u.role) ? u.role : 'customer';
 
     if (u.role === 'admin') {
       roleBadge = '<span style="background: #ef4444; color: #fff; padding: 3px 8px; border-radius: 4px; font-weight: 600; font-size: 0.75rem;">👑 এডমিন</span>';
-      roleActionBtn = `<button class="action-btn-sm" style="background: #4b5563; color: #fff; cursor: pointer;" onclick="quickChangeRole(${Number(u.id)}, 'reseller')">💼 রিসেলার করুন</button>`;
     } else if (u.role === 'customer') {
       roleBadge = '<span style="background: #10b981; color: #fff; padding: 3px 8px; border-radius: 4px; font-weight: 600; font-size: 0.75rem;">🛍️ কাস্টমার</span>';
-      roleActionBtn = `<button class="action-btn-sm" style="background: #3b82f6; color: #fff; cursor: pointer; margin-right: 4px;" onclick="quickChangeRole(${Number(u.id)}, 'reseller')">💼 রিসেলার করুন</button>
-                       <button class="action-btn-sm" style="background: #f59e0b; color: #1c1917; cursor: pointer;" onclick="quickChangeRole(${Number(u.id)}, 'admin')">👑 মেক এডমিন</button>`;
     } else {
       roleBadge = '<span style="background: #3b82f6; color: #fff; padding: 3px 8px; border-radius: 4px; font-weight: 600; font-size: 0.75rem;">💼 রিসেলার</span>';
-      roleActionBtn = `<button class="action-btn-sm" style="background: #f59e0b; color: #1c1917; cursor: pointer;" onclick="quickChangeRole(${Number(u.id)}, 'admin')">👑 মেক এডমিন</button>`;
     }
+
+    const roleActionBtn = `
+      <div class="admin-role-editor">
+        <label for="adminUserRole${Number(u.id)}">অ্যাকাউন্টের পদবি</label>
+        <div class="admin-role-editor-row">
+          <select id="adminUserRole${Number(u.id)}" class="form-control" data-current-role="${currentRole}">
+            <option value="customer" ${currentRole === 'customer' ? 'selected' : ''}>🛍️ সাধারণ কাস্টমার</option>
+            <option value="reseller" ${currentRole === 'reseller' ? 'selected' : ''}>💼 রিসেলার — কমিশন অনুমতি</option>
+            <option value="admin" ${currentRole === 'admin' ? 'selected' : ''}>👑 অ্যাডমিন</option>
+          </select>
+          <button class="action-btn-sm admin-role-save" type="button" onclick="saveSelectedUserRole(${Number(u.id)})">পদবি সংরক্ষণ</button>
+        </div>
+      </div>
+    `;
 
     const joinedDate = u.created_at ? new Date(u.created_at).toLocaleDateString('bn-BD', { year: 'numeric', month: 'short', day: 'numeric' }) : '-';
     const totalOrdersText = `${u.total_orders || 0}টি (${Number(u.total_sales || 0).toLocaleString()}৳)`;
     const balanceText = `${Number(u.balance || 0).toLocaleString()}৳`;
 
+    const isSuspended = u.status === 'suspended';
+    const statusBadge = isSuspended
+      ? '<span style="background: #ef4444; color: #fff; padding: 2px 6px; border-radius: 4px; font-weight: 700; font-size: 0.72rem;">🚫 স্থগিত</span>'
+      : '<span style="background: #10b981; color: #fff; padding: 2px 6px; border-radius: 4px; font-weight: 700; font-size: 0.72rem;">✅ সক্রিয়</span>';
+
+    const statusToggleBtn = isSuspended
+      ? `<button class="action-btn-sm" style="background: #059669; color: #fff; cursor: pointer;" onclick="toggleUserStatus(${Number(u.id)}, 'active')">✅ সক্রিয় করুন</button>`
+      : `<button class="action-btn-sm" style="background: #dc2626; color: #fff; cursor: pointer;" onclick="toggleUserStatus(${Number(u.id)}, 'suspended')">🚫 স্থগিত করুন</button>`;
+
     return `
-      <tr>
-        <td>
-          <div style="font-weight: 600; color: #fff; font-size: 0.9rem;">${escapeHtml(u.name)}</div>
-          <div style="font-size: 0.75rem; color: #a8a29e; display: flex; align-items: center; gap: 4px; margin-top: 2px;">
+      <tr style="${isSuspended ? 'opacity: 0.75; background: rgba(239, 68, 68, 0.05);' : ''}">
+        <td data-label="ইউজার ও মোবাইল">
+          <div style="font-weight: 600; color: #26372d; font-size: 0.9rem;">${escapeHtml(u.name)}</div>
+          <div style="font-size: 0.75rem; color: #657269; display: flex; align-items: center; gap: 4px; margin-top: 2px;">
             <span>📞 ${escapeHtml(u.phone)}</span>
             <button onclick="copyToClipboard('${String(u.phone || '').replace(/\D/g, '')}', 'ফোন নম্বর কপি হয়েছে')" style="background: none; border: none; cursor: pointer; color: var(--sbp-yellow); font-size: 0.75rem;" title="কপি করুন">📋</button>
           </div>
+          ${u.payout_method ? `<div style="font-size: 0.72rem; color: #b45309; margin-top: 2px;">💸 ক্যাশআউট: ${escapeHtml(u.payout_method.toUpperCase())} (${escapeHtml(u.payout_number || '')})</div>` : ''}
           ${u.referred_by_name ? `<div style="font-size: 0.7rem; color: #78716c;">রেফার করেছেন: ${escapeHtml(u.referred_by_name)}</div>` : ''}
         </td>
-        <td>${roleBadge}</td>
-        <td>
+        <td data-label="পদবি">
+          ${roleBadge}
+          <div style="margin-top: 4px;">${statusBadge}</div>
+        </td>
+        <td data-label="রেফারেল কোড">
           <code style="background: #1c1917; color: #fde68a; padding: 2px 6px; border-radius: 4px; font-size: 0.8rem;">
             ${escapeHtml(u.referral_code || '-')}
           </code>
         </td>
-        <td>
-          <div style="font-weight: 600; color: #60a5fa;">${totalOrdersText}</div>
+        <td data-label="অর্ডার ও সেলস">
+          <div style="font-weight: 600; color: #2457a6;">${totalOrdersText}</div>
         </td>
-        <td>
-          <div style="font-weight: 700; color: #34d399;">${balanceText}</div>
+        <td data-label="ওয়ালেট ব্যালেন্স">
+          <div style="font-weight: 700; color: #087247;">${balanceText}</div>
         </td>
-        <td style="color: #a8a29e; font-size: 0.8rem;">${joinedDate}</td>
-        <td>
-          <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+        <td data-label="যুক্ত হওয়ার তারিখ" style="color: #657269; font-size: 0.8rem;">${joinedDate}</td>
+        <td data-label="পদবি পরিবর্তন / অ্যাকশন">
+          <div class="admin-role-actions">
             ${roleActionBtn}
+            ${statusToggleBtn}
           </div>
         </td>
       </tr>
@@ -132,7 +161,13 @@ function renderUserPagination(currentPage, totalPages, totalCount) {
 // Quick Role Toggle / Change
 async function quickChangeRole(userId, newRole) {
   const roleNameBn = newRole === 'admin' ? '👑 এডমিন' : (newRole === 'reseller' ? '💼 রিসেলার' : '🛍️ কাস্টমার');
-  const confirmMsg = `এই ইউজারকে ${roleNameBn} করতে চান?`;
+  const roleSelect = document.getElementById(`adminUserRole${Number(userId)}`);
+  const currentRole = roleSelect ? roleSelect.dataset.currentRole : '';
+  const confirmMsg = newRole === 'reseller'
+    ? 'এই অ্যাকাউন্টে রিসেলার অনুমতি দিয়ে কমিশন দেখাতে চান?'
+    : (newRole === 'customer'
+      ? `এই অ্যাকাউন্টের ${currentRole === 'admin' ? 'অ্যাডমিন ও ' : ''}রিসেলার অনুমতি বন্ধ করে সাধারণ কাস্টমার করতে চান?`
+      : `এই ইউজারকে ${roleNameBn} করতে চান?`);
   if (!confirm(confirmMsg)) return;
 
   try {
@@ -159,6 +194,42 @@ async function quickChangeRole(userId, newRole) {
   }
 }
 
+async function saveSelectedUserRole(userId) {
+  const roleSelect = document.getElementById(`adminUserRole${Number(userId)}`);
+  if (!roleSelect) return;
+  if (roleSelect.value === roleSelect.dataset.currentRole) {
+    showToast('এই পদবি ইতিমধ্যেই চালু আছে।');
+    return;
+  }
+  await quickChangeRole(Number(userId), roleSelect.value);
+}
+
+// Toggle Account Status (active vs suspended)
+async function toggleUserStatus(userId, newStatus) {
+  const actionText = newStatus === 'suspended' ? 'স্থগিত' : 'সক্রিয়';
+  if (!confirm(`আপনি কি এই অ্যাকাউন্টটিকে ${actionText} করতে চান?`)) return;
+
+  try {
+    const res = await fetch(api(`/api/admin/users/${userId}/status`), {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`
+      },
+      body: JSON.stringify({ status: newStatus })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(data.message || `অ্যাকাউন্ট সফলভাবে ${actionText} করা হয়েছে!`);
+      loadAdminUsers(adminUsersPage);
+    } else {
+      alert(data.message || 'স্ট্যাটাস পরিবর্তন ব্যর্থ হয়েছে');
+    }
+  } catch (err) {
+    alert('সার্ভার যোগাযোগে ত্রুটি ঘটেছে');
+  }
+}
+
 // Add User / Admin Modal handlers
 function openAddUserModal() {
   const modal = document.getElementById('adminUserModal');
@@ -166,7 +237,7 @@ function openAddUserModal() {
   document.getElementById('newUserName').value = '';
   document.getElementById('newUserPhone').value = '';
   document.getElementById('newUserPassword').value = '';
-  document.getElementById('newUserRole').value = 'admin'; // Default to admin for fast admin creation
+  document.getElementById('newUserRole').value = 'customer';
   modal.classList.add('active');
 }
 
@@ -247,6 +318,11 @@ async function submitAdminPasswordChange() {
     const data = await res.json();
 
     if (data.success) {
+      // A password change revokes older tokens; keep this admin signed in.
+      if (data.token) {
+        adminToken = data.token;
+        localStorage.setItem('sb_admin_token', data.token);
+      }
       closeAdminPasswordModal();
       showToast('✅ এডমিন পাসওয়ার্ড সফলভাবে পরিবর্তন হয়েছে!');
     } else {
@@ -329,6 +405,8 @@ window.openAddUserModal = openAddUserModal;
 window.closeAddUserModal = closeAddUserModal;
 window.submitAddUserForm = submitAddUserForm;
 window.quickChangeRole = quickChangeRole;
+window.saveSelectedUserRole = saveSelectedUserRole;
+window.toggleUserStatus = toggleUserStatus;
 window.openAdminPasswordModal = openAdminPasswordModal;
 window.closeAdminPasswordModal = closeAdminPasswordModal;
 window.submitAdminPasswordChange = submitAdminPasswordChange;

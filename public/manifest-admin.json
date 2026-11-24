@@ -1,15 +1,16 @@
 {
   "name": "SB Furniture Admin Panel",
   "short_name": "SB Admin",
+  "id": "/admin",
   "description": "এডমিন কন্ট্রোল প্যানেল — SB Furniture & SB POWER",
   "start_url": "/admin.html",
   "display": "standalone",
-  "background_color": "#1c1917",
-  "theme_color": "#b45309",
+  "background_color": "#101827",
+  "theme_color": "#ea580c",
   "orientation": "portrait",
   "icons": [
     {
-      "src": "/icons/icon-192.png",
+      "src": "/icons/admin-icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any maskable"
@@ -21,7 +22,7 @@
       "purpose": "any maskable"
     },
     {
-      "src": "/icons/icon.svg",
+      "src": "/icons/admin-icon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any"

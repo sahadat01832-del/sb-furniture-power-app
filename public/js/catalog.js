@@ -3,10 +3,10 @@
 // ============================================================
 
 let allProducts = [];
+let catalogResellerAccess = false;
 let currentTab = 'all';
 let currentCategory = 'all';
 let currentBrand = 'all';
-let currentShop = 'all';
 let currentSort = 'default';
 let minPrice = '';
 let maxPrice = '';
@@ -16,11 +16,19 @@ let priceFilterTimeout;
 
 const escapeCatalogHtml = (value) => window.sbEscapeHtml(value);
 const safeCatalogImageUrl = (value) => window.sbSafeImageUrl(value);
+const hasResellerAccess = () => {
+  const user = (typeof currentUser !== 'undefined' && currentUser)
+    ? currentUser
+    : (() => { try { return JSON.parse(localStorage.getItem('sb_user') || 'null'); } catch { return null; } })();
+  return Boolean(catalogResellerAccess && user && ['reseller', 'admin'].includes(user.role));
+};
 
 // Load Products from API
 async function loadProducts() {
   const grid = document.getElementById('productGrid');
   if (!grid) return;
+  const resultsLabel = document.getElementById('productResultCount');
+  if (resultsLabel) resultsLabel.textContent = 'পণ্য খোঁজা হচ্ছে…';
   grid.innerHTML = `
     <div style="grid-column: 1 / -1; text-align: center; padding: 40px; color: var(--sbf-text-muted);">
       <span class="spinner"></span>
@@ -29,7 +37,7 @@ async function loadProducts() {
   `;
 
   try {
-    const endpoint = `/api/products?tab=${encodeURIComponent(currentTab)}&category=${encodeURIComponent(currentCategory)}&brand=${encodeURIComponent(currentBrand)}&shop=${encodeURIComponent(currentShop)}&sort=${encodeURIComponent(currentSort)}`;
+    const endpoint = `/api/products?tab=${encodeURIComponent(currentTab)}&category=${encodeURIComponent(currentCategory)}&brand=${encodeURIComponent(currentBrand)}&sort=${encodeURIComponent(currentSort)}`;
     let queryParams = '';
     if (searchQuery.trim()) {
       queryParams += `&search=${encodeURIComponent(searchQuery.trim())}`;
@@ -43,10 +51,25 @@ async function loadProducts() {
 
     const fullEndpoint = endpoint + queryParams;
     const fetchUrl = typeof apiUrl === 'function' ? apiUrl(fullEndpoint) : fullEndpoint;
-    const res = await fetch(fetchUrl);
+    const token = localStorage.getItem('sb_token');
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    const res = await fetch(fetchUrl, { headers, cache: 'no-store' });
     const data = await res.json();
 
+    if (res.status === 403 && !catalogResellerAccess && (currentTab !== 'all' || currentSort === 'commission_desc')) {
+      currentTab = 'all';
+      currentSort = 'default';
+      loadProducts();
+      return;
+    }
+
     if (data.success && data.products) {
+      catalogResellerAccess = Boolean(data.reseller_access);
+      if (currentUser && ['admin', 'customer', 'reseller'].includes(data.account_role) && currentUser.role !== data.account_role) {
+        currentUser.role = data.account_role;
+        localStorage.setItem('sb_user', JSON.stringify(currentUser));
+      }
+      if (typeof updateAuthUI === 'function') updateAuthUI();
       allProducts = data.products;
       renderProductGrid(data.products);
 
@@ -60,6 +83,7 @@ async function loadProducts() {
         }
       }
     } else {
+      if (resultsLabel) resultsLabel.textContent = 'পণ্য লোড হয়নি';
       grid.innerHTML = `
         <div style="grid-column: 1 / -1; text-align: center; padding: 40px;">
           <div style="color: var(--sbp-red); font-size: 1rem; margin-bottom: 12px;">পণ্য লোড করতে ব্যর্থ হয়েছে।</div>
@@ -69,6 +93,7 @@ async function loadProducts() {
     }
   } catch (err) {
     console.error('Failed to load products:', err);
+    if (resultsLabel) resultsLabel.textContent = 'সার্ভারে সংযোগ পাওয়া যায়নি';
     grid.innerHTML = `
       <div style="grid-column: 1 / -1; text-align: center; padding: 40px;">
         <div style="color: var(--sbp-red); font-size: 1rem; margin-bottom: 12px;">সার্ভার সংযোগ পেতে সমস্যা হচ্ছে বা ক্লাউড সার্ভার প্রস্তুত হচ্ছে।</div>
@@ -98,58 +123,87 @@ function handleOrderButtonClick(productId) {
 // Render Product Grid
 function renderProductGrid(products) {
   const grid = document.getElementById('productGrid');
+  const resultsLabel = document.getElementById('productResultCount');
+  if (resultsLabel) resultsLabel.textContent = `${products ? products.length : 0}টি পণ্য`;
   if (!products || products.length === 0) {
-    grid.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; padding: 40px; color: var(--sbf-text-muted);">কোনো পণ্য খুঁজে পাওয়া যায়নি।</div>';
+    grid.innerHTML = `
+      <div class="catalog-empty-state">
+        <span aria-hidden="true">⌕</span>
+        <h3>এই নামে কোনো পণ্য পাওয়া যায়নি</h3>
+        <p>বানান বা ফিল্টার বদলে আবার খুঁজুন।</p>
+        <button type="button" onclick="resetCatalogFilters()">সব পণ্য দেখুন</button>
+      </div>
+    `;
     return;
   }
 
   grid.innerHTML = products.map((item) => {
     const isFurniture = item.brand === 'SB Furniture';
-    const isPartner = item.shop_name && !['SB Furniture', 'SB POWER'].includes(item.shop_name);
-    const brandBadgeClass = isPartner ? 'brand-partner' : (isFurniture ? 'brand-furniture' : 'brand-power');
-    const brandDisplay = isPartner ? `🏪 ${item.shop_name}` : item.brand;
+    const resellerAccess = hasResellerAccess();
+    const brandBadgeClass = isFurniture ? 'brand-furniture' : 'brand-power';
     const imageUrl = escapeCatalogHtml(safeCatalogImageUrl(item.image_url));
 
+    const stockBadge = Number(item.stock) > 0
+      ? `<span class="badge-stock in-stock">স্টক: ${item.stock}টি</span>`
+      : `<span class="badge-stock out-of-stock">স্টক শেষ</span>`;
+
     return `
-      <div class="product-card">
-        <div class="product-thumb-wrap" onclick="viewProductDetails(${item.id})">
+      <article class="product-card">
+        <button type="button" class="product-thumb-wrap" onclick="viewProductDetails(${item.id})" aria-label="${escapeCatalogHtml(item.title)} — বিস্তারিত দেখুন">
           <img src="${imageUrl}" alt="${escapeCatalogHtml(item.title)}" class="product-thumb" loading="lazy">
           <span class="badge-sku">${escapeCatalogHtml(item.sku)}</span>
-          <span class="badge-commission">কমিশন ${escapeCatalogHtml(item.reseller_commission)}৳</span>
-          <span class="badge-brand ${brandBadgeClass}">${escapeCatalogHtml(brandDisplay)}</span>
-          ${item.vendor_badge ? `<span class="badge-vendor-verified">✓ ${escapeCatalogHtml(item.vendor_badge)}</span>` : ''}
-        </div>
+          <span class="badge-brand ${brandBadgeClass}">${escapeCatalogHtml(item.brand)}</span>
+        </button>
         <div class="product-body">
-          <h4 class="product-title" onclick="viewProductDetails(${item.id})">${escapeCatalogHtml(item.title)}</h4>
-          <div class="product-meta-row">
-            <span>${escapeCatalogHtml(item.category)}</span>
-            ${item.finish ? ` • <span>${escapeCatalogHtml(item.finish)}</span>` : ''}
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <span class="product-meta-row" style="margin: 0;">${escapeCatalogHtml(item.category)}</span>
+            ${stockBadge}
           </div>
+          <button type="button" class="product-title" onclick="viewProductDetails(${item.id})">${escapeCatalogHtml(item.title)}</button>
+          ${item.finish ? `<div style="font-size: 0.76rem; color: #a1a1aa; margin-bottom: 6px;">ফিনিশ: ${escapeCatalogHtml(item.finish)}</div>` : ''}
           <div class="product-price-row">
             <div class="price-box">
-              <span class="price-label">বিক্রয় মূল্য</span>
+              <span class="price-label">কাস্টমার মূল্য</span>
               <span class="price-val">${escapeCatalogHtml(item.regular_price)} ৳</span>
             </div>
-            <div class="commission-box">
-              <span class="commission-label">আপনার কমিশন</span>
-              <span class="commission-val">+${escapeCatalogHtml(item.reseller_commission)} ৳</span>
-            </div>
+            ${resellerAccess ? `<div class="commission-box">
+              <span class="commission-label">আপনার আয়</span>
+              <span class="badge-profit-pill">কমিশন ৳${escapeCatalogHtml(item.reseller_commission)}</span>
+            </div>` : ''}
           </div>
           <div class="product-actions">
-            <button class="btn-share" onclick="copyProductShareCopy(${item.id})" title="ক্যাপশন কপি">
-              <span>📋</span> শেয়ার
+            ${resellerAccess ? `<button type="button" class="btn-share" onclick="copyProductShareCopy(${item.id})" title="পোস্ট কপি করুন">
+              <span aria-hidden="true">📋</span> সেলস পোস্ট কপি
+            </button>` : ''}
+            <button type="button" class="btn-wa" onclick="orderViaWhatsApp(${item.id})" title="WhatsApp">
+              <span aria-hidden="true">💬</span> WhatsApp
             </button>
-            <button class="btn-wa" onclick="orderViaWhatsApp(${item.id})" title="সরাসরি WhatsApp অর্ডার">
-              <span>💬</span> WhatsApp
-            </button>
-            <button class="btn-order" onclick="handleOrderButtonClick(${item.id})" title="কার্টে যোগ করুন">
-              <span>🛒</span> অর্ডার
+            <button type="button" class="btn-order" onclick="viewProductDetails(${item.id})" title="পণ্য দেখুন বা অর্ডার করুন">
+              <span aria-hidden="true">🛒</span> ${resellerAccess ? 'রিসেলার টুলকিট' : 'অর্ডার করুন'}
             </button>
           </div>
         </div>
-      </div>
+      </article>
     `;
   }).join('');
+}
+
+function resetCatalogFilters() {
+  currentTab = 'all';
+  currentCategory = 'all';
+  currentBrand = 'all';
+  currentSort = 'default';
+  minPrice = '';
+  maxPrice = '';
+  searchQuery = '';
+  document.getElementById('searchInput').value = '';
+  document.getElementById('sortSelect').value = 'default';
+  document.getElementById('minPriceInput').value = '';
+  document.getElementById('maxPriceInput').value = '';
+  document.querySelectorAll('.commission-tabs-wrap .tab-btn').forEach((button) => button.classList.toggle('active', button.dataset.tab === 'all'));
+  document.querySelectorAll('.category-pills .cat-pill').forEach((button) => button.classList.toggle('active', button.dataset.cat === 'all'));
+  document.querySelectorAll('.quick-shop-pill').forEach((button) => button.classList.toggle('active', button.dataset.brand === 'all'));
+  loadProducts();
 }
 
 // Tab Filtering
@@ -170,11 +224,11 @@ function filterByCategory(catName) {
   loadProducts();
 }
 
-// Shop/Vendor Filtering
-function filterByShop(shopName) {
-  currentShop = shopName;
-  document.querySelectorAll('.shop-filter-wrap .shop-pill').forEach((btn) => {
-    btn.classList.toggle('active', btn.dataset.shop === shopName);
+// Own brand filtering. Partner shops remain hidden from the storefront.
+function filterByBrand(brandName) {
+  currentBrand = brandName;
+  document.querySelectorAll('.quick-shop-pill').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.brand === brandName);
   });
   loadProducts();
 }
@@ -213,7 +267,7 @@ function orderViaWhatsApp(productId) {
   if (!item) return;
 
   const isFurniture = item.brand === 'SB Furniture';
-  let phone = item.vendor_phone || (isFurniture ? '01929621855' : '01634664224');
+  let phone = isFurniture ? '01929621855' : '01634664224';
   let cleanPhone = phone.replace(/\D/g, '');
   if (cleanPhone.startsWith('01')) {
     cleanPhone = '88' + cleanPhone;
@@ -224,7 +278,9 @@ function orderViaWhatsApp(productId) {
   }
 
   const activeUser = (typeof currentUser !== 'undefined' && currentUser) ? currentUser : JSON.parse(localStorage.getItem('sb_user') || 'null');
-  const refCode = activeUser ? activeUser.referral_code : (localStorage.getItem('sb_ref_code') || '');
+  const refCode = activeUser && ['reseller', 'admin'].includes(activeUser.role)
+    ? activeUser.referral_code
+    : (localStorage.getItem('sb_ref_code') || '');
   const appBaseUrl = window.location.origin;
   const productLink = refCode ? `${appBaseUrl}/?ref=${refCode}&sku=${item.sku}` : `${appBaseUrl}/?sku=${item.sku}`;
 
@@ -232,9 +288,6 @@ function orderViaWhatsApp(productId) {
   msg += `🏷️ প্রোডাক্ট: ${item.title}\n`;
   msg += `🔖 SKU কোড: ${item.sku}\n`;
   msg += `💰 নির্ধারিত মূল্য: ${item.regular_price} ৳\n`;
-  if (item.shop_name && !['SB Furniture', 'SB POWER'].includes(item.shop_name)) {
-    msg += `🏪 শপ/ভেন্ডর: ${item.shop_name}\n`;
-  }
   if (refCode) {
     msg += `🔗 রেফার কোড: ${refCode}\n`;
   }
@@ -248,25 +301,18 @@ function orderViaWhatsApp(productId) {
 // 1-Click Social Sharing Copy Generator
 function generateShareText(item) {
   const isFurniture = item.brand === 'SB Furniture';
-  const isPartner = item.shop_name && !['SB Furniture', 'SB POWER'].includes(item.shop_name);
-  const phone = String(item.vendor_phone || (isFurniture ? '01929621855' : '01634664224')).replace(/\D/g, '');
-  const imageUrl = escapeCatalogHtml(safeCatalogImageUrl(item.image_url));
-  const trustLine = isPartner
-    ? `🏪 ${item.shop_name} — এই পণ্যটি পার্টনার দোকানের মাধ্যমে সরবরাহ করা হবে।`
-    : (isFurniture
-        ? 'SB Furniture-এর ফার্নিচার ও দোকান সাজানোর পণ্য।'
-        : 'SB POWER-এর গ্যাজেট; পণ্যের ব্র্যান্ড ও বিবরণ দেখে অর্ডার করুন।');
-  
+  const phone = String(isFurniture ? '01929621855' : '01634664224').replace(/\D/g, '');
+  const trustLine = isFurniture
+    ? 'SB Furniture-এর ফার্নিচার ও দোকান সাজানোর পণ্য।'
+    : 'SB POWER-এর গ্যাজেট; পণ্যের ব্র্যান্ড ও বিবরণ দেখে অর্ডার করুন।';
+
   const activeUser = (typeof currentUser !== 'undefined' && currentUser) ? currentUser : JSON.parse(localStorage.getItem('sb_user') || 'null');
-  const refCode = activeUser ? activeUser.referral_code : localStorage.getItem('sb_ref_code');
+  const refCode = activeUser && ['reseller', 'admin'].includes(activeUser.role) ? activeUser.referral_code : '';
   const appBaseUrl = window.location.origin;
   const productLink = refCode ? `${appBaseUrl}/?ref=${refCode}&sku=${item.sku}` : `${appBaseUrl}/?sku=${item.sku}`;
 
   let text = `🔥 ${item.title}\n`;
   text += `💵 বিক্রয় মূল্য: ${item.regular_price} ৳\n`;
-  if (isPartner) {
-    text += `🏪 শপ/ভেন্ডর: ${item.shop_name}${item.vendor_badge ? ' (' + item.vendor_badge + ')' : ''}\n`;
-  }
   if (item.materials) text += `🪵 বোর্ড/উপকরণ: ${item.materials}\n`;
   if (item.finish) text += `🎨 ফিনিশিং ও কালার: ${item.finish}\n`;
   if (item.description) text += `📌 বিবরণ: ${item.description}\n`;
@@ -279,6 +325,7 @@ function generateShareText(item) {
 
 // Copy Share Text to Clipboard
 async function copyProductShareCopy(productId) {
+  if (!hasResellerAccess()) return;
   const item = allProducts.find((p) => p.id === productId);
   if (!item) return;
 
@@ -298,24 +345,73 @@ async function copyProductShareCopy(productId) {
   }
 }
 
-// View Product Details in Modal
+function renderCustomerProductDetails(item) {
+  const isFurniture = item.brand === 'SB Furniture';
+  const phone = isFurniture ? '01929621855' : '01634664224';
+  const imageUrl = escapeCatalogHtml(safeCatalogImageUrl(item.image_url));
+  const colorSelectorHtml = item.sku === 'SBP-103' || (item.finish && item.finish.includes('কালার'))
+    ? `<div class="form-group" style="margin-top: 10px;">
+        <label class="form-label" for="modalColorSelect">পছন্দের রং</label>
+        <select id="modalColorSelect" class="form-control">
+          <option value="Black">ব্ল্যাক</option><option value="Silver">সিলভার</option>
+          <option value="Blue">ব্লু</option><option value="Red">রেড</option>
+        </select>
+      </div>`
+    : '';
+
+  document.getElementById('modalProductTitle').textContent = `${item.sku} — পণ্যের বিস্তারিত`;
+  document.getElementById('modalProductBody').innerHTML = `
+    <div style="text-align:center; margin-bottom:14px;">
+      <img src="${imageUrl}" alt="${escapeCatalogHtml(item.title)}" style="width:100%; max-height:280px; object-fit:cover; border-radius:var(--radius-sm);">
+    </div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
+      <span class="badge-sku" style="position:static;">${escapeCatalogHtml(item.sku)}</span>
+      <span class="badge-brand">${escapeCatalogHtml(item.brand)}</span>
+      <span class="product-meta-row">${escapeCatalogHtml(item.category)}</span>
+    </div>
+    <h3 style="font-size:1.12rem; color:#fff; margin-bottom:8px;">${escapeCatalogHtml(item.title)}</h3>
+    <div style="font-size:1.35rem; font-weight:700; color:var(--sbp-yellow); margin-bottom:12px;">
+      পণ্যের দাম: ${escapeCatalogHtml(item.regular_price)} ৳
+    </div>
+    <div style="background:#292524; padding:12px; border-radius:var(--radius-sm); font-size:.85rem; margin-bottom:14px; line-height:1.6;">
+      ${item.materials ? `<div><strong>উপকরণ:</strong> ${escapeCatalogHtml(item.materials)}</div>` : ''}
+      ${item.finish ? `<div><strong>ফিনিশিং:</strong> ${escapeCatalogHtml(item.finish)}</div>` : ''}
+      <div style="margin-top:6px;">${escapeCatalogHtml(item.description)}</div>
+    </div>
+    ${colorSelectorHtml}
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:14px;">
+      <button class="btn-wa" style="padding:10px;" onclick="orderViaWhatsApp(${item.id})">💬 WhatsApp-এ অর্ডার</button>
+      <button class="btn-submit" style="padding:10px;" onclick="addToCartFromModal(${item.id})">🛒 কার্টে যোগ করুন</button>
+    </div>
+    <div style="margin-top:14px; text-align:center; font-size:.82rem; color:var(--sbf-text-muted);">
+      পণ্য সম্পর্কে জানতে কল করুন: <a href="tel:${phone}" style="color:var(--sbp-yellow); font-weight:700;">${phone}</a>
+    </div>
+  `;
+  openModal('productDetailModal');
+}
+
+// View Product Details with One-Tap Reseller Toolkit
 function viewProductDetails(productId) {
   const item = allProducts.find((p) => p.id === productId);
   if (!item) return;
 
+  if (!hasResellerAccess()) {
+    renderCustomerProductDetails(item);
+    return;
+  }
+
   const isFurniture = item.brand === 'SB Furniture';
-  const isPartner = item.shop_name && !['SB Furniture', 'SB POWER'].includes(item.shop_name);
-  const phone = String(item.vendor_phone || (isFurniture ? '01929621855' : '01634664224')).replace(/\D/g, '');
+  const phone = String(isFurniture ? '01929621855' : '01634664224').replace(/\D/g, '');
   const imageUrl = escapeCatalogHtml(safeCatalogImageUrl(item.image_url));
 
-  document.getElementById('modalProductTitle').textContent = item.sku + ' — বিস্তারিত তথ্য';
+  document.getElementById('modalProductTitle').textContent = item.sku + ' — বিস্তারিত তথ্য ও রিসেলার টুলকিট';
 
   let colorSelectorHtml = '';
-  if (item.sku === 'SBP-103') {
+  if (item.sku === 'SBP-103' || (item.finish && item.finish.includes('কালার'))) {
     colorSelectorHtml = `
       <div class="form-group" style="margin-top: 10px;">
-        <label class="form-label">পছন্দের কালার সিলেক্ট করুন (৪টি কালার অ্যাভেলেবল):</label>
-        <select id="modalColorSelect" class="form-control">
+        <label class="form-label">পছন্দের কালার সিলেক্ট করুন:</label>
+        <select id="modalColorSelect" class="form-control" onchange="updateToolkitLiveProfit(${item.id})">
           <option value="Black">ব্ল্যাক (Black)</option>
           <option value="Silver">সিলভার (Silver)</option>
           <option value="Blue">ব্লু (Blue)</option>
@@ -325,17 +421,8 @@ function viewProductDetails(productId) {
     `;
   }
 
-  let vendorInfoHtml = '';
-  if (isPartner) {
-    vendorInfoHtml = `
-      <div style="background: rgba(16, 185, 129, 0.12); border: 1px solid #10b981; border-radius: var(--radius-sm); padding: 10px; margin-bottom: 12px; font-size: 0.85rem;">
-        <div style="font-weight: 700; color: #34d399; margin-bottom: 4px;">🏪 পার্টনার শপ: ${escapeCatalogHtml(item.shop_name)}</div>
-        ${item.vendor_badge ? `<div style="color: #a7f3d0; font-size: 0.78rem;">✓ ${escapeCatalogHtml(item.vendor_badge)}</div>` : ''}
-        ${item.vendor_phone ? `<div style="color: #d1fae5; font-size: 0.78rem;">📞 ভেন্ডর মোবাইল: ${escapeCatalogHtml(item.vendor_phone)}</div>` : ''}
-        ${item.vendor_address ? `<div style="color: #9ca3af; font-size: 0.75rem;">📍 শপ লোকেশন: ${escapeCatalogHtml(item.vendor_address)}</div>` : ''}
-      </div>
-    `;
-  }
+  const defaultDeliveryFee = isFurniture ? 500 : 80;
+  const initialGrandTotal = item.regular_price + defaultDeliveryFee;
 
   document.getElementById('modalProductBody').innerHTML = `
     <div style="text-align: center; margin-bottom: 14px;">
@@ -343,36 +430,260 @@ function viewProductDetails(productId) {
     </div>
     <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px;">
       <span class="badge-sku" style="position: static;">${escapeCatalogHtml(item.sku)}</span>
-      <span class="badge-commission" style="position: static;">রিসেলার কমিশন: ${escapeCatalogHtml(item.reseller_commission)} ৳</span>
-      <span style="font-size: 0.75rem; background: #38332f; padding: 3px 8px; border-radius: 4px; color: #fff;">${escapeCatalogHtml(item.shop_name || item.brand)}</span>
-      ${item.vendor_badge ? `<span style="font-size: 0.75rem; background: #065f46; color: #a7f3d0; padding: 3px 8px; border-radius: 4px;">✓ ${escapeCatalogHtml(item.vendor_badge)}</span>` : ''}
+      <span class="badge-profit-pill">কমিশন ৳${escapeCatalogHtml(item.reseller_commission)}</span>
+      <span style="font-size: 0.75rem; background: #38332f; padding: 3px 8px; border-radius: 4px; color: #fff;">${escapeCatalogHtml(item.brand)}</span>
     </div>
-    <h3 style="font-size: 1.15rem; color: #fff; margin-bottom: 8px;">${escapeCatalogHtml(item.title)}</h3>
-    <div style="font-size: 1.25rem; font-weight: 700; color: var(--sbp-yellow); margin-bottom: 12px;">
-      মূল্য: ${escapeCatalogHtml(item.regular_price)} ৳
+    <h3 style="font-size: 1.12rem; color: #fff; margin-bottom: 8px;">${escapeCatalogHtml(item.title)}</h3>
+    <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px;">
+      <div style="font-size: 1.25rem; font-weight: 700; color: var(--sbp-yellow);">
+        কাস্টমার মূল্য: ${escapeCatalogHtml(item.regular_price)} ৳
+      </div>
+      <div class="badge-profit-pill" style="font-size: 0.82rem; padding: 4px 10px;">
+        আপনার নিট কমিশন: ৳${escapeCatalogHtml(item.reseller_commission)}
+      </div>
     </div>
-    ${vendorInfoHtml}
     <div style="background: #292524; padding: 12px; border-radius: var(--radius-sm); font-size: 0.85rem; margin-bottom: 14px; line-height: 1.6;">
       ${item.materials ? `<div><strong>উপকরণ:</strong> ${escapeCatalogHtml(item.materials)}</div>` : ''}
       ${item.finish ? `<div><strong>ফিনিশিং:</strong> ${escapeCatalogHtml(item.finish)}</div>` : ''}
       <div style="margin-top: 6px;">${escapeCatalogHtml(item.description)}</div>
     </div>
     ${colorSelectorHtml}
-    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px;">
-      <button class="btn-share" style="padding: 10px;" onclick="copyProductShareCopy(${item.id})">
-        📋 সোশ্যাল কপি
-      </button>
+
+    <!-- One-Tap Reseller Toolkit -->
+    <div class="reseller-toolkit-box">
+      <div class="toolkit-title">
+        <span>⚡ রিসেলার টুলকিট (One-Tap Toolkit)</span>
+        <span style="font-size: 0.75rem; color: #34d399; font-weight: normal;">১-ক্লিকে শেয়ার ও অর্ডার</span>
+      </div>
+      <div class="toolkit-action-grid">
+        <button type="button" class="btn-toolkit btn-toolkit-copy" onclick="copyProductShareCopy(${item.id})">
+          <span>📋</span> কপি সেলস পোস্ট
+        </button>
+        <button type="button" class="btn-toolkit btn-toolkit-share" onclick="shareProductToolkit(${item.id})">
+          <span>📲</span> ছবি ও লিংক শেয়ার
+        </button>
+        <button type="button" class="btn-toolkit btn-toolkit-order" onclick="toggleCustomerOrderAccordion()">
+          <span>🛒</span> কাস্টমারের জন্য সরাসরি অর্ডার করুন ▾
+        </button>
+      </div>
+
+      <!-- Instant Customer Order Accordion Form -->
+      <div id="custOrderAccordionPanel" class="customer-order-panel" style="display: none;">
+        <h4 style="color: #fbbf24; font-size: 0.95rem; margin-bottom: 10px;">📦 কাস্টমার অর্ডার ফর্ম (সরাসরি আপনার রেফারে)</h4>
+
+        <div class="form-group">
+          <label class="form-label" style="font-size: 0.8rem;">কাস্টমারের পূর্ণ নাম *</label>
+          <input type="text" id="tkCustName" class="form-control" placeholder="যেমন: মো: করিম হোসেন">
+        </div>
+        <div class="form-group">
+          <label class="form-label" style="font-size: 0.8rem;">কাস্টমারের মোবাইল নম্বর (১১ ডিজিট) *</label>
+          <input type="tel" id="tkCustPhone" class="form-control" inputmode="tel" placeholder="01XXXXXXXXX">
+        </div>
+        <div class="form-group">
+          <label class="form-label" style="font-size: 0.8rem;">সম্পূর্ণ ডেলিভারি ঠিকানা *</label>
+          <textarea id="tkCustAddress" class="form-control" rows="2" placeholder="বাড়ি/রোড/এলাকা/উপজেলা/জেলা"></textarea>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+          <div class="form-group">
+            <label class="form-label" style="font-size: 0.8rem;">পরিমাণ (Quantity)</label>
+            <input type="number" id="tkOrderQty" class="form-control" value="1" min="1" max="50" oninput="updateToolkitLiveProfit(${item.id})">
+          </div>
+          <div class="form-group">
+            <label class="form-label" style="font-size: 0.8rem;">ডেলিভারি এরিয়া</label>
+            <select id="tkOrderCity" class="form-control" onchange="updateToolkitLiveProfit(${item.id})">
+              <option value="inside_dhaka">ঢাকা ভেতরে (${isFurniture ? '৫০০৳' : '৮০৳'})</option>
+              <option value="outside_dhaka">ঢাকার বাইরে (${isFurniture ? '১০০০৳' : '১৫০৳'})</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Live Profit & Bill Preview -->
+        <div class="profit-preview-box">
+          <div class="profit-preview-row">
+            <span>কাস্টমার পণ্যের মূল্য:</span>
+            <span id="tkSubtotal">${item.regular_price} ৳</span>
+          </div>
+          <div class="profit-preview-row">
+            <span>ডেলিভারি চার্জ:</span>
+            <span id="tkDeliveryFee">${defaultDeliveryFee} ৳</span>
+          </div>
+          <div class="profit-preview-row" style="font-weight: 700; color: #facc15;">
+            <span>কাস্টমার মোট বিল (COD):</span>
+            <span id="tkGrandTotal">${initialGrandTotal} ৳</span>
+          </div>
+          <div class="profit-preview-row profit-preview-highlight">
+            <span>আপনার নিশ্চিত কমিশন:</span>
+            <span id="tkResellerCommission">৳${item.reseller_commission}</span>
+          </div>
+          <div style="font-size: 0.74rem; color: #a7f3d0; margin-top: 4px;">
+            ✓ অর্ডার সাবমিট হলেই কমিশন আপনার ওয়ালেটে পেন্ডিং হিসেবে যোগ হবে এবং ডেলিভারিতে উত্তোলনযোগ্য হবে!
+          </div>
+        </div>
+
+        <button type="button" id="btnSubmitTkOrder" class="btn-submit" style="width: 100%; padding: 12px;" onclick="submitToolkitCustomerOrder(${item.id})">
+          নিশ্চিত করুন ও কাস্টমারের অর্ডার প্লেস করুন
+        </button>
+      </div>
+    </div>
+
+    <!-- Secondary Actions -->
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px;">
       <button class="btn-wa" style="padding: 10px;" onclick="orderViaWhatsApp(${item.id})">
-        💬 WhatsApp অর্ডার
+        💬 WhatsApp হটলাইন
+      </button>
+      <button class="btn-submit" style="padding: 10px; background: #3f3f46;" onclick="addToCartFromModal(${item.id})">
+        🛒 নিজের কার্টে নিন
       </button>
     </div>
-    <button class="btn-submit" style="margin-top: 10px; padding: 12px;" onclick="addToCartFromModal(${item.id})">
-      🛒 শপিং কার্টে নিন
-    </button>
+
     <div style="margin-top: 14px; text-align: center; font-size: 0.82rem; color: var(--sbf-text-muted);">
       কাস্টমাইজেশন বা সরাসরি অর্ডারে কল করুন: <a href="tel:${phone}" style="color: var(--sbp-yellow); font-weight: 700;">${phone}</a>
     </div>
   `;
 
   openModal('productDetailModal');
+}
+
+// Toolkit Web Share API Helper
+async function shareProductToolkit(productId) {
+  if (!hasResellerAccess()) return;
+  const item = allProducts.find((p) => p.id === productId);
+  if (!item) return;
+  const shareText = generateShareText(item);
+  if (navigator.share) {
+    try {
+      await navigator.share({
+        title: item.title,
+        text: shareText,
+        url: window.location.origin + '/?sku=' + item.sku
+      });
+      showToast('✅ সফলভাবে শেয়ার করা হয়েছে!');
+      return;
+    } catch (e) {
+      if (e.name !== 'AbortError') copyProductShareCopy(productId);
+    }
+  } else {
+    copyProductShareCopy(productId);
+    window.open(item.image_url, '_blank');
+  }
+}
+
+// Toggle Customer Order Accordion inside Product Modal
+function toggleCustomerOrderAccordion() {
+  const panel = document.getElementById('custOrderAccordionPanel');
+  if (panel) {
+    panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+  }
+}
+
+// Live Profit Calculator inside Product Modal
+function updateToolkitLiveProfit(productId) {
+  const item = allProducts.find((p) => p.id === productId);
+  if (!item) return;
+  const qtyInput = document.getElementById('tkOrderQty');
+  const qty = Math.max(1, parseInt(qtyInput ? qtyInput.value : 1, 10) || 1);
+  const citySelect = document.getElementById('tkOrderCity');
+  const city = citySelect ? citySelect.value : 'inside_dhaka';
+
+  const isFurniture = item.brand === 'SB Furniture';
+  const deliveryFee = isFurniture
+    ? (city === 'inside_dhaka' ? 500 : 1000)
+    : (city === 'inside_dhaka' ? 80 : 150);
+
+  const subtotal = item.regular_price * qty;
+  const grandTotal = subtotal + deliveryFee;
+  const totalCommission = item.reseller_commission * qty;
+
+  const subtotalEl = document.getElementById('tkSubtotal');
+  const delEl = document.getElementById('tkDeliveryFee');
+  const totalEl = document.getElementById('tkGrandTotal');
+  const commEl = document.getElementById('tkResellerCommission');
+
+  if (subtotalEl) subtotalEl.textContent = `${subtotal} ৳`;
+  if (delEl) delEl.textContent = `${deliveryFee} ৳`;
+  if (totalEl) totalEl.textContent = `${grandTotal} ৳`;
+  if (commEl) commEl.textContent = `৳${totalCommission}`;
+}
+
+// One-Tap Customer Order Submission
+async function submitToolkitCustomerOrder(productId) {
+  const item = allProducts.find((p) => p.id === productId);
+  if (!item) return;
+
+  const nameInput = document.getElementById('tkCustName');
+  const phoneInput = document.getElementById('tkCustPhone');
+  const addressInput = document.getElementById('tkCustAddress');
+  const cityInput = document.getElementById('tkOrderCity');
+  const qtyInput = document.getElementById('tkOrderQty');
+  const colorSelect = document.getElementById('modalColorSelect');
+
+  const customer_name = nameInput ? nameInput.value.trim() : '';
+  const customer_phone = phoneInput ? phoneInput.value.trim() : '';
+  const delivery_address = addressInput ? addressInput.value.trim() : '';
+  const delivery_city = cityInput ? cityInput.value : 'inside_dhaka';
+  const quantity = Math.max(1, parseInt(qtyInput ? qtyInput.value : 1, 10) || 1);
+  const selected_color = colorSelect ? colorSelect.value : '';
+
+  if (!customer_name) return alert('কাস্টমারের নাম প্রদান করুন');
+  if (!/^01[3-9]\d{8}$/.test(customer_phone.replace(/\D/g, ''))) return alert('কাস্টমারের সঠিক ১১ ডিজিটের মোবাইল নম্বর দিন');
+  if (!delivery_address) return alert('কাস্টমারের সম্পূর্ণ ঠিকানা লিখুন');
+
+  const btn = document.getElementById('btnSubmitTkOrder');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'অর্ডার প্রসেস হচ্ছে...';
+  }
+
+  try {
+    const activeUser = (typeof currentUser !== 'undefined' && currentUser) ? currentUser : JSON.parse(localStorage.getItem('sb_user') || 'null');
+    const token = (typeof authToken !== 'undefined' && authToken) ? authToken : localStorage.getItem('sb_token');
+
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const orderPayload = {
+      customer_name,
+      customer_phone,
+      delivery_address,
+      delivery_city,
+      items: [{
+        product_id: item.id,
+        quantity,
+        selected_color
+      }]
+    };
+    if (activeUser && activeUser.referral_code) {
+      orderPayload.referral_code = activeUser.referral_code;
+    }
+
+    const res = await fetch(api('/api/orders'), {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(orderPayload)
+    });
+    const data = await res.json();
+
+    if (data.success && data.order) {
+      closeModal('productDetailModal');
+      showToast(`🎉 অর্ডার #${data.order.order_number} সফলভাবে প্লেস হয়েছে!`);
+      if (typeof openModal === 'function') {
+        const trackInput = document.getElementById('trackOrderInput');
+        const phoneTrack = document.getElementById('trackCustomerPhone');
+        if (trackInput) trackInput.value = data.order.order_number;
+        if (phoneTrack) phoneTrack.value = customer_phone;
+        openModal('trackModal');
+        if (typeof trackOrder === 'function') trackOrder();
+      }
+    } else {
+      alert(data.message || 'অর্ডার প্লেস ব্যর্থ হয়েছে');
+    }
+  } catch (err) {
+    console.error(err);
+    alert('অর্ডার সাবমিট করতে সমস্যা হয়েছে');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'নিশ্চিত করুন ও কাস্টমারের অর্ডার প্লেস করুন';
+    }
+  }
 }

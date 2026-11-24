@@ -1,0 +1,137 @@
+.startup-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 20000;
+  display: none;
+  place-items: center;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 42%, rgba(234, 88, 12, 0.18), transparent 36%),
+    linear-gradient(145deg, #0b1220, #152238 58%, #101827);
+  color: #fff7ed;
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 360ms ease, visibility 360ms ease;
+  -webkit-font-smoothing: antialiased;
+}
+
+@media (display-mode: standalone), (display-mode: minimal-ui), (display-mode: fullscreen) {
+  .startup-splash { display: grid; }
+}
+
+html.is-standalone .startup-splash { display: grid; }
+
+.startup-splash.is-hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.startup-splash__content {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 15px;
+  width: min(84vw, 340px);
+  text-align: center;
+  animation: splash-content-in 700ms cubic-bezier(.2,.8,.2,1) both;
+}
+
+.startup-splash__logo-wrap {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 148px;
+  height: 148px;
+  border: 1px solid rgba(255, 237, 213, .22);
+  border-radius: 42px;
+  background: rgba(255, 255, 255, .045);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, .28), 0 0 48px rgba(234, 88, 12, .14);
+  animation: splash-logo-float 2.4s ease-in-out 700ms infinite;
+}
+
+.startup-splash__logo-wrap::before,
+.startup-splash__logo-wrap::after {
+  position: absolute;
+  inset: -11px;
+  border: 1px solid rgba(251, 146, 60, .22);
+  border-radius: 50px;
+  content: "";
+  animation: splash-ring 1.8s ease-out 200ms infinite;
+}
+
+.startup-splash__logo-wrap::after {
+  inset: -23px;
+  border-color: rgba(34, 211, 238, .14);
+  border-radius: 60px;
+  animation-delay: 600ms;
+}
+
+.startup-splash__logo {
+  display: block;
+  width: 126px;
+  height: 126px;
+  border-radius: 32px;
+  filter: drop-shadow(0 8px 16px rgba(0, 0, 0, .25));
+}
+
+.startup-splash__title {
+  margin-top: 5px;
+  color: #fff7ed;
+  font: 800 clamp(1.25rem, 5vw, 1.65rem)/1.2 'Hind Siliguri', system-ui, sans-serif;
+  letter-spacing: .01em;
+}
+
+.startup-splash__subtitle {
+  color: rgba(255, 247, 237, .72);
+  font: 500 .94rem/1.4 'Hind Siliguri', system-ui, sans-serif;
+}
+
+.startup-splash__loader {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.startup-splash__loader span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #fb923c;
+  animation: splash-dot 850ms ease-in-out infinite alternate;
+}
+
+.startup-splash__loader span:nth-child(2) { animation-delay: 170ms; background: #facc15; }
+.startup-splash__loader span:nth-child(3) { animation-delay: 340ms; background: #22d3ee; }
+
+@keyframes splash-content-in {
+  from { opacity: 0; transform: translateY(16px) scale(.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes splash-logo-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+
+@keyframes splash-ring {
+  0% { opacity: .7; transform: scale(.94); }
+  100% { opacity: 0; transform: scale(1.12); }
+}
+
+@keyframes splash-dot {
+  from { opacity: .45; transform: translateY(0) scale(.82); }
+  to { opacity: 1; transform: translateY(-4px) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .startup-splash__content,
+  .startup-splash__logo-wrap,
+  .startup-splash__logo-wrap::before,
+  .startup-splash__logo-wrap::after,
+  .startup-splash__loader span {
+    animation: none !important;
+  }
+  .startup-splash { transition-duration: 1ms; }
+}

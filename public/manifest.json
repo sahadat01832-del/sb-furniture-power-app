@@ -1,11 +1,12 @@
 {
   "name": "SB Furniture & SB POWER",
-  "short_name": "SB Furniture",
+  "short_name": "SB Shop",
+  "id": "/",
   "description": "এসবি ফার্নিচার ও এসবি পাওয়ার - অনলাইন ক্যাটালগ ও রিসেলার প্ল্যাটফর্ম",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#1c1917",
-  "theme_color": "#b45309",
+  "background_color": "#101827",
+  "theme_color": "#ea580c",
   "orientation": "portrait",
   "icons": [
     {
