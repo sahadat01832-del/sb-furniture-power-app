@@ -52,34 +52,33 @@ function renderAdminUsersTable(users) {
   const tbody = document.getElementById('adminUsersTableBody');
   if (!tbody) return;
 
-  tbody.innerHTML = users.map((u) => {
-    // Role styling
-    let roleBadge = '';
-    const roleLabels = {
-      customer: '🛍️ সাধারণ কাস্টমার',
-      reseller: '💼 অনুমোদিত রিসেলার',
-      admin: '👑 অ্যাডমিন'
-    };
-    const currentRole = Object.prototype.hasOwnProperty.call(roleLabels, u.role) ? u.role : 'customer';
+  let currentAdminId = null;
+  try {
+    const storedAdmin = JSON.parse(localStorage.getItem('sb_admin_user') || 'null');
+    if (storedAdmin && storedAdmin.id) currentAdminId = Number(storedAdmin.id);
+  } catch { /* ignore parse errors */ }
 
-    if (u.role === 'admin') {
-      roleBadge = '<span style="background: #ef4444; color: #fff; padding: 3px 8px; border-radius: 4px; font-weight: 600; font-size: 0.75rem;">👑 এডমিন</span>';
-    } else if (u.role === 'customer') {
-      roleBadge = '<span style="background: #10b981; color: #fff; padding: 3px 8px; border-radius: 4px; font-weight: 600; font-size: 0.75rem;">🛍️ কাস্টমার</span>';
-    } else {
-      roleBadge = '<span style="background: #3b82f6; color: #fff; padding: 3px 8px; border-radius: 4px; font-weight: 600; font-size: 0.75rem;">💼 রিসেলার</span>';
-    }
+  const roleConfig = {
+    admin: { cls: 'is-admin', label: '👑 এডমিন' },
+    customer: { cls: 'is-customer', label: '🛍️ কাস্টমার' },
+    reseller: { cls: 'is-reseller', label: '💼 রিসেলার' }
+  };
+
+  tbody.innerHTML = users.map((u) => {
+    const currentRole = Object.prototype.hasOwnProperty.call(roleConfig, u.role) ? u.role : 'customer';
+    const roleMeta = roleConfig[currentRole];
+    const roleBadge = `<span class="adm-role-pill ${roleMeta.cls}">${roleMeta.label}</span>`;
 
     const roleActionBtn = `
       <div class="admin-role-editor">
         <label for="adminUserRole${Number(u.id)}">অ্যাকাউন্টের পদবি</label>
         <div class="admin-role-editor-row">
           <select id="adminUserRole${Number(u.id)}" class="form-control" data-current-role="${currentRole}">
-            <option value="customer" ${currentRole === 'customer' ? 'selected' : ''}>🛍️ সাধারণ কাস্টমার</option>
-            <option value="reseller" ${currentRole === 'reseller' ? 'selected' : ''}>💼 রিসেলার — কমিশন অনুমতি</option>
+            <option value="customer" ${currentRole === 'customer' ? 'selected' : ''}>🛍️ কাস্টমার</option>
+            <option value="reseller" ${currentRole === 'reseller' ? 'selected' : ''}>💼 রিসেলার</option>
             <option value="admin" ${currentRole === 'admin' ? 'selected' : ''}>👑 অ্যাডমিন</option>
           </select>
-          <button class="action-btn-sm admin-role-save" type="button" onclick="saveSelectedUserRole(${Number(u.id)})">পদবি সংরক্ষণ</button>
+          <button class="action-btn-sm admin-role-save" type="button" onclick="saveSelectedUserRole(${Number(u.id)})">সংরক্ষণ</button>
         </div>
       </div>
     `;
@@ -89,41 +88,44 @@ function renderAdminUsersTable(users) {
     const balanceText = `${Number(u.balance || 0).toLocaleString()}৳`;
 
     const isSuspended = u.status === 'suspended';
+    const isSelf = currentAdminId !== null && Number(u.id) === currentAdminId;
     const statusBadge = isSuspended
-      ? '<span style="background: #ef4444; color: #fff; padding: 2px 6px; border-radius: 4px; font-weight: 700; font-size: 0.72rem;">🚫 স্থগিত</span>'
-      : '<span style="background: #10b981; color: #fff; padding: 2px 6px; border-radius: 4px; font-weight: 700; font-size: 0.72rem;">✅ সক্রিয়</span>';
+      ? '<span class="adm-status-pill is-suspended">🚫 স্থগিত</span>'
+      : '<span class="adm-status-pill is-active">✅ সক্রিয়</span>';
 
-    const statusToggleBtn = isSuspended
-      ? `<button class="action-btn-sm" style="background: #059669; color: #fff; cursor: pointer;" onclick="toggleUserStatus(${Number(u.id)}, 'active')">✅ সক্রিয় করুন</button>`
-      : `<button class="action-btn-sm" style="background: #dc2626; color: #fff; cursor: pointer;" onclick="toggleUserStatus(${Number(u.id)}, 'suspended')">🚫 স্থগিত করুন</button>`;
+    const statusToggleBtn = isSelf
+      ? '<span class="adm-self-tag">✓ বর্তমান অ্যাডমিন</span>'
+      : (isSuspended
+          ? `<button type="button" class="action-btn-sm adm-btn-soft-success" onclick="toggleUserStatus(${Number(u.id)}, 'active')">✅ সক্রিয় করুন</button>`
+          : `<button type="button" class="action-btn-sm adm-btn-soft-danger" onclick="toggleUserStatus(${Number(u.id)}, 'suspended')">🚫 স্থগিত করুন</button>`);
 
     return `
-      <tr style="${isSuspended ? 'opacity: 0.75; background: rgba(239, 68, 68, 0.05);' : ''}">
+      <tr style="${isSuspended ? 'opacity: 0.78; background: rgba(220, 38, 38, 0.04);' : ''}">
         <td data-label="ইউজার ও মোবাইল">
-          <div style="font-weight: 600; color: #26372d; font-size: 0.9rem;">${escapeHtml(u.name)}</div>
-          <div style="font-size: 0.75rem; color: #657269; display: flex; align-items: center; gap: 4px; margin-top: 2px;">
+          <div style="font-weight: 700; color: var(--adm-text); font-size: 0.92rem;">${escapeHtml(u.name)}</div>
+          <div class="adm-phone-row">
             <span>📞 ${escapeHtml(u.phone)}</span>
-            <button onclick="copyToClipboard('${String(u.phone || '').replace(/\D/g, '')}', 'ফোন নম্বর কপি হয়েছে')" style="background: none; border: none; cursor: pointer; color: var(--sbp-yellow); font-size: 0.75rem;" title="কপি করুন">📋</button>
+            <button type="button" onclick="copyToClipboard('${String(u.phone || '').replace(/\D/g, '')}', 'ফোন নম্বর কপি হয়েছে')" style="background: none; border: none; cursor: pointer; color: var(--adm-amber); font-size: 0.78rem; padding: 2px;" title="ফোন নম্বর কপি করুন" aria-label="ফোন নম্বর কপি করুন">📋</button>
           </div>
-          ${u.payout_method ? `<div style="font-size: 0.72rem; color: #b45309; margin-top: 2px;">💸 ক্যাশআউট: ${escapeHtml(u.payout_method.toUpperCase())} (${escapeHtml(u.payout_number || '')})</div>` : ''}
-          ${u.referred_by_name ? `<div style="font-size: 0.7rem; color: #78716c;">রেফার করেছেন: ${escapeHtml(u.referred_by_name)}</div>` : ''}
+          ${u.payout_method ? `<div style="font-size: 0.72rem; color: var(--adm-amber); margin-top: 2px;">💸 ক্যাশআউট: ${escapeHtml(u.payout_method.toUpperCase())} (${escapeHtml(u.payout_number || '')})</div>` : ''}
+          ${u.referred_by_name ? `<div style="font-size: 0.72rem; color: var(--adm-text-muted); margin-top: 2px;">রেফার করেছেন: ${escapeHtml(u.referred_by_name)}</div>` : ''}
         </td>
         <td data-label="পদবি">
-          ${roleBadge}
-          <div style="margin-top: 4px;">${statusBadge}</div>
+          <div class="adm-user-badges">
+            ${roleBadge}
+            ${statusBadge}
+          </div>
         </td>
         <td data-label="রেফারেল কোড">
-          <code class="adm-code-pill">
-            ${escapeHtml(u.referral_code || '-')}
-          </code>
+          <code class="adm-code-pill">${escapeHtml(u.referral_code || '-')}</code>
         </td>
         <td data-label="অর্ডার ও সেলস">
-          <div style="font-weight: 600; color: #2457a6;">${totalOrdersText}</div>
+          <div class="admin-cell-money" style="font-weight: 600; color: var(--adm-blue); white-space: nowrap;">${totalOrdersText}</div>
         </td>
         <td data-label="ওয়ালেট ব্যালেন্স">
-          <div style="font-weight: 700; color: #087247;">${balanceText}</div>
+          <div class="admin-cell-money" style="font-weight: 700; color: var(--adm-emerald); white-space: nowrap;">${balanceText}</div>
         </td>
-        <td data-label="যুক্ত হওয়ার তারিখ" style="color: #657269; font-size: 0.8rem;">${joinedDate}</td>
+        <td data-label="যুক্ত হওয়ার তারিখ" style="color: var(--adm-text-muted); font-size: 0.8rem; white-space: nowrap;">${joinedDate}</td>
         <td data-label="পদবি পরিবর্তন / অ্যাকশন">
           <div class="admin-role-actions">
             ${roleActionBtn}

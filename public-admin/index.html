@@ -10,7 +10,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="/icons/admin-icon-192.png">
   <link rel="apple-touch-icon" href="/icons/admin-icon-192.png">
   <link rel="stylesheet" href="/css/style.css?v=4.0.2">
-  <link rel="stylesheet" href="/css/admin.css?v=4.0.1">
+  <link rel="stylesheet" href="/css/admin.css?v=4.0.4">
   <link rel="stylesheet" href="/css/pwa-splash.css?v=4.0.1">
   <link rel="stylesheet" href="/css/pwa-install.css?v=4.0.1">
   <link rel="stylesheet" href="/css/animations.css?v=4.0.1">
@@ -466,8 +466,8 @@
             <h3>👥 ইউজার ও অ্যাডমিন ব্যবস্থাপনা</h3>
             <p class="adm-section-sub">কাস্টমার অ্যাকাউন্ট পরিচালনা, রিসেল অনুমতি দেওয়া বা বন্ধ করা, এবং অ্যাডমিন তৈরি</p>
           </div>
-          <button type="button" class="action-btn-sm btn-deliver" style="padding: 9px 16px;" onclick="openAddUserModal()">
-            ➕ নতুন অ্যাডমিন / ইউজার তৈরি
+          <button type="button" class="action-btn-sm btn-deliver" style="min-height: 40px; padding: 0 16px;" onclick="openAddUserModal()">
+            + নতুন অ্যাডমিন / ইউজার
           </button>
         </div>
 
@@ -483,7 +483,7 @@
               <option value="customer">🛍️ ক্রেতা</option>
             </select>
           </div>
-          <button type="button" class="action-btn-sm btn-edit-product" style="min-height: 44px; padding: 0 16px;" onclick="loadAdminUsers(1)">🔄 রিফ্রেশ</button>
+          <button type="button" class="action-btn-sm adm-btn-neutral" style="min-height: 44px; padding: 0 16px;" onclick="loadAdminUsers(1)">🔄 রিফ্রেশ</button>
         </div>
 
         <div class="table-responsive">
@@ -491,12 +491,12 @@
             <thead>
               <tr>
                 <th>ইউজার ও মোবাইল</th>
-                <th>পদবি (রোল)</th>
-                <th>রেফারেল কোড</th>
-                <th>অর্ডার ও সেলস</th>
-                <th>ওয়ালেট ব্যালেন্স</th>
-                <th>যুক্ত হওয়ার তারিখ</th>
-                <th>পদবি পরিবর্তন / অ্যাকশন</th>
+                <th>পদবি</th>
+                <th>রেফারেল</th>
+                <th>অর্ডার</th>
+                <th>ব্যালেন্স</th>
+                <th>তারিখ</th>
+                <th>পদবি ও অ্যাকশন</th>
               </tr>
             </thead>
             <tbody id="adminUsersTableBody"></tbody>
@@ -1125,7 +1125,7 @@
   <script src="/js/api.js?v=4.0.0"></script>
   <script src="/js/admin.js?v=4.0.2"></script>
   <script src="/js/admin-referrals.js?v=1.0.2"></script>
-  <script src="/js/admin-users.js?v=4.0.0"></script>
+  <script src="/js/admin-users.js?v=4.0.4"></script>
   <script src="/js/pwa-install.js?v=3.2.2" defer></script>
   <script src="/js/pwa-splash.js?v=1.0.0"></script>
   <script>
