@@ -178,25 +178,57 @@ def draw_admin_icon(size, is_round=False, is_foreground=False):
 
     return img
 
+def build_launcher_variant(size, icon_type='client', is_round=False, is_foreground=False):
+    """Build Android launcher icon from SVG-rendered brand PNGs when available, else fallback."""
+    source_name = 'icon-512.png' if icon_type == 'client' else 'admin-icon-512.png'
+    source_path = os.path.join(ROOT_DIR, 'public', 'icons', source_name)
+    if not os.path.isfile(source_path):
+        draw_fn = draw_client_icon if icon_type == 'client' else draw_admin_icon
+        return draw_fn(size, is_round=is_round, is_foreground=is_foreground)
+
+    base = Image.open(source_path).convert('RGBA')
+    resample = Image.Resampling.LANCZOS if hasattr(Image, 'Resampling') else Image.LANCZOS
+
+    if is_foreground:
+        # Adaptive icons show central ~66-72% safe area cleanly without clipping edges
+        inner = max(1, int(size * 0.72))
+        resized = base.resize((inner, inner), resample)
+        canvas = Image.new('RGBA', (size, size), (0, 0, 0, 0))
+        offset = (size - inner) // 2
+        canvas.paste(resized, (offset, offset), resized)
+        return canvas
+
+    resized = base.resize((size, size), resample)
+    mask = Image.new('L', (size, size), 0)
+    mask_draw = ImageDraw.Draw(mask)
+    if is_round:
+        mask_draw.ellipse([0, 0, size - 1, size - 1], fill=255)
+    else:
+        mask_draw.rounded_rectangle([0, 0, size - 1, size - 1], radius=max(2, int(size * 0.22)), fill=255)
+    resized.putalpha(mask)
+    return resized
+
 def export_android_res_icons(res_dir, icon_type='client'):
-    draw_fn = draw_client_icon if icon_type == 'client' else draw_admin_icon
     print(f"Exporting {icon_type} icons to {res_dir}...")
-    
+
     for folder, px in MIPMAP_SIZES.items():
         out_dir = os.path.join(res_dir, folder)
         os.makedirs(out_dir, exist_ok=True)
-        
+
         # ic_launcher.png (square/squircle)
-        img_sq = draw_fn(px, is_round=False, is_foreground=False)
-        img_sq.save(os.path.join(out_dir, 'ic_launcher.png'), 'PNG')
-        
+        build_launcher_variant(px, icon_type=icon_type, is_round=False, is_foreground=False).save(
+            os.path.join(out_dir, 'ic_launcher.png'), 'PNG'
+        )
+
         # ic_launcher_round.png
-        img_rd = draw_fn(px, is_round=True, is_foreground=False)
-        img_rd.save(os.path.join(out_dir, 'ic_launcher_round.png'), 'PNG')
-        
+        build_launcher_variant(px, icon_type=icon_type, is_round=True, is_foreground=False).save(
+            os.path.join(out_dir, 'ic_launcher_round.png'), 'PNG'
+        )
+
         # ic_launcher_foreground.png
-        img_fg = draw_fn(px, is_round=False, is_foreground=True)
-        img_fg.save(os.path.join(out_dir, 'ic_launcher_foreground.png'), 'PNG')
+        build_launcher_variant(px, icon_type=icon_type, is_round=False, is_foreground=True).save(
+            os.path.join(out_dir, 'ic_launcher_foreground.png'), 'PNG'
+        )
 
 def find_android_tool(name):
     tool = shutil.which(name)
@@ -239,7 +271,6 @@ def update_apk_icons(apk_path, icon_type='client'):
         raise RuntimeError('Android SDK build-tools with apksigner and zipalign are required to sign APKs.')
 
     print(f"Injecting custom {icon_type} icons and signing the APK with the configured external key...")
-    draw_fn = draw_client_icon if icon_type == 'client' else draw_admin_icon
     res_map = {
         'res/mipmap-mdpi-v4': 48,
         'res/mipmap-hdpi-v4': 72,
@@ -252,9 +283,9 @@ def update_apk_icons(apk_path, icon_type='client'):
         replacements = {}
         for folder, px in res_map.items():
             for filename, image in [
-                ('ic_launcher.png', draw_fn(px, is_round=False, is_foreground=False)),
-                ('ic_launcher_round.png', draw_fn(px, is_round=True, is_foreground=False)),
-                ('ic_launcher_foreground.png', draw_fn(px, is_round=False, is_foreground=True)),
+                ('ic_launcher.png', build_launcher_variant(px, icon_type=icon_type, is_round=False, is_foreground=False)),
+                ('ic_launcher_round.png', build_launcher_variant(px, icon_type=icon_type, is_round=True, is_foreground=False)),
+                ('ic_launcher_foreground.png', build_launcher_variant(px, icon_type=icon_type, is_round=False, is_foreground=True)),
             ]:
                 image_path = os.path.join(temp_dir, f'{px}-{filename}')
                 image.save(image_path, 'PNG')
@@ -316,15 +347,26 @@ def main(targets=None):
         raise ValueError('Targets must be client and/or admin.')
 
     print("--- Generating Custom App Logos ---")
-    
-    # 1. Update public/icons/playstore-icon.png and icons
-    playstore_icon = draw_client_icon(512, is_round=False)
-    playstore_icon.save(os.path.join(ROOT_DIR, 'public', 'icons', 'playstore-icon.png'), 'PNG')
-    playstore_icon.save(os.path.join(ROOT_DIR, 'public', 'icons', 'icon-512.png'), 'PNG')
-    draw_client_icon(192).save(os.path.join(ROOT_DIR, 'public', 'icons', 'icon-192.png'), 'PNG')
-    
-    admin_icon = draw_admin_icon(512, is_round=False)
-    admin_icon.save(os.path.join(ROOT_DIR, 'public', 'icons', 'admin-icon-512.png'), 'PNG')
+
+    # 1. Preserve SVG-rendered web/PWA icons if present; sync playstore-icon.png cleanly
+    icons_dir = os.path.join(ROOT_DIR, 'public', 'icons')
+    client_512_path = os.path.join(icons_dir, 'icon-512.png')
+    client_192_path = os.path.join(icons_dir, 'icon-192.png')
+    admin_512_path = os.path.join(icons_dir, 'admin-icon-512.png')
+    playstore_path = os.path.join(icons_dir, 'playstore-icon.png')
+
+    if os.path.isfile(client_512_path):
+        shutil.copyfile(client_512_path, playstore_path)
+    else:
+        playstore_icon = draw_client_icon(512, is_round=False)
+        playstore_icon.save(playstore_path, 'PNG')
+        playstore_icon.save(client_512_path, 'PNG')
+
+    if not os.path.isfile(client_192_path):
+        draw_client_icon(192).save(client_192_path, 'PNG')
+
+    if not os.path.isfile(admin_512_path):
+        draw_admin_icon(512, is_round=False).save(admin_512_path, 'PNG')
     
     # 2. Update Android Projects
     for android_dir in ['android', 'android-client']:
