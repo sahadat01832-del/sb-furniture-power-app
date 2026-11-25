@@ -1,4 +1,4 @@
-const CACHE_NAME = 'sb-furniture-v29';
+const CACHE_NAME = 'sb-furniture-v33';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
@@ -10,6 +10,7 @@ const ASSETS_TO_CACHE = [
   '/css/animations.css',
   '/js/api.js',
   '/js/app-config.js',
+  '/js/catalog-algorithm.js',
   '/js/catalog.js',
   '/js/leaderboard.js',
   '/js/app.js',
@@ -80,10 +81,10 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 1. Navigation requests (HTML pages): Network-First for instantaneous Over-The-Air upgrades
+  // 1. Navigation requests (HTML pages): Network-First with cache revalidation for instant OTA upgrades
   if (event.request.mode === 'navigate') {
     event.respondWith(
-      fetch(event.request)
+      fetch(event.request, { cache: 'no-cache' })
         .then((networkResponse) => {
           if (networkResponse && networkResponse.status === 200) {
             const responseToCache = networkResponse.clone();

@@ -60,6 +60,7 @@ test('APK & PWA 1: Web App Manifest & PNG Icons Compliance', async () => {
   const icon192Res = await request('/icons/icon-192.png');
   assert.equal(icon192Res.status, 200);
   assert.ok(icon192Res.headers['content-type'].includes('image/png'));
+  assert.equal(icon192Res.headers['cross-origin-resource-policy'], 'cross-origin');
 });
 
 test('APK & PWA 2: PWA 1-Click Banner Assets', async () => {

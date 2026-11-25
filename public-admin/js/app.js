@@ -940,14 +940,13 @@ function switchMainTab(tab) {
   });
 
   // Load view content
+  window.scrollTo({ top: 0, behavior: 'smooth' });
   if (tab === 'orders') {
     loadOrdersView();
   } else if (tab === 'wallet') {
     loadWalletView();
   } else if (tab === 'profile') {
     loadProfileView();
-  } else if (tab === 'shop') {
-    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 }
 

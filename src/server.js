@@ -9,7 +9,7 @@ const config = require('./config');
 const { get, query, closeDb } = require('./db');
 const { seedData } = require('./seed');
 const { performBackup, waitForActiveBackup } = require('./backup');
-const { closeFirebaseBackup } = require('./firebaseBackup');
+const { closeFirebaseBackup, getFirebaseBackupStatus } = require('./firebaseBackup');
 
 const authRoutes = require('./routes/authRoutes');
 const productRoutes = require('./routes/productRoutes');
@@ -20,10 +20,16 @@ const leaderboardRoutes = require('./routes/leaderboardRoutes');
 const referralRoutes = require('./routes/referralRoutes');
 
 const app = express();
-const BACKUP_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const BACKUP_INTERVAL_MS = config.BACKUP_INTERVAL_MINUTES * 60 * 1000;
 let scheduledBackupTimer = null;
 
 function startScheduledBackups() {
+  const cloudStatus = getFirebaseBackupStatus();
+  if (!cloudStatus.configured) {
+    console.warn(`⚠️ Encrypted cloud backup is OFF. Missing: ${cloudStatus.missing.join(', ')}. Only local backups will be kept.`);
+  }
+  console.log(`🗄️ Database backup schedule: every ${config.BACKUP_INTERVAL_MINUTES} minutes.`);
+
   const runBackup = () => {
     performBackup().catch((error) => {
       console.error('Scheduled database backup failed:', error.message);
@@ -43,14 +49,26 @@ if (config.NODE_ENV === 'production') {
 app.use(
   helmet({
     contentSecurityPolicy: false, // Allows inline scripts/styles for modern PWA frontend
-    crossOriginEmbedderPolicy: false
+    crossOriginEmbedderPolicy: false,
+    crossOriginResourcePolicy: { policy: 'cross-origin' }
   })
 );
 const allowedCorsOrigins = new Set(config.CORS_ORIGINS);
+// Trust only this project's own Hosting domains, never every *.web.app site.
+// This keeps the live Firebase frontend working even if CORS_ORIGIN(S) is missing
+// from the phone's .env, while lookalike Firebase projects stay rejected.
+const projectHostingOrigins = new Set(
+  config.FIREBASE_PROJECT_ID
+    ? [
+        `https://${config.FIREBASE_PROJECT_ID}.web.app`,
+        `https://${config.FIREBASE_PROJECT_ID}.firebaseapp.com`
+      ]
+    : []
+);
 function isAllowedCorsOrigin(origin) {
-  if (!origin || allowedCorsOrigins.has(origin)) return true;
-  if (/^https:\/\/[^/]+\.(?:web\.app|firebaseapp\.com)$/.test(origin)) return true;
-  return /^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/.test(origin);
+  if (!origin || allowedCorsOrigins.has(origin) || projectHostingOrigins.has(origin)) return true;
+  if (config.NODE_ENV !== 'production' && /^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/.test(origin)) return true;
+  return false;
 }
 app.use(cors({
   origin(origin, callback) {
@@ -84,10 +102,11 @@ const authLimiter = rateLimit({
 });
 const trackingLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 20,
+  max: 10,
+  skipSuccessfulRequests: true,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { success: false, message: 'অনেকবার অর্ডার খোঁজা হয়েছে। কিছুক্ষণ পর আবার চেষ্টা করুন।' }
+  message: { success: false, message: 'অনেকবার ভুল অর্ডার খোঁজা হয়েছে। ১৫ মিনিট পর আবার চেষ্টা করুন।' }
 });
 app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/register', authLimiter);
@@ -223,10 +242,10 @@ app.use((err, req, res, next) => {
 if (require.main === module) {
   seedData()
     .then(() => {
-      const httpServer = app.listen(config.PORT, '127.0.0.1', () => {
+      const httpServer = app.listen(config.PORT, config.HOST, () => {
         if (config.NODE_ENV === 'production') startScheduledBackups();
         console.log(`===============================================`);
-        console.log(`SB Furniture & SB POWER server listening on 127.0.0.1:${config.PORT}`);
+        console.log(`SB Furniture & SB POWER server listening on ${config.HOST}:${config.PORT}`);
         console.log(`⚙️ Mode: ${config.NODE_ENV}`);
         console.log(`===============================================`);
       });

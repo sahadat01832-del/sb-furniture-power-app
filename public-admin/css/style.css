@@ -583,6 +583,17 @@ header {
   color: #ffffff;
   box-shadow: var(--shadow-sm);
 }
+.quick-reshuffle-pill {
+  margin-inline-start: auto;
+  border-color: var(--brand-tint-bd);
+  background: var(--brand-tint);
+  color: var(--brand-primary-hv);
+}
+.quick-reshuffle-pill:hover {
+  background: var(--brand-primary);
+  border-color: var(--brand-primary);
+  color: #ffffff;
+}
 
 /* ================= Search & Filter Bar ================= */
 .catalog-controls {
@@ -2388,9 +2399,9 @@ textarea.form-control {
 
 .toast-msg {
   position: fixed;
-  inset-block-end: calc(82px + env(safe-area-inset-bottom, 0px));
+  inset-block-start: calc(env(safe-area-inset-top, 0px) + 74px);
   inset-inline-start: 50%;
-  transform: translateX(-50%) translateY(16px);
+  transform: translateX(-50%) translateY(-16px);
   background: var(--surface-bar);
   color: #ffffff;
   border: 1px solid rgba(255, 255, 255, 0.14);
@@ -2421,6 +2432,12 @@ textarea.form-control {
   align-items: flex-end;
   gap: 8px;
   z-index: 95;
+  transition: inset-block-end 0.25s var(--ease-out);
+}
+@media (max-width: 960px) {
+  body:has(.pwa-install-banner.show) .floating-actions {
+    inset-block-end: calc(154px + env(safe-area-inset-bottom, 0px));
+  }
 }
 
 .floating-btn {

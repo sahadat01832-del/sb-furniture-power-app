@@ -291,6 +291,15 @@ test('Admin Users 5: Admin profile password update (PUT /api/admin/profile/passw
   });
   assert.equal(shortPass.status, 400);
 
+  // Attempt without the current password: a stolen token alone must not work
+  const missingOldPass = await request('/api/admin/profile/password', {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${adminToken}` },
+    body: { new_password: 'missingOldPass123' }
+  });
+  assert.equal(missingOldPass.status, 400);
+  assert.match(missingOldPass.body.message, /বর্তমান পাসওয়ার্ড/);
+
   // Attempt with wrong old password
   const wrongOldPass = await request('/api/admin/profile/password', {
     method: 'PUT',

@@ -7,6 +7,9 @@ const configuredJwtSecret = process.env.JWT_SECRET && process.env.JWT_SECRET.tri
 const configuredAdminPhone = process.env.ADMIN_PHONE && process.env.ADMIN_PHONE.trim();
 const configuredAdminPassword = process.env.ADMIN_PASSWORD && process.env.ADMIN_PASSWORD.trim();
 const configuredPort = Number(process.env.PORT || 3000);
+const configuredHost = process.env.HOST && process.env.HOST.trim();
+const configuredBackupInterval = Number(process.env.BACKUP_INTERVAL_MINUTES || 360);
+const configuredFirebaseProjectId = (process.env.FIREBASE_PROJECT_ID || '').trim();
 const rawCorsOrigins = [process.env.CORS_ORIGIN || '', process.env.CORS_ORIGINS || '']
   .join(',')
   .split(',')
@@ -29,6 +32,10 @@ if (!Number.isInteger(configuredPort) || configuredPort < 1 || configuredPort > 
   throw new Error('PORT must be an integer between 1 and 65535.');
 }
 
+if (!Number.isInteger(configuredBackupInterval) || configuredBackupInterval < 15 || configuredBackupInterval > 1440) {
+  throw new Error('BACKUP_INTERVAL_MINUTES must be an integer between 15 and 1440.');
+}
+
 if (!configuredJwtSecret || configuredJwtSecret.length < 32) {
   throw new Error('Set JWT_SECRET to a random value with at least 32 characters.');
 }
@@ -37,8 +44,8 @@ if (isProduction) {
   if (!configuredAdminPhone || !/^01[3-9]\d{8}$/.test(configuredAdminPhone) || !configuredAdminPassword || Buffer.byteLength(configuredAdminPassword, 'utf8') < 12 || Buffer.byteLength(configuredAdminPassword, 'utf8') > 72) {
     throw new Error('Production requires ADMIN_PHONE and a unique ADMIN_PASSWORD with at least 12 characters.');
   }
-  if (rawCorsOrigins.length === 0) {
-    throw new Error('Production requires CORS_ORIGIN or CORS_ORIGINS with an explicit site origin.');
+  if (rawCorsOrigins.length === 0 && !configuredFirebaseProjectId) {
+    throw new Error('Production requires CORS_ORIGIN or CORS_ORIGINS, or FIREBASE_PROJECT_ID for its exact Hosting domains.');
   }
 }
 if (invalidCorsOrigin) {
@@ -58,9 +65,12 @@ if (!isProduction) {
 
 module.exports = {
   PORT: configuredPort,
+  HOST: configuredHost || '127.0.0.1',
+  BACKUP_INTERVAL_MINUTES: configuredBackupInterval,
   NODE_ENV,
   JWT_SECRET: configuredJwtSecret,
   CORS_ORIGINS: [...corsOrigins],
+  FIREBASE_PROJECT_ID: configuredFirebaseProjectId,
   DATABASE_FILE: process.env.DATABASE_FILE || path.join(__dirname, '..', 'data', 'database.sqlite'),
   
   // Brand Contacts & Info

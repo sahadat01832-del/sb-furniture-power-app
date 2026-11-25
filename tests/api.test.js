@@ -88,10 +88,14 @@ test('1. Health check endpoint reports the phone API health', async () => {
   assert.equal(typeof res.body.memoryMB, 'number');
 });
 
-test('CORS allows Firebase Hosting and rejects unconfigured website origins', async () => {
-  const firebaseOrigin = 'https://sb-power-demo.web.app';
-  const firebaseResponse = await request('/health', { headers: { Origin: firebaseOrigin } });
-  assert.equal(firebaseResponse.headers['access-control-allow-origin'], firebaseOrigin);
+test('CORS allows configured origins and rejects unconfigured Firebase subdomains', async () => {
+  const allowedOrigin = 'http://localhost:3000';
+  const allowedResponse = await request('/health', { headers: { Origin: allowedOrigin } });
+  assert.equal(allowedResponse.headers['access-control-allow-origin'], allowedOrigin);
+
+  // A random Firebase-looking subdomain must no longer be trusted automatically.
+  const unconfiguredFirebase = await request('/health', { headers: { Origin: 'https://sb-power-demo.web.app' } });
+  assert.equal(unconfiguredFirebase.headers['access-control-allow-origin'], undefined);
 
   const unconfiguredResponse = await request('/health', { headers: { Origin: 'https://untrusted.example' } });
   assert.equal(unconfiguredResponse.headers['access-control-allow-origin'], undefined);

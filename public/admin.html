@@ -9,11 +9,11 @@
   <link rel="icon" type="image/svg+xml" href="/icons/admin-icon.svg">
   <link rel="icon" type="image/png" sizes="192x192" href="/icons/admin-icon-192.png">
   <link rel="apple-touch-icon" href="/icons/admin-icon-192.png">
-  <link rel="stylesheet" href="/css/style.css?v=4.0.2">
-  <link rel="stylesheet" href="/css/admin.css?v=4.0.4">
+  <link rel="stylesheet" href="/css/style.css?v=4.0.3">
+  <link rel="stylesheet" href="/css/admin.css?v=4.0.5">
   <link rel="stylesheet" href="/css/pwa-splash.css?v=4.0.1">
-  <link rel="stylesheet" href="/css/pwa-install.css?v=4.0.1">
-  <link rel="stylesheet" href="/css/animations.css?v=4.0.1">
+  <link rel="stylesheet" href="/css/pwa-install.css?v=4.0.2">
+  <link rel="stylesheet" href="/css/animations.css?v=4.0.2">
 </head>
 <body>
 
@@ -359,6 +359,55 @@
           </button>
         </div>
 
+        <div class="product-management-tools" aria-label="পণ্য খোঁজা ও ফিল্টার">
+          <label class="product-search-field">
+            <span>🔎 পণ্য খুঁজুন</span>
+            <input id="adminProductSearch" class="form-control" type="search" placeholder="নাম, SKU, দোকান বা ক্যাটাগরি" oninput="filterAdminProducts()" autocomplete="off">
+          </label>
+          <label>
+            <span>ক্যাটাগরি</span>
+            <select id="adminProductCategoryFilter" class="form-control" onchange="filterAdminProducts()">
+              <option value="all">সব ক্যাটাগরি</option>
+            </select>
+          </label>
+          <label>
+            <span>দোকান</span>
+            <select id="adminProductShopFilter" class="form-control" onchange="filterAdminProducts()">
+              <option value="all">সব দোকান</option>
+            </select>
+          </label>
+          <label>
+            <span>সাজান</span>
+            <select id="adminProductSort" class="form-control" onchange="filterAdminProducts()">
+              <option value="newest">নতুন আগে</option>
+              <option value="title">নাম অনুযায়ী</option>
+              <option value="stock-asc">কম স্টক আগে</option>
+              <option value="price-asc">কম দাম আগে</option>
+              <option value="price-desc">বেশি দাম আগে</option>
+              <option value="profit-desc">বেশি লাভ আগে</option>
+            </select>
+          </label>
+          <label>
+            <span>প্রতি পাতায়</span>
+            <select id="adminProductPageSize" class="form-control" onchange="filterAdminProducts()">
+              <option value="25">২৫টি</option>
+              <option value="50">৫০টি</option>
+              <option value="100">১০০টি</option>
+            </select>
+          </label>
+        </div>
+
+        <div id="adminProductQuickFilters" class="product-quick-filters" aria-label="দ্রুত পণ্য ফিল্টার"></div>
+        <div class="product-list-summary">
+          <span id="adminProductsCount" role="status" aria-live="polite">পণ্যের তালিকা প্রস্তুত হচ্ছে...</span>
+          <button type="button" class="product-reset-button" onclick="resetAdminProductFilters()">ফিল্টার মুছুন</button>
+          <div class="product-pagination" aria-label="পণ্যের পাতা">
+            <button type="button" id="adminProductsPrev" class="adm-btn-neutral" onclick="changeAdminProductsPage(-1)" disabled>← আগের</button>
+            <span id="adminProductsPageInfo">১ / ১</span>
+            <button type="button" id="adminProductsNext" class="adm-btn-neutral" onclick="changeAdminProductsPage(1)" disabled>পরের →</button>
+          </div>
+        </div>
+
         <div class="table-responsive">
           <table>
             <thead>
@@ -699,6 +748,8 @@
                 <option value="দোকান ডেকোরেশন">দোকান ডেকোরেশন</option>
                 <option value="হোম ও অফিস ফার্নিচার">হোম ও অফিস ফার্নিচার</option>
                 <option value="ওয়্যারলেস অডিও ও গ্যাজেটস">ওয়্যারলেস অডিও ও গ্যাজেটস</option>
+                <option value="ওয়াচ ও ফ্যাশন">ওয়াচ ও ফ্যাশন</option>
+                <option value="পাওয়ার টুলস ও ইলেকট্রিক্যাল">পাওয়ার টুলস ও ইলেকট্রিক্যাল</option>
               </select>
             </div>
           </div>
@@ -1071,7 +1122,7 @@
           <input type="password" id="adminOldPass" class="form-control" placeholder="বর্তমান পাসওয়ার্ড দিন">
         </div>
         <div class="form-group">
-          <label class="form-label" for="adminNewPass">নতুন পাসওয়ার্ড (৮ থেকে ৭২ বাইট) *</label>
+          <label class="form-label" for="adminNewPass">নতুন পাসওয়ার্ড (১২ থেকে ৭২ বাইট) *</label>
           <input type="password" id="adminNewPass" class="form-control" placeholder="নতুন পাসওয়ার্ড লিখুন">
         </div>
         <button type="button" class="btn-submit" onclick="submitAdminPasswordChange()">পাসওয়ার্ড আপডেট করুন</button>
@@ -1122,8 +1173,8 @@
   </div>
 
   <script src="/js/app-config.js?v=4.0.0"></script>
-  <script src="/js/api.js?v=4.0.0"></script>
-  <script src="/js/admin.js?v=4.0.2"></script>
+  <script src="/js/api.js?v=4.0.2"></script>
+  <script src="/js/admin.js?v=4.0.5"></script>
   <script src="/js/admin-referrals.js?v=1.0.2"></script>
   <script src="/js/admin-users.js?v=4.0.4"></script>
   <script src="/js/pwa-install.js?v=3.2.2" defer></script>

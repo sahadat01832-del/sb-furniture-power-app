@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const config = require('./config');
-const { db } = require('./db');
+const { vacuumInto } = require('./db');
 const { uploadFirebaseBackup } = require('./firebaseBackup');
 
 const BACKUP_DIR = process.env.BACKUP_DIR || path.join(path.dirname(config.DATABASE_FILE), 'backups');
@@ -36,71 +36,63 @@ function waitForActiveBackup() {
   return activeBackup ? activeBackup.catch(() => {}) : Promise.resolve();
 }
 
-function createBackup() {
-  return new Promise((resolve, reject) => {
-    try {
-      secureBackupDirectory();
+async function createBackup() {
+  secureBackupDirectory();
 
-      const now = new Date();
-      const pad = (n) => String(n).padStart(2, '0');
-      const dateStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
-      const backupFilename = `sb-database-backup-${dateStr}.sqlite`;
-      const targetFilePath = path.join(BACKUP_DIR, backupFilename);
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const dateStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
+  const backupFilename = `sb-database-backup-${dateStr}.sqlite`;
+  const targetFilePath = path.join(BACKUP_DIR, backupFilename);
 
-      if (fs.existsSync(targetFilePath)) {
-        fs.unlinkSync(targetFilePath);
-      }
+  if (fs.existsSync(targetFilePath)) {
+    fs.unlinkSync(targetFilePath);
+  }
 
-      // SQLite 3.27+ native atomic defragmented snapshot
-      db.run('VACUUM INTO ?', [targetFilePath], (err) => {
-        if (err) {
-          console.error('❌ Database Backup Failed:', err);
-          return reject(err);
-        }
+  // SQLite 3.27+ native atomic defragmented snapshot. vacuumInto waits for any
+  // open transaction instead of running VACUUM inside it.
+  try {
+    await vacuumInto(targetFilePath);
+  } catch (err) {
+    console.error('❌ Database Backup Failed:', err);
+    throw err;
+  }
 
-        if (process.platform !== 'win32') fs.chmodSync(targetFilePath, 0o600);
-        const stats = fs.statSync(targetFilePath);
-        console.log(`✅ Database Backup Created Successfully:`);
-        console.log(`   📁 File: ${targetFilePath}`);
-        console.log(`   📦 Size: ${(stats.size / 1024).toFixed(2)} KB`);
+  if (process.platform !== 'win32') fs.chmodSync(targetFilePath, 0o600);
+  const stats = fs.statSync(targetFilePath);
+  console.log(`✅ Database Backup Created Successfully:`);
+  console.log(`   📁 File: ${targetFilePath}`);
+  console.log(`   📦 Size: ${(stats.size / 1024).toFixed(2)} KB`);
 
-        // Clean up old backups exceeding retention limit
-        try {
-          cleanOldBackups();
-        } catch (cleanupErr) {
-          console.warn('⚠️ Warning cleaning old backups:', cleanupErr.message);
-        }
+  // Clean up old backups exceeding retention limit
+  try {
+    cleanOldBackups();
+  } catch (cleanupErr) {
+    console.warn('⚠️ Warning cleaning old backups:', cleanupErr.message);
+  }
 
-        const backupInfo = {
-          success: true,
-          filename: backupFilename,
-          path: targetFilePath,
-          sizeBytes: stats.size,
-          createdAt: now.toISOString()
-        };
+  const backupInfo = {
+    success: true,
+    filename: backupFilename,
+    path: targetFilePath,
+    sizeBytes: stats.size,
+    createdAt: now.toISOString()
+  };
 
-        uploadFirebaseBackup(backupInfo)
-          .then((cloudBackup) => {
-            if (cloudBackup.success) {
-              console.log('✅ Encrypted Firebase backup uploaded.');
-            } else if (cloudBackup.configured) {
-              console.warn(`⚠️ Firebase backup failed (${cloudBackup.errorCode}); local backup is safe.`);
-            }
-            resolve({ ...backupInfo, cloudBackup });
-          })
-          .catch((cloudError) => {
-            console.warn('⚠️ Firebase backup failed; local backup is safe:', cloudError.code || cloudError.name || 'unknown_error');
-            resolve({
-              ...backupInfo,
-              cloudBackup: { configured: true, success: false, errorCode: 'firestore_unavailable' }
-            });
-          });
-      });
-    } catch (error) {
-      console.error('❌ Backup Exception:', error);
-      reject(error);
+  let cloudBackup;
+  try {
+    cloudBackup = await uploadFirebaseBackup(backupInfo);
+    if (cloudBackup.success) {
+      console.log('✅ Encrypted Firebase backup uploaded.');
+    } else if (cloudBackup.configured) {
+      console.warn(`⚠️ Firebase backup failed (${cloudBackup.errorCode}); local backup is safe.`);
     }
-  });
+  } catch (cloudError) {
+    console.warn('⚠️ Firebase backup failed; local backup is safe:', cloudError.code || cloudError.name || 'unknown_error');
+    cloudBackup = { configured: true, success: false, errorCode: 'firestore_unavailable' };
+  }
+
+  return { ...backupInfo, cloudBackup };
 }
 
 /**

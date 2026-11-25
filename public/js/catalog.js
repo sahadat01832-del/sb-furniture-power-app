@@ -3,6 +3,7 @@
 // ============================================================
 
 let allProducts = [];
+let rawCatalogProducts = [];
 let catalogResellerAccess = false;
 let currentTab = 'all';
 let currentCategory = 'all';
@@ -13,9 +14,58 @@ let maxPrice = '';
 let searchQuery = '';
 let searchTimeout;
 let priceFilterTimeout;
+let catalogDiscoverySeed = (window.SBCatalogAlgorithm && typeof window.SBCatalogAlgorithm.createDiscoverySeed === 'function')
+  ? window.SBCatalogAlgorithm.createDiscoverySeed()
+  : ((Date.now() ^ Math.floor(Math.random() * 0xffffffff)) >>> 0 || 1);
+
+const CATALOG_INTEREST_STORAGE_KEY = 'sb_catalog_interests';
+
+function loadCatalogInterests() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(CATALOG_INTEREST_STORAGE_KEY) || 'null');
+    if (parsed && typeof parsed === 'object') {
+      return {
+        categories: parsed.categories && typeof parsed.categories === 'object' ? parsed.categories : {},
+        lastViewedIds: Array.isArray(parsed.lastViewedIds) ? parsed.lastViewedIds : []
+      };
+    }
+  } catch (e) {}
+  return { categories: {}, lastViewedIds: [] };
+}
+
+function recordCatalogInterest(item) {
+  if (!item || !item.id) return;
+  try {
+    const current = loadCatalogInterests();
+    const cat = String(item.category || '').trim();
+    if (cat) {
+      const nextCount = Math.min(5, Number(current.categories[cat] || 0) + 1);
+      current.categories[cat] = nextCount;
+      const entries = Object.entries(current.categories).slice(-12);
+      current.categories = Object.fromEntries(entries);
+    }
+    const idNum = Number(item.id);
+    current.lastViewedIds = [idNum, ...current.lastViewedIds.filter((id) => Number(id) !== idNum)].slice(0, 12);
+    localStorage.setItem(CATALOG_INTEREST_STORAGE_KEY, JSON.stringify(current));
+  } catch (e) {}
+}
+
+function applyCatalogOrdering(products) {
+  if (!Array.isArray(products)) return [];
+  if (window.SBCatalogAlgorithm && typeof window.SBCatalogAlgorithm.rankCatalogProducts === 'function') {
+    return window.SBCatalogAlgorithm.rankCatalogProducts(products, {
+      sort: currentSort,
+      seed: catalogDiscoverySeed,
+      searchQuery,
+      recentInterests: loadCatalogInterests()
+    });
+  }
+  return products.slice();
+}
 
 const escapeCatalogHtml = (value) => window.sbEscapeHtml(value);
 const safeCatalogImageUrl = (value) => window.sbSafeImageUrl(value);
+const imageCorsAttrCatalog = (safeUrl) => (typeof window.sbImageCrossOriginAttr === 'function' ? window.sbImageCrossOriginAttr(safeUrl) : '');
 const hasResellerAccess = () => {
   const user = (typeof currentUser !== 'undefined' && currentUser)
     ? currentUser
@@ -70,8 +120,10 @@ async function loadProducts() {
         localStorage.setItem('sb_user', JSON.stringify(currentUser));
       }
       if (typeof updateAuthUI === 'function') updateAuthUI();
-      allProducts = data.products;
-      renderProductGrid(data.products);
+      rawCatalogProducts = data.products.slice();
+      const orderedProducts = applyCatalogOrdering(rawCatalogProducts);
+      allProducts = orderedProducts;
+      renderProductGrid(orderedProducts);
 
       // Deep linking: If URL has ?sku=..., automatically open product detail modal
       const urlSku = new URLSearchParams(window.location.search).get('sku');
@@ -141,7 +193,9 @@ function renderProductGrid(products) {
     const isFurniture = item.brand === 'SB Furniture';
     const resellerAccess = hasResellerAccess();
     const brandBadgeClass = isFurniture ? 'brand-furniture' : 'brand-power';
-    const imageUrl = escapeCatalogHtml(safeCatalogImageUrl(item.image_url));
+    const rawSafeImageUrl = safeCatalogImageUrl(item.image_url);
+    const imageUrl = escapeCatalogHtml(rawSafeImageUrl);
+    const imgCors = imageCorsAttrCatalog(rawSafeImageUrl);
 
     const stockBadge = Number(item.stock) > 0
       ? `<span class="badge-stock in-stock">স্টক: ${item.stock}টি</span>`
@@ -150,7 +204,7 @@ function renderProductGrid(products) {
     return `
       <article class="product-card">
         <button type="button" class="product-thumb-wrap" onclick="viewProductDetails(${item.id})" aria-label="${escapeCatalogHtml(item.title)} — বিস্তারিত দেখুন">
-          <img src="${imageUrl}" alt="${escapeCatalogHtml(item.title)}" class="product-thumb" loading="lazy">
+          <img src="${imageUrl}" ${imgCors} alt="${escapeCatalogHtml(item.title)}" class="product-thumb" loading="lazy" onerror="window.sbHandleImageError && window.sbHandleImageError(this)">
           <span class="badge-sku">${escapeCatalogHtml(item.sku)}</span>
           <span class="badge-brand ${brandBadgeClass}">${escapeCatalogHtml(item.brand)}</span>
         </button>
@@ -247,6 +301,35 @@ function handleSortChange() {
   const sortEl = document.getElementById('sortSelect');
   currentSort = sortEl ? sortEl.value : 'default';
   loadProducts();
+}
+
+// Rotate discovery feed seed and immediately show a fresh varied product lineup
+function reshuffleCatalogFeed() {
+  let attempts = 0;
+  let nextSeed = catalogDiscoverySeed;
+  while (nextSeed === catalogDiscoverySeed && attempts < 5) {
+    attempts += 1;
+    nextSeed = (window.SBCatalogAlgorithm && typeof window.SBCatalogAlgorithm.createDiscoverySeed === 'function')
+      ? window.SBCatalogAlgorithm.createDiscoverySeed()
+      : (((catalogDiscoverySeed + attempts * 2654435761) ^ Date.now()) >>> 0 || 1);
+  }
+  catalogDiscoverySeed = nextSeed;
+
+  const sortEl = document.getElementById('sortSelect');
+  if (sortEl) sortEl.value = 'default';
+
+  if (currentSort !== 'default' || rawCatalogProducts.length === 0) {
+    currentSort = 'default';
+    loadProducts();
+  } else {
+    const orderedProducts = applyCatalogOrdering(rawCatalogProducts);
+    allProducts = orderedProducts;
+    renderProductGrid(orderedProducts);
+  }
+
+  if (typeof showToast === 'function') {
+    showToast('✨ নতুনভাবে পণ্য সাজানো হয়েছে!');
+  }
 }
 
 // Price Filter Handler
@@ -443,7 +526,9 @@ async function copyProductShareCopy(productId) {
 function renderCustomerProductDetails(item) {
   const isFurniture = item.brand === 'SB Furniture';
   const phone = isFurniture ? '01929621855' : '01634664224';
-  const imageUrl = escapeCatalogHtml(safeCatalogImageUrl(item.image_url));
+  const rawSafeImageUrl = safeCatalogImageUrl(item.image_url);
+  const imageUrl = escapeCatalogHtml(rawSafeImageUrl);
+  const imgCors = imageCorsAttrCatalog(rawSafeImageUrl);
   const colorSelectorHtml = item.sku === 'SBP-103' || (item.finish && item.finish.includes('কালার'))
     ? `<div class="form-group" style="margin-top: 10px;">
         <label class="form-label" for="modalColorSelect">পছন্দের রং</label>
@@ -457,7 +542,7 @@ function renderCustomerProductDetails(item) {
   document.getElementById('modalProductTitle').textContent = `${item.sku} — পণ্যের বিস্তারিত`;
   document.getElementById('modalProductBody').innerHTML = `
     <div class="product-detail-img-wrap">
-      <img src="${imageUrl}" alt="${escapeCatalogHtml(item.title)}" class="product-detail-img">
+      <img src="${imageUrl}" ${imgCors} alt="${escapeCatalogHtml(item.title)}" class="product-detail-img" onerror="window.sbHandleImageError && window.sbHandleImageError(this)">
     </div>
     <div class="product-detail-badges">
       <span class="badge-sku">${escapeCatalogHtml(item.sku)}</span>
@@ -489,6 +574,7 @@ function renderCustomerProductDetails(item) {
 function viewProductDetails(productId) {
   const item = allProducts.find((p) => p.id === productId);
   if (!item) return;
+  recordCatalogInterest(item);
 
   if (!hasResellerAccess()) {
     renderCustomerProductDetails(item);
@@ -497,7 +583,9 @@ function viewProductDetails(productId) {
 
   const isFurniture = item.brand === 'SB Furniture';
   const phone = String(isFurniture ? '01929621855' : '01634664224').replace(/\D/g, '');
-  const imageUrl = escapeCatalogHtml(safeCatalogImageUrl(item.image_url));
+  const rawSafeImageUrl = safeCatalogImageUrl(item.image_url);
+  const imageUrl = escapeCatalogHtml(rawSafeImageUrl);
+  const imgCors = imageCorsAttrCatalog(rawSafeImageUrl);
 
   document.getElementById('modalProductTitle').textContent = item.sku + ' — বিস্তারিত তথ্য ও রিসেলার টুলকিট';
 
@@ -521,7 +609,7 @@ function viewProductDetails(productId) {
 
   document.getElementById('modalProductBody').innerHTML = `
     <div class="product-detail-img-wrap">
-      <img src="${imageUrl}" alt="${escapeCatalogHtml(item.title)}" class="product-detail-img">
+      <img src="${imageUrl}" ${imgCors} alt="${escapeCatalogHtml(item.title)}" class="product-detail-img" onerror="window.sbHandleImageError && window.sbHandleImageError(this)">
     </div>
     <div class="product-detail-badges">
       <span class="badge-sku">${escapeCatalogHtml(item.sku)}</span>
@@ -659,7 +747,7 @@ async function shareProductToolkit(productId) {
     }
   } else {
     copyProductShareCopy(productId);
-    window.open(item.image_url, '_blank');
+    window.open(safeCatalogImageUrl(item.image_url), '_blank');
   }
 }
 

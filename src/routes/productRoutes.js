@@ -4,6 +4,7 @@ const { query, get } = require('../db');
 const config = require('../config');
 const { toPaisa, takaFields } = require('../money');
 const { optionalAuth } = require('../auth');
+const { createDiscoverySeed, rankCatalogProducts } = require('../../public/js/catalog-algorithm');
 
 // Money is stored as INTEGER paisa; the API and UI work in taka.
 // Commission is limited to approved resellers/admins. Partner identity and
@@ -58,11 +59,14 @@ router.get('/meta/categories', preventProductCaching, async (req, res) => {
 // Get all products with filters, search, price range, sorting, and pagination
 router.get('/', preventProductCaching, optionalAuth, async (req, res) => {
   try {
-    const { tab, category, brand, shop, search, min_price, max_price, sort, page, limit } = req.query;
+    const { tab, category, brand, shop, search, min_price, max_price, sort, page, limit, seed } = req.query;
 
-    const scalarFilters = { tab, category, brand, shop, search, min_price, max_price, sort, page, limit };
+    const scalarFilters = { tab, category, brand, shop, search, min_price, max_price, sort, page, limit, seed };
     if (Object.values(scalarFilters).some((value) => value !== undefined && typeof value !== 'string')) {
       return res.status(400).json({ success: false, message: 'পণ্যের ফিল্টার সঠিকভাবে দিন' });
+    }
+    if (seed !== undefined && (!/^\d{1,12}$/.test(seed) || Number(seed) < 1)) {
+      return res.status(400).json({ success: false, message: 'ফিড সীড সঠিক নয়' });
     }
     if (search && search.trim().length > 100) {
       return res.status(400).json({ success: false, message: 'সার্চের লেখা ১০০ অক্ষরের মধ্যে দিন' });
@@ -136,38 +140,59 @@ router.get('/', preventProductCaching, optionalAuth, async (req, res) => {
     const totalCountRow = await get(`SELECT COUNT(*) as total FROM products ${whereSql}`, params);
     const totalCount = totalCountRow ? totalCountRow.total : 0;
 
-    // Sorting
-    let orderSql = ' ORDER BY id ASC';
-    if (sort === 'price_asc') {
-      orderSql = ' ORDER BY regular_price ASC, id ASC';
-    } else if (sort === 'price_desc') {
-      orderSql = ' ORDER BY regular_price DESC, id DESC';
-    } else if (sort === 'commission_desc') {
-      if (!resellerView) {
-        return res.status(403).json({ success: false, message: 'কমিশন অনুযায়ী সাজাতে রিসেলার অনুমোদন প্রয়োজন' });
-      }
-      orderSql = ' ORDER BY reseller_commission DESC, id DESC';
-    } else if (sort === 'newest') {
-      orderSql = ' ORDER BY id DESC';
-    }
-
-    // Pagination
-    let paginationSql = '';
-    const queryParams = [...params];
+    // Pagination & Sorting
     const parsedPage = page === undefined ? NaN : Number(page);
     const parsedLimit = limit === undefined ? NaN : Math.min(Number(limit), 100);
     const effectiveLimit = !isNaN(parsedLimit) && parsedLimit > 0 ? parsedLimit : (!isNaN(parsedPage) && parsedPage > 0 ? 20 : null);
+    const offset = !isNaN(parsedPage) && parsedPage > 0 && effectiveLimit ? (parsedPage - 1) * effectiveLimit : 0;
 
-    if (!isNaN(parsedPage) && parsedPage > 0 && effectiveLimit) {
-      const offset = (parsedPage - 1) * effectiveLimit;
-      paginationSql = ' LIMIT ? OFFSET ?';
-      queryParams.push(effectiveLimit, offset);
-    } else if (effectiveLimit) {
-      paginationSql = ' LIMIT ?';
-      queryParams.push(effectiveLimit);
+    if (sort === 'commission_desc' && !resellerView) {
+      return res.status(403).json({ success: false, message: 'কমিশন অনুযায়ী সাজাতে রিসেলার অনুমোদন প্রয়োজন' });
     }
 
-    const products = await query(`SELECT * FROM products ${whereSql} ${orderSql} ${paginationSql}`, queryParams);
+    const explicitSqlSorts = ['price_asc', 'price_desc', 'commission_desc', 'newest', 'id_asc'];
+    let products;
+    let discoverySeedUsed = null;
+
+    if (explicitSqlSorts.includes(sort)) {
+      let orderSql = ' ORDER BY id ASC';
+      if (sort === 'price_asc') {
+        orderSql = ' ORDER BY regular_price ASC, id ASC';
+      } else if (sort === 'price_desc') {
+        orderSql = ' ORDER BY regular_price DESC, id DESC';
+      } else if (sort === 'commission_desc') {
+        orderSql = ' ORDER BY reseller_commission DESC, id DESC';
+      } else if (sort === 'newest') {
+        orderSql = ' ORDER BY id DESC';
+      }
+
+      let paginationSql = '';
+      const queryParams = [...params];
+      if (!isNaN(parsedPage) && parsedPage > 0 && effectiveLimit) {
+        paginationSql = ' LIMIT ? OFFSET ?';
+        queryParams.push(effectiveLimit, offset);
+      } else if (effectiveLimit) {
+        paginationSql = ' LIMIT ?';
+        queryParams.push(effectiveLimit);
+      }
+
+      products = await query(`SELECT * FROM products ${whereSql} ${orderSql} ${paginationSql}`, queryParams);
+    } else {
+      // Smart discovery feed: stable across multi-page requests unless caller supplies a seed
+      discoverySeedUsed = seed !== undefined
+        ? (Number(seed) >>> 0) || 1
+        : (effectiveLimit && !isNaN(parsedPage) && parsedPage > 0
+          ? ((Math.floor(Date.now() / (15 * 60 * 1000)) >>> 0) || 1)
+          : createDiscoverySeed());
+
+      const matchingRows = await query(`SELECT * FROM products ${whereSql} ORDER BY id ASC`, params);
+      const rankedRows = rankCatalogProducts(matchingRows, {
+        sort: 'discovery',
+        seed: discoverySeedUsed,
+        searchQuery: search || ''
+      });
+      products = effectiveLimit ? rankedRows.slice(offset, offset + effectiveLimit) : rankedRows;
+    }
 
     const response = {
       success: true,
@@ -177,6 +202,9 @@ router.get('/', preventProductCaching, optionalAuth, async (req, res) => {
       total: totalCount,
       products: products.map((product) => productToClient(product, resellerView))
     };
+    if (discoverySeedUsed !== null) {
+      response.discovery_seed = discoverySeedUsed;
+    }
 
     if (!isNaN(parsedPage) && parsedPage > 0 && effectiveLimit) {
       response.current_page = parsedPage;

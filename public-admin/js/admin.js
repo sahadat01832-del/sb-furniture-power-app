@@ -5,10 +5,29 @@
 let adminToken = localStorage.getItem('sb_admin_token') || null;
 let currentAdminSection = 'orders';
 let adminProductsList = [];
+let adminProductsPage = 1;
+let adminProductStatusFilter = 'all';
 
 const api = (path) => (typeof window.apiUrl === 'function' ? window.apiUrl(path) : path);
 const escapeAdminHtml = (value) => window.sbEscapeHtml(value);
 const safeAdminImageUrl = (value) => window.sbSafeImageUrl(value);
+const imageCorsAttrAdmin = (safeUrl) => (typeof window.sbImageCrossOriginAttr === 'function' ? window.sbImageCrossOriginAttr(safeUrl) : '');
+
+function setAdminPreviewSrc(previewEl, rawUrl) {
+  if (!previewEl) return;
+  delete previewEl.dataset.sbFallbackApplied;
+  if (!rawUrl) {
+    previewEl.onerror = null;
+    previewEl.removeAttribute('crossorigin');
+    previewEl.src = '';
+    return;
+  }
+  const isCors = typeof window.sbImageCrossOrigin === 'function' && window.sbImageCrossOrigin(rawUrl) === 'anonymous';
+  if (isCors) previewEl.crossOrigin = 'anonymous';
+  else previewEl.removeAttribute('crossorigin');
+  previewEl.onerror = () => window.sbHandleImageError && window.sbHandleImageError(previewEl);
+  previewEl.src = rawUrl;
+}
 const adminStatusLabels = {
   pending: 'অপেক্ষমাণ',
   confirmed: 'নিশ্চিত',
@@ -71,6 +90,7 @@ async function submitAdminLogin() {
     if (data.success && data.user.role === 'admin') {
       adminToken = data.token;
       localStorage.setItem('sb_admin_token', data.token);
+      localStorage.setItem('sb_admin_user', JSON.stringify(data.user));
       showDashboardView();
       showToast('👑 এডমিন লগইন সফল হয়েছে!');
     } else {
@@ -103,6 +123,7 @@ async function checkAdminSession() {
 function adminLogout() {
   adminToken = null;
   localStorage.removeItem('sb_admin_token');
+  localStorage.removeItem('sb_admin_user');
   showLoginView();
   showToast('লগআউট করা হয়েছে');
 }
@@ -883,33 +904,172 @@ async function rejectPayoutPrompt(payoutId) {
 }
 
 // ================= SECTION 3: PRODUCTS (CRUD) =================
-async function loadAdminProducts() {
+function formatAdminProductCount(value) {
+  return Number(value || 0).toLocaleString('bn-BD');
+}
+
+function populateAdminProductFilters() {
+  const categoryFilter = document.getElementById('adminProductCategoryFilter');
+  const shopFilter = document.getElementById('adminProductShopFilter');
+  if (!categoryFilter || !shopFilter) return;
+
+  const selectedCategory = categoryFilter.value || 'all';
+  const selectedShop = shopFilter.value || 'all';
+  const categories = [...new Set(adminProductsList.map((product) => product.category).filter(Boolean))]
+    .sort((a, b) => String(a).localeCompare(String(b), 'bn'));
+  categoryFilter.innerHTML = '<option value="all">সব ক্যাটাগরি</option>' + categories.map((category) =>
+    `<option value="${escapeAdminHtml(category)}">${escapeAdminHtml(category)}</option>`
+  ).join('');
+  categoryFilter.value = categories.includes(selectedCategory) ? selectedCategory : 'all';
+
+  const shops = new Map([['partner', 'পার্টনার দোকান']]);
+  adminProductsList.forEach((product) => {
+    const shopName = product.shop_name || product.brand;
+    if (shopName) shops.set(String(shopName), String(shopName));
+  });
+  shopFilter.innerHTML = '<option value="all">সব দোকান</option>' + [...shops.entries()].map(([value, label]) =>
+    `<option value="${escapeAdminHtml(value)}">${escapeAdminHtml(label)}</option>`
+  ).join('');
+  shopFilter.value = shops.has(selectedShop) ? selectedShop : 'all';
+}
+
+function setAdminProductStatusFilter(status) {
+  adminProductStatusFilter = ['all', 'active', 'inactive', 'low', 'out'].includes(status) ? status : 'all';
+  adminProductsPage = 1;
+  renderAdminProducts();
+}
+
+function filterAdminProducts() {
+  adminProductsPage = 1;
+  renderAdminProducts();
+}
+
+function resetAdminProductFilters() {
+  const defaults = {
+    adminProductSearch: '',
+    adminProductCategoryFilter: 'all',
+    adminProductShopFilter: 'all',
+    adminProductSort: 'newest',
+    adminProductPageSize: '25'
+  };
+  Object.entries(defaults).forEach(([id, value]) => {
+    const control = document.getElementById(id);
+    if (control) control.value = value;
+  });
+  adminProductStatusFilter = 'all';
+  adminProductsPage = 1;
+  renderAdminProducts();
+}
+
+function changeAdminProductsPage(offset) {
+  adminProductsPage += Number(offset) || 0;
+  renderAdminProducts();
+}
+
+function renderAdminProducts() {
   const tbody = document.getElementById('adminProductsTableBody');
-  tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; padding: 20px;">ক্যাটালগ লোড হচ্ছে...</td></tr>';
+  if (!tbody) return;
 
-  try {
-    const res = await fetch(api('/api/admin/products'), {
-      headers: { Authorization: `Bearer ${adminToken}` }
-    });
-    const data = await res.json();
+  const search = (document.getElementById('adminProductSearch')?.value || '').trim().toLocaleLowerCase();
+  const category = document.getElementById('adminProductCategoryFilter')?.value || 'all';
+  const shop = document.getElementById('adminProductShopFilter')?.value || 'all';
+  const sort = document.getElementById('adminProductSort')?.value || 'newest';
+  const pageSize = Math.max(1, parseInt(document.getElementById('adminProductPageSize')?.value, 10) || 25);
+  const activeProducts = adminProductsList.filter((product) => Number(product.is_active) === 1);
+  const quickCounts = {
+    all: adminProductsList.length,
+    active: activeProducts.length,
+    inactive: adminProductsList.length - activeProducts.length,
+    low: activeProducts.filter((product) => Number(product.stock) > 0 && Number(product.stock) <= 5).length,
+    out: activeProducts.filter((product) => Number(product.stock) <= 0).length
+  };
+  const quickFilterLabels = {
+    all: 'সব পণ্য', active: 'সক্রিয়', low: 'কম স্টক (১–৫)', out: 'স্টক শেষ', inactive: 'নিষ্ক্রিয়'
+  };
+  const quickFilters = document.getElementById('adminProductQuickFilters');
+  if (quickFilters) {
+    quickFilters.innerHTML = Object.entries(quickFilterLabels).map(([key, label]) => `
+      <button type="button" class="product-filter-chip${adminProductStatusFilter === key ? ' is-selected' : ''}"
+        aria-pressed="${adminProductStatusFilter === key}" onclick="setAdminProductStatusFilter('${key}')">
+        ${label}<span>${formatAdminProductCount(quickCounts[key])}</span>
+      </button>
+    `).join('');
+  }
 
-    if (!data.success || data.products.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; padding: 20px;">কোনো প্রোডাক্ট নেই।</td></tr>';
-      return;
+  let filtered = adminProductsList.filter((product) => {
+    const isActive = Number(product.is_active) === 1;
+    const stock = Number(product.stock) || 0;
+    if (adminProductStatusFilter === 'active' && !isActive) return false;
+    if (adminProductStatusFilter === 'inactive' && isActive) return false;
+    if (adminProductStatusFilter === 'low' && (!isActive || stock < 1 || stock > 5)) return false;
+    if (adminProductStatusFilter === 'out' && (!isActive || stock > 0)) return false;
+    if (category !== 'all' && product.category !== category) return false;
+    const shopName = String(product.shop_name || product.brand || '');
+    const isPartner = product.shop_type === 'partner' || (shopName && !['SB Furniture', 'SB POWER'].includes(shopName));
+    if (shop === 'partner' && !isPartner) return false;
+    if (shop !== 'all' && shop !== 'partner' && shopName !== shop) return false;
+    if (search) {
+      const searchable = [product.title, product.sku, product.description, product.category, product.shop_name, product.brand, product.vendor_phone]
+        .filter(Boolean).join(' ').toLocaleLowerCase();
+      if (!searchable.includes(search)) return false;
     }
+    return true;
+  });
 
-    adminProductsList = data.products;
+  const numericValue = (product, key) => Number(product[key]) || 0;
+  filtered.sort((a, b) => {
+    if (sort === 'title') return String(a.title || '').localeCompare(String(b.title || ''), 'bn', { sensitivity: 'base' });
+    if (sort === 'stock-asc') return numericValue(a, 'stock') - numericValue(b, 'stock') || Number(b.id) - Number(a.id);
+    if (sort === 'price-asc') return numericValue(a, 'regular_price') - numericValue(b, 'regular_price') || Number(b.id) - Number(a.id);
+    if (sort === 'price-desc') return numericValue(b, 'regular_price') - numericValue(a, 'regular_price') || Number(b.id) - Number(a.id);
+    if (sort === 'profit-desc') {
+      const profitA = numericValue(a, 'regular_price') - numericValue(a, 'wholesale_price') - numericValue(a, 'reseller_commission');
+      const profitB = numericValue(b, 'regular_price') - numericValue(b, 'wholesale_price') - numericValue(b, 'reseller_commission');
+      return profitB - profitA || Number(b.id) - Number(a.id);
+    }
+    return sort === 'newest' ? Number(b.id) - Number(a.id) : Number(a.id) - Number(b.id);
+  });
 
-    tbody.innerHTML = data.products.map((p) => {
-      const isPartner = p.shop_type === 'partner' || (p.shop_name && !['SB Furniture', 'SB POWER'].includes(p.shop_name));
-      const wholesale = p.wholesale_price || 0;
-      const commission = p.reseller_commission || 0;
-      const netProfit = p.regular_price - wholesale - commission;
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  adminProductsPage = Math.min(Math.max(1, adminProductsPage), totalPages);
+  const start = (adminProductsPage - 1) * pageSize;
+  const pageProducts = filtered.slice(start, start + pageSize);
+  const countEl = document.getElementById('adminProductsCount');
+  const pageInfo = document.getElementById('adminProductsPageInfo');
+  const prevButton = document.getElementById('adminProductsPrev');
+  const nextButton = document.getElementById('adminProductsNext');
 
-      return `
-      <tr style="${p.is_active ? '' : 'opacity: 0.65; background: rgba(239, 68, 68, 0.05);'}">
-        <td data-label="ছবি"><img class="admin-product-thumb" src="${escapeAdminHtml(safeAdminImageUrl(p.image_url))}" alt="${escapeAdminHtml(p.title)}"></td>
-        <td data-label="SKU"><strong>${escapeAdminHtml(p.sku)}</strong>${p.is_active ? '' : '<br><span class="admin-inactive-badge">নিষ্ক্রিয়</span>'}</td>
+  if (countEl) {
+    countEl.textContent = filtered.length
+      ? `${formatAdminProductCount(start + 1)}–${formatAdminProductCount(Math.min(start + pageSize, filtered.length))} দেখানো হচ্ছে · ${formatAdminProductCount(filtered.length)}টি মিলেছে · মোট ${formatAdminProductCount(adminProductsList.length)}টি পণ্য`
+      : `কোনো পণ্য মেলেনি · মোট ${formatAdminProductCount(adminProductsList.length)}টি পণ্য`;
+  }
+  if (pageInfo) pageInfo.textContent = `${formatAdminProductCount(adminProductsPage)} / ${formatAdminProductCount(totalPages)}`;
+  if (prevButton) prevButton.disabled = adminProductsPage <= 1 || filtered.length === 0;
+  if (nextButton) nextButton.disabled = adminProductsPage >= totalPages || filtered.length === 0;
+
+  if (!adminProductsList.length) {
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; padding: 20px;">কোনো পণ্য নেই। নতুন পণ্য যোগ করে শুরু করুন।</td></tr>';
+    return;
+  }
+  if (!pageProducts.length) {
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; padding: 20px;">এই ফিল্টারে কোনো পণ্য পাওয়া যায়নি। খোঁজা বা ফিল্টার বদলে দেখুন।</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = pageProducts.map((p) => {
+    const isActive = Number(p.is_active) === 1;
+    const isPartner = p.shop_type === 'partner' || (p.shop_name && !['SB Furniture', 'SB POWER'].includes(p.shop_name));
+    const wholesale = p.wholesale_price || 0;
+    const commission = p.reseller_commission || 0;
+    const netProfit = p.regular_price - wholesale - commission;
+    const safeThumb = safeAdminImageUrl(p.image_url);
+    const imgCors = imageCorsAttrAdmin(safeThumb);
+
+    return `
+      <tr style="${isActive ? '' : 'opacity: 0.65; background: rgba(239, 68, 68, 0.05);'}">
+        <td data-label="ছবি"><img class="admin-product-thumb" src="${escapeAdminHtml(safeThumb)}" ${imgCors} alt="${escapeAdminHtml(p.title)}" onerror="window.sbHandleImageError && window.sbHandleImageError(this)"></td>
+        <td data-label="SKU"><strong>${escapeAdminHtml(p.sku)}</strong>${isActive ? '' : '<br><span class="admin-inactive-badge">নিষ্ক্রিয়</span>'}</td>
         <td data-label="পণ্যের নাম"><strong>${escapeAdminHtml(p.title)}</strong></td>
         <td data-label="দোকান ও ক্যাটাগরি">
           <span style="color: ${p.brand === 'SB Furniture' ? '#ea580c' : '#0284c7'}; font-weight: 700;">${escapeAdminHtml(p.shop_name || p.brand)}</span>
@@ -929,16 +1089,37 @@ async function loadAdminProducts() {
         </td>
         <td data-label="স্টক">${escapeAdminHtml(p.stock)}</td>
         <td data-label="করণীয়">
-          <div style="display: flex; gap: 4px; align-items: center; flex-wrap: wrap;">
+          <div class="product-row-actions">
             <button class="action-btn-sm btn-edit-product" onclick="editProductModal(${p.id})">✏️ এডিট</button>
-            <button class="action-btn-sm" style="background: #25d366; color: #fff; font-weight: 700; border: none;" onclick="openMarketingCopyModal(${p.id})">📢 কপি</button>
-            <button class="action-btn-sm" style="background: #0284c7; color: #fff; font-size: 0.75rem; border: none;" onclick="promptQuickStockPrice(${p.id}, ${p.stock}, ${p.regular_price})">⚡ স্টক/দাম</button>
-            ${p.is_active ? `<button class="action-btn-sm btn-cancel" onclick="deleteProduct(${p.id})">ডিলিট</button>` : ''}
+            <button class="action-btn-sm product-copy-action" onclick="openMarketingCopyModal(${p.id})">📢 কপি</button>
+            <button class="action-btn-sm product-stock-action" onclick="promptQuickStockPrice(${p.id}, ${Number(p.stock) || 0}, ${Number(p.regular_price) || 0})">⚡ স্টক/দাম</button>
+            ${isActive ? `<button class="action-btn-sm btn-cancel" onclick="deleteProduct(${p.id})">নিষ্ক্রিয়</button>` : ''}
           </div>
         </td>
       </tr>
     `;
-    }).join('');
+  }).join('');
+}
+
+async function loadAdminProducts() {
+  const tbody = document.getElementById('adminProductsTableBody');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; padding: 20px;">ক্যাটালগ লোড হচ্ছে...</td></tr>';
+
+  try {
+    const res = await fetch(api('/api/admin/products'), {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    const data = await res.json();
+
+    if (!data.success || !Array.isArray(data.products)) {
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; padding: 20px;">পণ্যের তালিকা লোড করা যায়নি।</td></tr>';
+      return;
+    }
+
+    adminProductsList = data.products;
+    populateAdminProductFilters();
+    renderAdminProducts();
   } catch (err) {
     console.error(err);
     tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: var(--sbp-red);">লোড ব্যর্থ হয়েছে।</td></tr>';
@@ -1076,7 +1257,7 @@ async function processProductImageFile(file) {
   // Instant local preview for zero-delay visual confirmation
   try {
     const objectUrl = URL.createObjectURL(file);
-    if (preview) preview.src = objectUrl;
+    setAdminPreviewSrc(preview, objectUrl);
     if (previewWrap) previewWrap.style.display = 'block';
     if (placeholder) placeholder.style.display = 'none';
     if (aiBox) aiBox.style.display = 'block';
@@ -1094,7 +1275,7 @@ async function processProductImageFile(file) {
     if (!dataUrl) throw new Error('ফাইল পড়তে ব্যর্থ হয়েছে');
 
     // Update preview with compressed data URL if needed
-    if (preview) preview.src = dataUrl;
+    setAdminPreviewSrc(preview, dataUrl);
     if (previewWrap) previewWrap.style.display = 'block';
     if (placeholder) placeholder.style.display = 'none';
     if (aiBox) aiBox.style.display = 'block';
@@ -1162,7 +1343,7 @@ function handleManualUrlInput(val) {
   document.getElementById('prodImageUrl').value = trimmed;
 
   if (trimmed) {
-    if (preview) preview.src = safeAdminImageUrl(trimmed);
+    setAdminPreviewSrc(preview, safeAdminImageUrl(trimmed));
     if (previewWrap) previewWrap.style.display = 'block';
     if (placeholder) placeholder.style.display = 'none';
     if (statusEl) {
@@ -1171,7 +1352,7 @@ function handleManualUrlInput(val) {
     }
     if (aiBox) aiBox.style.display = 'block';
   } else {
-    if (preview) preview.src = '';
+    setAdminPreviewSrc(preview, '');
     if (previewWrap) previewWrap.style.display = 'none';
     if (placeholder) placeholder.style.display = 'block';
     if (statusEl) {
@@ -1207,7 +1388,7 @@ function openAddProductModal() {
   const manualInput = document.getElementById('prodManualImageUrl');
   if (manualInput) manualInput.value = '';
   const preview = document.getElementById('prodImagePreview');
-  if (preview) preview.src = '';
+  setAdminPreviewSrc(preview, '');
   const previewWrap = document.getElementById('prodImagePreviewWrap');
   if (previewWrap) previewWrap.style.display = 'none';
   const placeholder = document.getElementById('prodImagePlaceholder');
@@ -1277,7 +1458,7 @@ function editProductModal(id) {
   const statusEl = document.getElementById('prodUploadStatus');
 
   if (p.image_url) {
-    if (preview) preview.src = safeAdminImageUrl(p.image_url);
+    setAdminPreviewSrc(preview, safeAdminImageUrl(p.image_url));
     if (previewWrap) previewWrap.style.display = 'block';
     if (placeholder) placeholder.style.display = 'none';
     if (statusEl) {
@@ -1285,7 +1466,7 @@ function editProductModal(id) {
       statusEl.style.color = '#16a34a';
     }
   } else {
-    if (preview) preview.src = '';
+    setAdminPreviewSrc(preview, '');
     if (previewWrap) previewWrap.style.display = 'none';
     if (placeholder) placeholder.style.display = 'block';
     if (statusEl) {
@@ -1777,7 +1958,7 @@ function addManualFurniturePartRow(part = null) {
   row.style.borderBottom = '1px solid #fef3c7';
   row.innerHTML = `
     <td style="padding: 4px;">
-      <input type="text" class="form-control part-name" style="padding: 4px 6px; font-size: 0.78rem;" placeholder="পার্টসের নাম" value="${part ? escapeHtml(part.name) : ''}">
+      <input type="text" class="form-control part-name" style="padding: 4px 6px; font-size: 0.78rem;" placeholder="পার্টসের নাম" value="${part ? escapeAdminHtml(part.name) : ''}">
     </td>
     <td style="padding: 4px;">
       <input type="number" class="form-control part-length" style="padding: 4px 6px; font-size: 0.78rem;" placeholder="দৈর্ঘ্য" value="${part ? part.length : ''}" step="0.1" min="1" oninput="recalculateFurnitureCutlist()">
@@ -1955,7 +2136,7 @@ function initImageDragAndDropAndPaste() {
   // Global paste handler when modal is active
   window.addEventListener('paste', (e) => {
     const modal = document.getElementById('addProductModal');
-    if (!modal || modal.style.display === 'none') return;
+    if (!modal || !modal.classList.contains('active')) return;
     const items = (e.clipboardData || e.originalEvent?.clipboardData)?.items;
     if (!items) return;
     for (let i = 0; i < items.length; i++) {

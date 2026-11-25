@@ -304,8 +304,8 @@ async function submitAdminPasswordChange() {
   const new_password = document.getElementById('adminNewPass').value;
 
   const passwordBytes = new TextEncoder().encode(new_password).length;
-  if (passwordBytes < 8 || passwordBytes > 72) {
-    return alert('নতুন পাসওয়ার্ড ৮ থেকে ৭২ বাইটের মধ্যে হতে হবে');
+  if (passwordBytes < 12 || passwordBytes > 72) {
+    return alert('নতুন পাসওয়ার্ড ১২ থেকে ৭২ বাইটের মধ্যে হতে হবে');
   }
 
   try {

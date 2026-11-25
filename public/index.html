@@ -12,10 +12,10 @@
   <link rel="icon" type="image/svg+xml" href="/icons/icon.svg">
   <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
   <link rel="apple-touch-icon" href="/icons/icon-192.png">
-  <link rel="stylesheet" href="/css/style.css?v=4.0.2">
+  <link rel="stylesheet" href="/css/style.css?v=4.0.4">
   <link rel="stylesheet" href="/css/pwa-splash.css?v=4.0.1">
-  <link rel="stylesheet" href="/css/pwa-install.css?v=4.0.1">
-  <link rel="stylesheet" href="/css/animations.css?v=4.0.1">
+  <link rel="stylesheet" href="/css/pwa-install.css?v=4.0.2">
+  <link rel="stylesheet" href="/css/animations.css?v=4.0.2">
 </head>
 <body>
 
@@ -123,6 +123,7 @@
         <button type="button" class="quick-shop-pill active" data-brand="all" onclick="filterByBrand('all')">সব পণ্য</button>
         <button type="button" class="quick-shop-pill" data-brand="SB Furniture" onclick="filterByBrand('SB Furniture')">🪑 SB Furniture</button>
         <button type="button" class="quick-shop-pill" data-brand="SB POWER" onclick="filterByBrand('SB POWER')">⚡ SB POWER</button>
+        <button type="button" id="btnReshuffleFeed" class="quick-shop-pill quick-reshuffle-pill" onclick="reshuffleCatalogFeed()" aria-label="পণ্য তালিকা নতুনভাবে সাজিয়ে দেখুন">🔀 নতুনভাবে দেখুন</button>
       </div>
 
       <!-- Search first; optional filters stay closed until requested -->
@@ -137,7 +138,7 @@
             <div class="filter-control">
               <label for="sortSelect">যেভাবে সাজাবেন</label>
               <select id="sortSelect" class="form-control" onchange="handleSortChange()">
-                <option value="default">সাধারণ ক্রম</option>
+                <option value="default">স্মার্ট ডিসকভারি (সাজানো)</option>
                 <option value="price_asc">দাম: কম থেকে বেশি</option>
                 <option value="price_desc">দাম: বেশি থেকে কম</option>
                 <option value="commission_desc" data-reseller-only hidden>কমিশন: বেশি থেকে কম</option>
@@ -161,6 +162,8 @@
                 <button type="button" class="cat-pill" data-cat="দোকান ডেকোরেশন" onclick="filterByCategory('দোকান ডেকোরেশন')">দোকান সাজানো</button>
                 <button type="button" class="cat-pill" data-cat="হোম ও অফিস ফার্নিচার" onclick="filterByCategory('হোম ও অফিস ফার্নিচার')">হোম ও অফিস</button>
                 <button type="button" class="cat-pill" data-cat="ওয়্যারলেস অডিও ও গ্যাজেটস" onclick="filterByCategory('ওয়্যারলেস অডিও ও গ্যাজেটস')">গ্যাজেট</button>
+                <button type="button" class="cat-pill" data-cat="ওয়াচ ও ফ্যাশন" onclick="filterByCategory('ওয়াচ ও ফ্যাশন')">ওয়াচ ও ফ্যাশন</button>
+                <button type="button" class="cat-pill" data-cat="পাওয়ার টুলস ও ইলেকট্রিক্যাল" onclick="filterByCategory('পাওয়ার টুলস ও ইলেকট্রিক্যাল')">পাওয়ার টুলস</button>
               </div>
             </div>
             <div class="filter-control filter-budget">
@@ -483,10 +486,11 @@
 
   <!-- JavaScript Modules -->
   <script src="/js/app-config.js?v=4.0.0"></script>
-  <script src="/js/api.js?v=4.0.0"></script>
-  <script src="/js/catalog.js?v=4.0.2"></script>
+  <script src="/js/api.js?v=4.0.1"></script>
+  <script src="/js/catalog-algorithm.js?v=1.0.0"></script>
+  <script src="/js/catalog.js?v=4.0.4"></script>
   <script src="/js/leaderboard.js?v=4.0.0"></script>
-  <script src="/js/app.js?v=4.0.1"></script>
+  <script src="/js/app.js?v=4.0.2"></script>
   <script src="/js/referrals.js?v=1.0.2"></script>
   <script src="/js/pwa-install.js?v=3.2.2" defer></script>
   <script src="/js/pwa-splash.js?v=1.0.0"></script>

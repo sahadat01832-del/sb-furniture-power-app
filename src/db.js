@@ -1,6 +1,7 @@
 const sqlite3 = require('sqlite3').verbose();
 const fs = require('fs');
 const path = require('path');
+const { AsyncLocalStorage } = require('async_hooks');
 const config = require('./config');
 
 if (process.platform !== 'win32') {
@@ -24,7 +25,7 @@ const db = new sqlite3.Database(config.DATABASE_FILE, (err) => {
 let closePromise = null;
 
 // Run with foreign keys and WAL mode for high concurrency
-let txQueue = new Promise((resolve) => {
+const readyPromise = new Promise((resolve) => {
   db.serialize(() => {
     db.run('PRAGMA busy_timeout = 5000;');
     db.run('PRAGMA journal_mode = WAL;');
@@ -33,8 +34,24 @@ let txQueue = new Promise((resolve) => {
   });
 });
 
-// Promise wrappers for parameterized queries
-const query = (sql, params = []) => {
+// SQLite has one connection here, so every operation must be serialized.
+// Operations started by a request wait behind any open transaction; operations
+// started inside that transaction run directly and are part of it. This is what
+// keeps an unrelated write from being rolled back with someone else's failure.
+const operationContext = new AsyncLocalStorage();
+let dbQueue = Promise.resolve();
+
+const isInsideDirectContext = () => Boolean(operationContext.getStore());
+
+function enqueue(task) {
+  const result = dbQueue.then(task, task);
+  dbQueue = result.then(() => undefined, () => undefined);
+  return result;
+}
+
+// Raw wrappers. They are only called from inside the queue (directly or from a
+// transaction callback); exported wrappers below decide when that is safe.
+const rawQuery = (sql, params = []) => {
   return new Promise((resolve, reject) => {
     db.all(sql, params, (err, rows) => {
       if (err) return reject(err);
@@ -43,7 +60,7 @@ const query = (sql, params = []) => {
   });
 };
 
-const get = (sql, params = []) => {
+const rawGet = (sql, params = []) => {
   return new Promise((resolve, reject) => {
     db.get(sql, params, (err, row) => {
       if (err) return reject(err);
@@ -52,7 +69,7 @@ const get = (sql, params = []) => {
   });
 };
 
-const run = (sql, params = []) => {
+const rawRun = (sql, params = []) => {
   return new Promise((resolve, reject) => {
     db.run(sql, params, function (err) {
       if (err) return reject(err);
@@ -61,38 +78,60 @@ const run = (sql, params = []) => {
   });
 };
 
+// Promise wrappers for parameterized queries
+const query = (sql, params = []) => (
+  isInsideDirectContext() ? rawQuery(sql, params) : enqueue(() => rawQuery(sql, params))
+);
+
+const get = (sql, params = []) => (
+  isInsideDirectContext() ? rawGet(sql, params) : enqueue(() => rawGet(sql, params))
+);
+
+const run = (sql, params = []) => (
+  isInsideDirectContext() ? rawRun(sql, params) : enqueue(() => rawRun(sql, params))
+);
+
 function closeDb() {
   if (!closePromise) {
-    closePromise = txQueue.catch(() => {}).then(() => new Promise((resolve, reject) => {
+    closePromise = dbQueue.catch(() => {}).then(() => new Promise((resolve, reject) => {
       db.close((error) => error ? reject(error) : resolve());
     }));
   }
   return closePromise;
 }
 
-// Atomic Transaction Runner with Async Mutex to prevent overlapping transactions
-
+// Atomic Transaction Runner.
+// The entire transaction holds the single write slot, so no request outside it
+// can execute a query on the shared connection until COMMIT or ROLLBACK.
 const withTransaction = (callback) => {
-  const executeTx = async () => {
-    await run('BEGIN IMMEDIATE TRANSACTION');
+  if (isInsideDirectContext()) {
+    return Promise.reject(new Error('Nested transactions are not supported'));
+  }
+
+  return enqueue(async () => {
+    await rawRun('BEGIN IMMEDIATE TRANSACTION');
     try {
-      const result = await callback({ query, get, run });
-      await run('COMMIT');
+      const result = await operationContext.run(
+        { transaction: true },
+        () => callback({ query: rawQuery, get: rawGet, run: rawRun })
+      );
+      await rawRun('COMMIT');
       return result;
     } catch (err) {
       try {
-        await run('ROLLBACK');
+        await rawRun('ROLLBACK');
       } catch (rbErr) {
         console.error('Transaction Rollback Error:', rbErr);
       }
       throw err;
     }
-  };
-
-  const nextTx = txQueue.then(executeTx, executeTx);
-  txQueue = nextTx.catch(() => {});
-  return nextTx;
+  });
 };
+
+// VACUUM INTO must not interleave with a transaction either.
+const vacuumInto = (filePath) => enqueue(() => new Promise((resolve, reject) => {
+  db.run('VACUUM INTO ?', [filePath], (err) => (err ? reject(err) : resolve()));
+}));
 
 // Money columns hold INTEGER paisa. Databases created before that change stored
 // taka as REAL, so convert their values once, in place, on first startup.
@@ -162,7 +201,7 @@ const migrateMoneyToPaisa = async () => {
 };
 
 // Database Schema Initialization
-const initDb = async () => {
+const initializeSchema = async () => {
   await run(`
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -586,6 +625,13 @@ const initDb = async () => {
   await run(`CREATE INDEX IF NOT EXISTS idx_users_status ON users(status);`);
 };
 
+// Schema setup owns the write slot while it runs, so its PRAGMA/migration
+// statements cannot be interleaved with request queries.
+const initDb = () => enqueue(() => operationContext.run({ exclusive: true }, async () => {
+  await readyPromise;
+  return initializeSchema();
+}));
+
 module.exports = {
   db,
   query,
@@ -593,5 +639,6 @@ module.exports = {
   run,
   withTransaction,
   initDb,
-  closeDb
+  closeDb,
+  vacuumInto
 };

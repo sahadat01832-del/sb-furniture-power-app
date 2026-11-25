@@ -112,7 +112,7 @@ npm run firebase:make-backup-key -- "$HOME/.config/sb-power/firebase-backup.key"
 chmod 600 "$HOME/.config/sb-power/firebase-backup.key"
 ```
 
-`CORS_ORIGIN(S)`-এ আপনার আসল Hosting origin লিখুন। Code Firebase-এর `*.web.app`, `*.firebaseapp.com` এবং localhost origin-ও অনুমোদন করে।
+`CORS_ORIGIN(S)`-এ আপনার আসল Hosting origin লিখুন। নতুন কোডে শুধু ওই নির্দিষ্ট origin এবং নিজের `FIREBASE_PROJECT_ID`-এর exact `*.web.app` / `*.firebaseapp.com` domain অনুমোদিত; অন্য যেকোনো Firebase সাবডোমেইন বন্ধ।
 
 ## ৪. চালু, যাচাই ও log rotation
 

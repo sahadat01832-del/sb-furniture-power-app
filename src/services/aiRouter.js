@@ -1,7 +1,9 @@
 const { calculateCutlist, generateParametricCutlist } = require('./cutlistCalculator');
 
-// Default timeout 60s to allow deep multimodal reasoning models (Gemini 3.8 Flash High) to output rich Bengali copy
-const OMNIROUTE_TIMEOUT_MS = Number(process.env.OMNIROUTE_TIMEOUT_MS) || 60000;
+// One model call may take up to 15s; the whole failover chain gets a 30s budget.
+// Without a total budget, seven candidates × 60s could block an admin for minutes.
+const OMNIROUTE_TIMEOUT_MS = Number(process.env.OMNIROUTE_TIMEOUT_MS) || 15000;
+const OMNIROUTE_TOTAL_BUDGET_MS = Number(process.env.OMNIROUTE_TOTAL_BUDGET_MS) || 30000;
 
 /**
  * Fetch active PC OmniRoute endpoint from Firestore or environment
@@ -145,6 +147,7 @@ Return strictly JSON with this structure:
   const phoneEndpoint = getPhoneOmniRouteEndpoint();
   const pcApiKey = process.env.PC_OMNIROUTE_API_KEY || process.env.OMNIROUTE_API_KEY || '';
   const phoneApiKey = process.env.PHONE_OMNIROUTE_API_KEY || process.env.OMNIROUTE_API_KEY || '';
+  const deadlineAt = Date.now() + OMNIROUTE_TOTAL_BUDGET_MS;
 
   const candidates = [
     process.env.PC_TEXT_MODEL,
@@ -158,8 +161,10 @@ Return strictly JSON with this structure:
   if (pcEndpoint) {
     for (const model of candidates) {
       if (rawParts) break;
+      const remainingMs = deadlineAt - Date.now();
+      if (remainingMs < 1000) break;
       try {
-        const result = await callChatCompletion(pcEndpoint, pcApiKey, model, messages);
+        const result = await callChatCompletion(pcEndpoint, pcApiKey, model, messages, Math.min(OMNIROUTE_TIMEOUT_MS, remainingMs));
         if (result && Array.isArray(result.parts) && result.parts.length > 0) {
           rawParts = result.parts;
           providerUsed = `OmniRoute (${model})`;
@@ -175,8 +180,10 @@ Return strictly JSON with this structure:
   if (!rawParts && phoneEndpoint && phoneEndpoint !== pcEndpoint) {
     for (const model of candidates) {
       if (rawParts) break;
+      const remainingMs = deadlineAt - Date.now();
+      if (remainingMs < 1000) break;
       try {
-        const result = await callChatCompletion(phoneEndpoint, phoneApiKey, model, messages);
+        const result = await callChatCompletion(phoneEndpoint, phoneApiKey, model, messages, Math.min(OMNIROUTE_TIMEOUT_MS, remainingMs));
         if (result && Array.isArray(result.parts) && result.parts.length > 0) {
           rawParts = result.parts;
           providerUsed = `Phone OmniRoute (${model})`;
@@ -298,6 +305,7 @@ CRITICAL RULES:
   const phoneEndpoint = getPhoneOmniRouteEndpoint();
   const pcApiKey = process.env.PC_OMNIROUTE_API_KEY || process.env.OMNIROUTE_API_KEY || '';
   const phoneApiKey = process.env.PHONE_OMNIROUTE_API_KEY || process.env.OMNIROUTE_API_KEY || '';
+  const deadlineAt = Date.now() + OMNIROUTE_TOTAL_BUDGET_MS;
 
   // Vision model candidates in OmniRoute (Claude Sonnet 4.6, Multilingual Gemini 3.8, Claude Opus, fast fallbacks)
   const visionModels = [
@@ -314,8 +322,10 @@ CRITICAL RULES:
   if (pcEndpoint) {
     for (const model of visionModels) {
       if (rawData) break;
+      const remainingMs = deadlineAt - Date.now();
+      if (remainingMs < 1000) break;
       try {
-        const result = await callChatCompletion(pcEndpoint, pcApiKey, model, messages);
+        const result = await callChatCompletion(pcEndpoint, pcApiKey, model, messages, Math.min(OMNIROUTE_TIMEOUT_MS, remainingMs));
         if (result && result.title) {
           rawData = result;
           providerUsed = `OmniRoute Vision (${model})`;
@@ -331,8 +341,10 @@ CRITICAL RULES:
   if (!rawData && phoneEndpoint && phoneEndpoint !== pcEndpoint) {
     for (const model of visionModels) {
       if (rawData) break;
+      const remainingMs = deadlineAt - Date.now();
+      if (remainingMs < 1000) break;
       try {
-        const result = await callChatCompletion(phoneEndpoint, phoneApiKey, model, messages);
+        const result = await callChatCompletion(phoneEndpoint, phoneApiKey, model, messages, Math.min(OMNIROUTE_TIMEOUT_MS, remainingMs));
         if (result && result.title) {
           rawData = result;
           providerUsed = `Phone OmniRoute Vision (${model})`;
@@ -452,6 +464,7 @@ RULES:
   const phoneEndpoint = getPhoneOmniRouteEndpoint();
   const pcApiKey = process.env.PC_OMNIROUTE_API_KEY || process.env.OMNIROUTE_API_KEY || '';
   const phoneApiKey = process.env.PHONE_OMNIROUTE_API_KEY || process.env.OMNIROUTE_API_KEY || '';
+  const deadlineAt = Date.now() + OMNIROUTE_TOTAL_BUDGET_MS;
 
   const candidates = [
     process.env.PC_TEXT_MODEL,
@@ -466,8 +479,10 @@ RULES:
   if (pcEndpoint) {
     for (const model of candidates) {
       if (rawData) break;
+      const remainingMs = deadlineAt - Date.now();
+      if (remainingMs < 1000) break;
       try {
-        const result = await callChatCompletion(pcEndpoint, pcApiKey, model, messages);
+        const result = await callChatCompletion(pcEndpoint, pcApiKey, model, messages, Math.min(OMNIROUTE_TIMEOUT_MS, remainingMs));
         if (result && result.title) {
           rawData = result;
           providerUsed = `OmniRoute (${model})`;
@@ -482,8 +497,10 @@ RULES:
   if (!rawData && phoneEndpoint && phoneEndpoint !== pcEndpoint) {
     for (const model of candidates) {
       if (rawData) break;
+      const remainingMs = deadlineAt - Date.now();
+      if (remainingMs < 1000) break;
       try {
-        const result = await callChatCompletion(phoneEndpoint, phoneApiKey, model, messages);
+        const result = await callChatCompletion(phoneEndpoint, phoneApiKey, model, messages, Math.min(OMNIROUTE_TIMEOUT_MS, remainingMs));
         if (result && result.title) {
           rawData = result;
           providerUsed = `Phone OmniRoute (${model})`;

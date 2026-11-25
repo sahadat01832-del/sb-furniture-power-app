@@ -269,8 +269,12 @@ router.put('/profile/password', async (req, res) => {
   try {
     const { old_password, new_password } = req.body;
 
-    if (typeof new_password !== 'string' || Buffer.byteLength(new_password, 'utf8') < 8 || Buffer.byteLength(new_password, 'utf8') > 72) {
-      return res.status(400).json({ success: false, message: 'নতুন পাসওয়ার্ড ৮ থেকে ৭২ বাইটের মধ্যে হতে হবে' });
+    if (typeof old_password !== 'string' || !old_password) {
+      return res.status(400).json({ success: false, message: 'বর্তমান পাসওয়ার্ড দেওয়া আবশ্যক' });
+    }
+
+    if (typeof new_password !== 'string' || Buffer.byteLength(new_password, 'utf8') < 12 || Buffer.byteLength(new_password, 'utf8') > 72) {
+      return res.status(400).json({ success: false, message: 'নতুন পাসওয়ার্ড ১২ থেকে ৭২ বাইটের মধ্যে হতে হবে' });
     }
 
     const adminUser = await get('SELECT id, password_hash FROM users WHERE id = ?', [req.user.id]);
@@ -278,12 +282,11 @@ router.put('/profile/password', async (req, res) => {
       return res.status(404).json({ success: false, message: 'এডমিন একাউন্ট পাওয়া যায়নি' });
     }
 
-    // If old_password is supplied, verify it
-    if (old_password) {
-      const isMatch = await comparePassword(old_password, adminUser.password_hash);
-      if (!isMatch) {
-        return res.status(400).json({ success: false, message: 'বর্তমান পাসওয়ার্ডটি সঠিক নয়' });
-      }
+    // The current password is mandatory: a stolen admin token alone must never
+    // be enough to replace the password and take over the account.
+    const isMatch = await comparePassword(old_password, adminUser.password_hash);
+    if (!isMatch) {
+      return res.status(400).json({ success: false, message: 'বর্তমান পাসওয়ার্ডটি সঠিক নয়' });
     }
 
     const newHash = await hashPassword(new_password);
