@@ -201,6 +201,9 @@ build_client() {
     echo "🔄 Syncing Client web assets to Android project..."
     npx cap sync android
     patch_java_version
+    if [ -f "scripts/generate_app_icons.py" ]; then
+        python3 scripts/generate_app_icons.py
+    fi
 
     if [ -f "android/gradlew" ] && { [ -n "$ANDROID_HOME" ] || [ -n "$ANDROID_SDK_ROOT" ]; }; then
         echo "🔨 Compiling Client Release APK..."
@@ -254,6 +257,9 @@ build_admin() {
     echo "🔄 Syncing Admin web assets to Android project..."
     npx cap sync android
     patch_java_version
+    if [ -f "scripts/generate_app_icons.py" ]; then
+        python3 scripts/generate_app_icons.py
+    fi
 
     if [ -f "android/gradlew" ] && { [ -n "$ANDROID_HOME" ] || [ -n "$ANDROID_SDK_ROOT" ]; }; then
         echo "🔨 Compiling Admin Release APK..."

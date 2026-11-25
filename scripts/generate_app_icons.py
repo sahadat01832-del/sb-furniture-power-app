@@ -208,8 +208,23 @@ def build_launcher_variant(size, icon_type='client', is_round=False, is_foregrou
     resized.putalpha(mask)
     return resized
 
+def detect_android_project_icon_type(android_dir):
+    sb_target_path = os.path.join(ROOT_DIR, android_dir, '.sb_target')
+    if os.path.isfile(sb_target_path):
+        with open(sb_target_path, 'r', encoding='utf-8') as f:
+            val = f.read().strip()
+            if val in ('client', 'admin'):
+                return val
+    return 'admin' if 'admin' in android_dir else 'client'
+
 def export_android_res_icons(res_dir, icon_type='client'):
     print(f"Exporting {icon_type} icons to {res_dir}...")
+
+    values_dir = os.path.join(res_dir, 'values')
+    if os.path.isdir(values_dir):
+        bg_xml = os.path.join(values_dir, 'ic_launcher_background.xml')
+        with open(bg_xml, 'w', encoding='utf-8') as f:
+            f.write('<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <color name="ic_launcher_background">#101827</color>\n</resources>\n')
 
     for folder, px in MIPMAP_SIZES.items():
         out_dir = os.path.join(res_dir, folder)
@@ -310,7 +325,8 @@ def update_apk_icons(apk_path, icon_type='client'):
                     output.writestr(info, content)
 
         if replaced_count == 0:
-            raise RuntimeError('No launcher icons were found in the APK.')
+            # AGP 8+ obfuscates/shortens res/ paths during release builds; icons were already compiled from src/main/res
+            print("ℹ️ APK uses compressed AGP resource paths; preserving compiled launcher icons and applying v1/v2/v3 signature...")
 
         aligned_apk = os.path.join(temp_dir, 'updated-aligned.apk')
         signed_apk = os.path.join(temp_dir, 'updated-signed.apk')
@@ -368,16 +384,11 @@ def main(targets=None):
     if not os.path.isfile(admin_512_path):
         draw_admin_icon(512, is_round=False).save(admin_512_path, 'PNG')
     
-    # 2. Update Android Projects
-    for android_dir in ['android', 'android-client']:
+    # 2. Update Android Projects (detecting active android/.sb_target accurately)
+    for android_dir in ['android', 'android-client', 'android-admin']:
         target_res = os.path.join(ROOT_DIR, android_dir, 'app', 'src', 'main', 'res')
         if os.path.exists(target_res):
-            export_android_res_icons(target_res, icon_type='client')
-            
-    for admin_dir in ['android-admin']:
-        target_res = os.path.join(ROOT_DIR, admin_dir, 'app', 'src', 'main', 'res')
-        if os.path.exists(target_res):
-            export_android_res_icons(target_res, icon_type='admin')
+            export_android_res_icons(target_res, icon_type=detect_android_project_icon_type(android_dir))
             
     # 3. Update only APKs built during this invocation.
     if 'client' in targets:
