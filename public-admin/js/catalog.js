@@ -298,6 +298,92 @@ function orderViaWhatsApp(productId) {
   window.open(waUrl, '_blank');
 }
 
+function formatInlineProductMarkdown(escapedLine) {
+  return String(escapedLine || '').replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+}
+
+function formatProductDescriptionHtml(rawDescription) {
+  const escaped = escapeCatalogHtml(String(rawDescription || '').trim());
+  if (!escaped) return '';
+
+  const lines = escaped.split(/\r?\n/);
+  const out = [];
+  let listItems = [];
+  let tableRows = [];
+
+  const flushList = () => {
+    if (!listItems.length) return;
+    out.push(`<ul class="pd-md-list">${listItems.map((item) => `<li>${item}</li>`).join('')}</ul>`);
+    listItems = [];
+  };
+
+  const flushTable = () => {
+    if (!tableRows.length) return;
+    const isSeparatorRow = (row) => /^\|[\s:|\-]+\|$/.test(row.trim());
+    const parseCells = (row) => row.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => formatInlineProductMarkdown(c.trim()));
+
+    const dataRows = tableRows.filter((row) => !isSeparatorRow(row));
+    if (dataRows.length === 0) {
+      tableRows = [];
+      return;
+    }
+
+    const headerCells = parseCells(dataRows[0]);
+    const bodyRows = dataRows.slice(1).map(parseCells);
+    out.push(
+      `<div class="pd-md-table-wrap"><table class="pd-md-table"><thead><tr>${headerCells.map((c) => `<th>${c}</th>`).join('')}</tr></thead>${bodyRows.length ? `<tbody>${bodyRows.map((cells) => `<tr>${cells.map((c) => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody>` : ''}</table></div>`
+    );
+    tableRows = [];
+  };
+
+  for (const rawLine of lines) {
+    const trimmed = rawLine.trim();
+    if (!trimmed) {
+      flushList();
+      flushTable();
+      continue;
+    }
+
+    if (trimmed.startsWith('|') && trimmed.endsWith('|') && trimmed.length > 2) {
+      flushList();
+      tableRows.push(trimmed);
+      continue;
+    }
+    flushTable();
+
+    if (trimmed.startsWith('### ')) {
+      flushList();
+      out.push(`<h5 class="pd-md-h3">${formatInlineProductMarkdown(trimmed.slice(4))}</h5>`);
+    } else if (trimmed.startsWith('## ')) {
+      flushList();
+      out.push(`<h4 class="pd-md-h2">${formatInlineProductMarkdown(trimmed.slice(3))}</h4>`);
+    } else if (trimmed.startsWith('# ')) {
+      flushList();
+      out.push(`<h4 class="pd-md-h2">${formatInlineProductMarkdown(trimmed.slice(2))}</h4>`);
+    } else if (/^(?:-|•|\*)\s+/.test(trimmed)) {
+      listItems.push(formatInlineProductMarkdown(trimmed.replace(/^(?:-|•|\*)\s+/, '')));
+    } else {
+      flushList();
+      out.push(`<p class="pd-md-p">${formatInlineProductMarkdown(trimmed)}</p>`);
+    }
+  }
+
+  flushList();
+  flushTable();
+  return out.join('');
+}
+
+function stripMarkdownForPlainShare(rawText) {
+  return String(rawText || '')
+    .replace(/^#{1,6}\s*/gm, '')
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/^\|[\s:|\-]+\|$/gm, '')
+    .replace(/^\|\s*|\s*\|$/gm, '')
+    .replace(/\s*\|\s*/g, ': ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 // 1-Click Social Sharing Copy Generator
 function generateShareText(item) {
   const isFurniture = item.brand === 'SB Furniture';
@@ -311,11 +397,20 @@ function generateShareText(item) {
   const appBaseUrl = window.location.origin;
   const productLink = refCode ? `${appBaseUrl}/?ref=${refCode}&sku=${item.sku}` : `${appBaseUrl}/?sku=${item.sku}`;
 
+  if (item.caption && String(item.caption).trim()) {
+    let post = String(item.caption).trim();
+    if (!post.includes(phone)) {
+      post += `\n\n📞 Call / WhatsApp: ${phone}`;
+    }
+    post += `\n🌐 সরাসরি অনলাইন অর্ডার লিংক: ${productLink}`;
+    return post;
+  }
+
   let text = `🔥 ${item.title}\n`;
   text += `💵 বিক্রয় মূল্য: ${item.regular_price} ৳\n`;
   if (item.materials) text += `🪵 বোর্ড/উপকরণ: ${item.materials}\n`;
   if (item.finish) text += `🎨 ফিনিশিং ও কালার: ${item.finish}\n`;
-  if (item.description) text += `📌 বিবরণ: ${item.description}\n`;
+  if (item.description) text += `📌 বিবরণ:\n${stripMarkdownForPlainShare(item.description)}\n`;
   text += `\n✅ ${trustLine}\n`;
   text += `\n📦 পণ্য সম্পর্কে জানতে Call / WhatsApp: ${phone}\n`;
   text += `🌐 সরাসরি অনলাইন অর্ডার লিংক: ${productLink}`;
@@ -376,7 +471,7 @@ function renderCustomerProductDetails(item) {
     <div class="product-detail-desc">
       ${item.materials ? `<div><strong>উপকরণ:</strong> ${escapeCatalogHtml(item.materials)}</div>` : ''}
       ${item.finish ? `<div><strong>ফিনিশিং:</strong> ${escapeCatalogHtml(item.finish)}</div>` : ''}
-      <div class="product-detail-desc-body">${escapeCatalogHtml(item.description)}</div>
+      <div class="product-detail-desc-body">${formatProductDescriptionHtml(item.description)}</div>
     </div>
     ${colorSelectorHtml}
     <div class="product-detail-actions">
@@ -445,7 +540,7 @@ function viewProductDetails(productId) {
     <div class="product-detail-desc">
       ${item.materials ? `<div><strong>উপকরণ:</strong> ${escapeCatalogHtml(item.materials)}</div>` : ''}
       ${item.finish ? `<div><strong>ফিনিশিং:</strong> ${escapeCatalogHtml(item.finish)}</div>` : ''}
-      <div class="product-detail-desc-body">${escapeCatalogHtml(item.description)}</div>
+      <div class="product-detail-desc-body">${formatProductDescriptionHtml(item.description)}</div>
     </div>
     ${colorSelectorHtml}
 

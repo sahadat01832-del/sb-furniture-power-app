@@ -1972,6 +1972,113 @@ function initImageDragAndDropAndPaste() {
   });
 }
 
+function syncOwnShopByBrand(isFurniture) {
+  const shopSelect = document.getElementById('prodShopId');
+  const brandSelect = document.getElementById('prodBrand');
+  const targetBrand = isFurniture ? 'SB Furniture' : 'SB POWER';
+  if (brandSelect) brandSelect.value = targetBrand;
+
+  if (!shopSelect) return;
+  const currentShop = adminShopsList.find((s) => String(s.id) === String(shopSelect.value));
+  // Preserve explicitly chosen partner shop; only switch automatically among own-brand shops.
+  if (currentShop && currentShop.shop_type !== 'own') return;
+
+  const targetShop = adminShopsList.find((s) => s.shop_type === 'own' && s.name === targetBrand);
+  if (targetShop) {
+    shopSelect.value = String(targetShop.id);
+    onProdShopChange(targetShop.id);
+  } else {
+    const shopNameEl = document.getElementById('prodShopName');
+    if (shopNameEl) shopNameEl.value = targetBrand;
+  }
+}
+
+function applyAiProductAnalysisToForm(analysis, providerFallbackLabel) {
+  const a = analysis || {};
+  const isCreatingNew = !document.getElementById('editProductId')?.value;
+
+  if (a.title) document.getElementById('prodTitle').value = a.title;
+  if (a.materials) document.getElementById('prodMaterials').value = a.materials;
+  if (a.finish) document.getElementById('prodFinish').value = a.finish;
+  if (a.description) document.getElementById('prodDesc').value = a.description;
+  const capEl = document.getElementById('prodCaption');
+  if (capEl && a.caption) capEl.value = a.caption;
+
+  const isFurn = (typeof a.is_furniture === 'boolean')
+    ? a.is_furniture
+    : isFurnitureCategory(a.category || document.getElementById('prodCategory')?.value);
+
+  const catSelect = document.getElementById('prodCategory');
+  if (catSelect && a.category) {
+    let matched = false;
+    for (let i = 0; i < catSelect.options.length; i++) {
+      if (catSelect.options[i].value === a.category || catSelect.options[i].text.includes(a.category)) {
+        catSelect.selectedIndex = i;
+        matched = true;
+        break;
+      }
+    }
+    if (!matched) {
+      catSelect.value = isFurn ? 'হোম ও অফিস ফার্নিচার' : 'ওয়্যারলেস অডিও ও গ্যাজেটস';
+    }
+  }
+
+  syncOwnShopByBrand(isFurn);
+
+  const shouldFillPrice = (input) => input && (isCreatingNew || !input.value || input.value === '600' || input.value === '400' || input.value === '100' || input.value === '0');
+  if (a.suggested_retail_price) {
+    const pInput = document.getElementById('prodPrice');
+    if (shouldFillPrice(pInput)) pInput.value = a.suggested_retail_price;
+  }
+  if (a.suggested_wholesale_price) {
+    const wpInput = document.getElementById('prodWholesalePrice');
+    if (shouldFillPrice(wpInput)) wpInput.value = a.suggested_wholesale_price;
+  }
+  if (a.suggested_commission) {
+    const cInput = document.getElementById('prodCommission');
+    if (shouldFillPrice(cInput)) cInput.value = a.suggested_commission;
+    const commTab = document.getElementById('prodCommTab');
+    if (commTab) {
+      if (a.suggested_commission >= 1000) commTab.value = '1000tk';
+      else if (a.suggested_commission >= 500) commTab.value = '500tk';
+      else if (a.suggested_commission >= 100) commTab.value = '100tk';
+      else commTab.value = '50tk';
+    }
+  }
+  updateLiveProfitCalculator();
+
+  const cutlistBox = document.getElementById('furnitureAiCutlistBox');
+  if (isFurn) {
+    if (cutlistBox) cutlistBox.style.display = 'block';
+    if (a.estimated_dimensions) {
+      if (a.estimated_dimensions.height) document.getElementById('furnDimHeight').value = a.estimated_dimensions.height;
+      if (a.estimated_dimensions.width) document.getElementById('furnDimWidth').value = a.estimated_dimensions.width;
+      if (a.estimated_dimensions.depth) document.getElementById('furnDimDepth').value = a.estimated_dimensions.depth;
+    }
+
+    const tbody = document.getElementById('furniturePartsTableBody');
+    if (tbody) tbody.innerHTML = '';
+    if (a.cutlist && Array.isArray(a.cutlist.parts) && a.cutlist.parts.length > 0) {
+      a.cutlist.parts.forEach((p) => addManualFurniturePartRow(p));
+    }
+    recalculateFurnitureCutlist();
+
+    const providerBadge = document.getElementById('furnAiProviderBadge');
+    if (providerBadge && providerFallbackLabel) {
+      providerBadge.style.display = 'block';
+      providerBadge.textContent = `${providerFallbackLabel}: ${a.provider_used || 'AI'}`;
+    }
+  } else if (cutlistBox) {
+    cutlistBox.style.display = 'none';
+  }
+
+  const skuEl = document.getElementById('prodSku');
+  if (skuEl && !skuEl.value.trim()) {
+    const prefix = isFurn ? 'FURN' : 'GADGET';
+    skuEl.value = `${prefix}-${Date.now().toString().slice(-6)}`;
+  }
+}
+
 async function runAiProductImageInspection() {
   const btn = document.getElementById('btnAiInspectImage');
   const statusText = document.getElementById('aiVisionStatusText');
@@ -2009,106 +2116,7 @@ async function runAiProductImageInspection() {
       throw new Error(data.message || 'বিশ্লেষণ ব্যর্থ হয়েছে');
     }
 
-    const a = data.analysis;
-
-    // 1. Populate basic product details & captions
-    if (a.title) document.getElementById('prodTitle').value = a.title;
-    if (a.materials) document.getElementById('prodMaterials').value = a.materials;
-    if (a.finish) document.getElementById('prodFinish').value = a.finish;
-    if (a.description) document.getElementById('prodDesc').value = a.description;
-    const capEl = document.getElementById('prodCaption');
-    if (capEl && a.caption) capEl.value = a.caption;
-
-    // 2. Select category & brand
-    if (a.category) {
-      const catSelect = document.getElementById('prodCategory');
-      if (catSelect) {
-        let matched = false;
-        for (let i = 0; i < catSelect.options.length; i++) {
-          if (catSelect.options[i].value === a.category || catSelect.options[i].text.includes(a.category)) {
-            catSelect.selectedIndex = i;
-            matched = true;
-            break;
-          }
-        }
-        if (!matched) {
-          catSelect.value = a.is_furniture ? 'হোম ও অফিস ফার্নিচার' : 'ওয়্যারলেস অডিও ও গ্যাজেটস';
-        }
-      }
-    }
-
-    const brandSelect = document.getElementById('prodBrand');
-    if (brandSelect) {
-      brandSelect.value = a.is_furniture ? 'SB Furniture' : 'SB POWER';
-    }
-
-    // 3. Auto-populate suggested pricing if currently default or empty
-    if (a.suggested_retail_price) {
-      const pInput = document.getElementById('prodPrice');
-      if (pInput && (!pInput.value || pInput.value === '600' || pInput.value === '0')) {
-        pInput.value = a.suggested_retail_price;
-      }
-    }
-    if (a.suggested_wholesale_price) {
-      const wpInput = document.getElementById('prodWholesalePrice');
-      if (wpInput && (!wpInput.value || wpInput.value === '400' || wpInput.value === '0')) {
-        wpInput.value = a.suggested_wholesale_price;
-      }
-    }
-    if (a.suggested_commission) {
-      const cInput = document.getElementById('prodCommission');
-      if (cInput && (!cInput.value || cInput.value === '100' || cInput.value === '0')) {
-        cInput.value = a.suggested_commission;
-      }
-      const commTab = document.getElementById('prodCommTab');
-      if (commTab) {
-        if (a.suggested_commission >= 1000) commTab.value = '1000tk';
-        else if (a.suggested_commission >= 500) commTab.value = '500tk';
-        else if (a.suggested_commission >= 100) commTab.value = '100tk';
-        else commTab.value = '50tk';
-      }
-    }
-    updateLiveProfitCalculator();
-
-    // 4. Toggle furniture cutlist visibility
-    const isFurn = (typeof a.is_furniture === 'boolean') ? a.is_furniture : isFurnitureCategory(document.getElementById('prodCategory')?.value);
-
-    // 5. If furniture, populate dimensions & cutlist
-    if (isFurn) {
-      const cutlistBox = document.getElementById('furnitureAiCutlistBox');
-      if (cutlistBox) cutlistBox.style.display = 'block';
-      if (a.estimated_dimensions) {
-        if (a.estimated_dimensions.height) document.getElementById('furnDimHeight').value = a.estimated_dimensions.height;
-        if (a.estimated_dimensions.width) document.getElementById('furnDimWidth').value = a.estimated_dimensions.width;
-        if (a.estimated_dimensions.depth) document.getElementById('furnDimDepth').value = a.estimated_dimensions.depth;
-      }
-
-      const tbody = document.getElementById('furniturePartsTableBody');
-      if (tbody) tbody.innerHTML = '';
-
-      if (a.cutlist && Array.isArray(a.cutlist.parts) && a.cutlist.parts.length > 0) {
-        a.cutlist.parts.forEach(p => addManualFurniturePartRow(p));
-      }
-
-      recalculateFurnitureCutlist();
-
-      const providerBadge = document.getElementById('furnAiProviderBadge');
-      if (providerBadge) {
-        providerBadge.style.display = 'block';
-        providerBadge.textContent = `ভিশন মডেল: ${a.provider_used || 'AI Vision'}`;
-      }
-    } else {
-      const cutlistBox = document.getElementById('furnitureAiCutlistBox');
-      if (cutlistBox) cutlistBox.style.display = 'none';
-    }
-
-    // 6. Generate a default SKU if empty
-    const skuEl = document.getElementById('prodSku');
-    if (!skuEl.value.trim()) {
-      const prefix = a.is_furniture ? 'FURN' : 'GADGET';
-      skuEl.value = `${prefix}-${Date.now().toString().slice(-6)}`;
-    }
-
+    applyAiProductAnalysisToForm(data.analysis, 'ভিশন মডেল');
     showToast('✨ AI সফলভাবে পণ্যের বিবরণ, ক্যাপশন, ক্যাটাগরি ও মূল্য নির্ধারণ করেছে!');
   } catch (err) {
     console.error('Vision inspection error:', err);
@@ -2153,77 +2161,7 @@ async function runAiCopyFromTitleOrKeywords() {
       throw new Error(data.message || 'বিবরণ তৈরিতে ব্যর্থ হয়েছে');
     }
 
-    const a = data.analysis;
-
-    if (a.title) titleInput.value = a.title;
-    if (a.caption && document.getElementById('prodCaption')) document.getElementById('prodCaption').value = a.caption;
-    if (a.description && document.getElementById('prodDesc')) document.getElementById('prodDesc').value = a.description;
-    if (a.materials && document.getElementById('prodMaterials')) document.getElementById('prodMaterials').value = a.materials;
-    if (a.finish && document.getElementById('prodFinish')) document.getElementById('prodFinish').value = a.finish;
-
-    if (a.category) {
-      const catSelect = document.getElementById('prodCategory');
-      if (catSelect) {
-        let matched = false;
-        for (let i = 0; i < catSelect.options.length; i++) {
-          if (catSelect.options[i].value === a.category || catSelect.options[i].text.includes(a.category)) {
-            catSelect.selectedIndex = i;
-            matched = true;
-            break;
-          }
-        }
-        if (!matched) {
-          catSelect.value = a.is_furniture ? 'হোম ও অফিস ফার্নিচার' : 'ওয়্যারলেস অডিও ও গ্যাজেটস';
-        }
-      }
-    }
-
-    const brandSelect = document.getElementById('prodBrand');
-    if (brandSelect) {
-      brandSelect.value = a.is_furniture ? 'SB Furniture' : 'SB POWER';
-    }
-
-    if (a.suggested_retail_price) document.getElementById('prodPrice').value = a.suggested_retail_price;
-    if (a.suggested_wholesale_price) document.getElementById('prodWholesalePrice').value = a.suggested_wholesale_price;
-    if (a.suggested_commission) {
-      document.getElementById('prodCommission').value = a.suggested_commission;
-      const commTab = document.getElementById('prodCommTab');
-      if (commTab) {
-        if (a.suggested_commission >= 1000) commTab.value = '1000tk';
-        else if (a.suggested_commission >= 500) commTab.value = '500tk';
-        else if (a.suggested_commission >= 100) commTab.value = '100tk';
-        else commTab.value = '50tk';
-      }
-    }
-
-    updateLiveProfitCalculator();
-    const isFurnText = (typeof a.is_furniture === 'boolean') ? a.is_furniture : isFurnitureCategory(document.getElementById('prodCategory')?.value);
-
-    if (isFurnText) {
-      const cutlistBox = document.getElementById('furnitureAiCutlistBox');
-      if (cutlistBox) cutlistBox.style.display = 'block';
-      if (a.estimated_dimensions) {
-        if (a.estimated_dimensions.height) document.getElementById('furnDimHeight').value = a.estimated_dimensions.height;
-        if (a.estimated_dimensions.width) document.getElementById('furnDimWidth').value = a.estimated_dimensions.width;
-        if (a.estimated_dimensions.depth) document.getElementById('furnDimDepth').value = a.estimated_dimensions.depth;
-      }
-      const tbody = document.getElementById('furniturePartsTableBody');
-      if (tbody) tbody.innerHTML = '';
-      if (a.cutlist && Array.isArray(a.cutlist.parts) && a.cutlist.parts.length > 0) {
-        a.cutlist.parts.forEach(p => addManualFurniturePartRow(p));
-      }
-      recalculateFurnitureCutlist();
-    } else {
-      const cutlistBox = document.getElementById('furnitureAiCutlistBox');
-      if (cutlistBox) cutlistBox.style.display = 'none';
-    }
-
-    const skuEl = document.getElementById('prodSku');
-    if (!skuEl.value.trim()) {
-      const prefix = a.is_furniture ? 'FURN' : 'GADGET';
-      skuEl.value = `${prefix}-${Date.now().toString().slice(-6)}`;
-    }
-
+    applyAiProductAnalysisToForm(data.analysis);
     showToast('✨ AI বিবরণ, সোশ্যাল ক্যাপশন ও মূল্য সফলভাবে পূরণ করেছে!');
   } catch (err) {
     alert('AI কপি জেনারেশনে ত্রুটি: ' + (err.message || 'ইন্টারনেট বা সার্ভার চেক করুন'));
