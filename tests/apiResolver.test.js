@@ -14,21 +14,32 @@ function loadResolver({
     apiUrl: { stringValue: 'https://phone-tunnel.example/' },
     status: { stringValue: 'online' }
   } },
-  firestoreStatus = 200
+  firestoreDocuments = null,
+  firestoreStatus = 200,
+  cachedApiUrl = '',
+  apiResponder = async () => ({ ok: true, status: 200 })
 } = {}) {
   const storage = new Map();
   const calls = [];
+  let firestoreReads = 0;
+  const intervalCalls = [];
+  if (cachedApiUrl) storage.set(`sb_active_phone_api_url:${projectId || 'sb-power-demo'}`, cachedApiUrl);
   const nativeFetch = async (input, init = {}) => {
     const url = input instanceof Request ? input.url : String(input);
     calls.push({ url, init });
     if (url.startsWith('https://firestore.googleapis.com/')) {
+      firestoreReads += 1;
       return {
         ok: firestoreStatus >= 200 && firestoreStatus < 300,
         status: firestoreStatus,
-        async json() { return firestoreDocument; }
+        async json() {
+          return Array.isArray(firestoreDocuments)
+            ? firestoreDocuments[Math.min(firestoreReads - 1, firestoreDocuments.length - 1)]
+            : firestoreDocument;
+        }
       };
     }
-    return { ok: true, status: 200, url, async json() { return { success: true }; } };
+    return { ...await apiResponder(url, init), url, async json() { return { success: true }; } };
   };
   const location = {
     hostname,
@@ -56,15 +67,18 @@ function loadResolver({
     AbortController,
     setTimeout,
     clearTimeout,
-    setInterval,
-    clearInterval,
+    setInterval(callback, delay) {
+      intervalCalls.push({ callback, delay });
+      return intervalCalls.length;
+    },
+    clearInterval() {},
     console
   });
-  return { window, calls, storage };
+  return { window, calls, storage, intervalCalls, getFirestoreReads: () => firestoreReads };
 }
 
 test('API calls discover the current phone URL and preserve paths and query strings', async () => {
-  const { window, calls, storage } = loadResolver();
+  const { window, calls, storage, intervalCalls } = loadResolver();
   await window.SB_API.connectionReady;
 
   assert.equal(window.SB_API.getBaseUrl(), 'https://phone-tunnel.example');
@@ -72,6 +86,92 @@ test('API calls discover the current phone URL and preserve paths and query stri
   assert.equal(response.ok, true);
   assert.equal(calls.at(-1).url, 'https://phone-tunnel.example/api/orders?status=pending');
   assert.equal(storage.get('sb_active_phone_api_url:sb-power-demo'), 'https://phone-tunnel.example');
+  assert.equal(calls.filter((call) => call.url.startsWith('https://firestore.googleapis.com/')).length, 1);
+  assert.equal(intervalCalls.length, 0);
+});
+
+test('a cached phone address serves normal visits without a Firestore read', async () => {
+  const { window, calls, getFirestoreReads } = loadResolver({ cachedApiUrl: 'https://phone-tunnel.example/' });
+  await window.SB_API.connectionReady;
+
+  await window.fetch(window.apiUrl('/api/products'));
+  assert.equal(getFirestoreReads(), 0);
+  assert.deepEqual(calls.map((call) => call.url), ['https://phone-tunnel.example/api/products']);
+});
+
+test('a stale cached phone URL refreshes once and safe reads retry against the new tunnel', async () => {
+  const { window, calls, storage, getFirestoreReads } = loadResolver({
+    cachedApiUrl: 'https://old-phone.example',
+    firestoreDocument: { fields: {
+      apiUrl: { stringValue: 'https://new-phone.example' },
+      status: { stringValue: 'online' }
+    } },
+    apiResponder: async (url) => {
+      if (url === 'https://old-phone.example/api/config') throw new TypeError('Failed to fetch');
+      return { ok: true, status: 200 };
+    }
+  });
+  await window.SB_API.connectionReady;
+
+  const response = await window.fetch(window.apiUrl('/api/config'));
+  assert.equal(response.status, 200);
+  assert.equal(getFirestoreReads(), 1);
+  assert.deepEqual(calls.map((call) => call.url), [
+    'https://old-phone.example/api/config',
+    'https://firestore.googleapis.com/v1/projects/sb-power-demo/databases/(default)/documents/system_config/backend_tunnel',
+    'https://new-phone.example/api/config'
+  ]);
+  assert.equal(storage.get('sb_active_phone_api_url:sb-power-demo'), 'https://new-phone.example');
+});
+
+test('a tunnel that goes stale just after the first lookup is refreshed on the failed request', async () => {
+  const { window, calls, getFirestoreReads } = loadResolver({
+    firestoreDocuments: [
+      { fields: { apiUrl: { stringValue: 'https://old-phone.example' }, status: { stringValue: 'online' } } },
+      { fields: { apiUrl: { stringValue: 'https://new-phone.example' }, status: { stringValue: 'online' } } }
+    ],
+    apiResponder: async (url) => {
+      if (url === 'https://old-phone.example/api/config') throw new TypeError('Failed to fetch');
+      return { ok: true, status: 200 };
+    }
+  });
+  await window.SB_API.connectionReady;
+
+  const response = await window.fetch(window.apiUrl('/api/config'));
+  assert.equal(response.status, 200);
+  assert.equal(getFirestoreReads(), 2);
+  assert.deepEqual(calls.map((call) => call.url), [
+    'https://firestore.googleapis.com/v1/projects/sb-power-demo/databases/(default)/documents/system_config/backend_tunnel',
+    'https://old-phone.example/api/config',
+    'https://firestore.googleapis.com/v1/projects/sb-power-demo/databases/(default)/documents/system_config/backend_tunnel',
+    'https://new-phone.example/api/config'
+  ]);
+});
+
+test('a failed mutation is never replayed but refreshes the address for the next request', async () => {
+  const { window, calls, getFirestoreReads } = loadResolver({
+    cachedApiUrl: 'https://old-phone.example',
+    firestoreDocument: { fields: {
+      apiUrl: { stringValue: 'https://new-phone.example' },
+      status: { stringValue: 'online' }
+    } },
+    apiResponder: async (url) => ({ ok: url.startsWith('https://old-phone.example') ? false : true,
+      status: url.startsWith('https://old-phone.example') ? 503 : 200 })
+  });
+  await window.SB_API.connectionReady;
+
+  const failedMutation = await window.fetch(window.apiUrl('/api/orders'), { method: 'POST', body: '{"item":1}' });
+  assert.equal(failedMutation.status, 503);
+  assert.equal(getFirestoreReads(), 1);
+  assert.deepEqual(calls.filter((call) => !call.url.startsWith('https://firestore.googleapis.com/')).map((call) => call.url), [
+    'https://old-phone.example/api/orders'
+  ]);
+
+  await window.fetch(window.apiUrl('/api/config'));
+  assert.deepEqual(calls.filter((call) => !call.url.startsWith('https://firestore.googleapis.com/')).map((call) => call.url), [
+    'https://old-phone.example/api/orders',
+    'https://new-phone.example/api/config'
+  ]);
 });
 
 test('invalid Firebase endpoint values cannot replace the configured fallback', async () => {
@@ -103,4 +203,32 @@ test('an app without Firebase project config uses its same-origin API without Fi
   assert.equal(window.SB_API.getBaseUrl(), 'https://shop.example');
   await window.fetch(window.apiUrl('/api/config'));
   assert.deepEqual(calls.map((call) => call.url), ['https://shop.example/api/config']);
+});
+
+test('sbSafeImageUrl resolves /uploads/ via active API origin and rejects unsafe schemes', async () => {
+  const { window } = loadResolver();
+  await window.SB_API.connectionReady;
+
+  assert.equal(
+    window.sbSafeImageUrl('/uploads/bikroy/SBP-B01.jpg'),
+    'https://phone-tunnel.example/uploads/bikroy/SBP-B01.jpg'
+  );
+  assert.equal(
+    window.sbSafeImageUrl('https://sb-power-marketplace.web.app/uploads/bikroy/SBP-B01.jpg'),
+    'https://sb-power-marketplace.web.app/uploads/bikroy/SBP-B01.jpg'
+  );
+  assert.equal(window.sbSafeImageUrl('javascript:alert(1)'), '/icons/icon-512.png');
+  assert.equal(
+    window.sbImageCrossOrigin('https://phone-tunnel.example/uploads/bikroy/SBP-B01.jpg'),
+    'anonymous'
+  );
+  assert.equal(
+    window.sbImageCrossOriginAttr('https://phone-tunnel.example/uploads/bikroy/SBP-B01.jpg'),
+    'crossorigin="anonymous"'
+  );
+  assert.equal(
+    window.sbImageCrossOrigin('https://images.unsplash.com/photo-1555041469-a586c61ea9bc'),
+    ''
+  );
+  assert.equal(window.sbImageCrossOrigin('/icons/icon-512.png'), '');
 });

@@ -3,10 +3,9 @@
 (function (window) {
   const FIRESTORE_COLLECTION = 'system_config';
   const FIRESTORE_DOCUMENT = 'backend_tunnel';
-  const FIRESTORE_SDK_VERSION = '13.4.0';
   const API_CACHE_PREFIX = 'sb_active_phone_api_url:';
   const FIRESTORE_REQUEST_TIMEOUT_MS = 4000;
-  const FIRESTORE_POLL_INTERVAL_MS = 60_000;
+  const FIRESTORE_REFRESH_COOLDOWN_MS = 15_000;
   const CONNECTION_READY_TIMEOUT_MS = 5000;
   const nativeFetch = window.fetch.bind(window);
 
@@ -19,20 +18,6 @@
       if (hostname.endsWith(suffix)) return hostname.slice(0, -suffix.length).split('--')[0];
     }
     return '';
-  }
-
-  function getFirebaseClientConfig(projectId) {
-    const appConfig = window.APP_CONFIG || {};
-    const nested = appConfig.firebase || {};
-    const apiKey = nested.apiKey || appConfig.firebaseApiKey || '';
-    const appId = nested.appId || appConfig.firebaseAppId || '';
-    if (!projectId || !apiKey || !appId) return null;
-    return {
-      apiKey: String(apiKey).trim(),
-      appId: String(appId).trim(),
-      projectId,
-      authDomain: nested.authDomain || appConfig.firebaseAuthDomain || `${projectId}.firebaseapp.com`
-    };
   }
 
   function normalizeApiOrigin(value) {
@@ -49,12 +34,11 @@
   }
 
   const firebaseProjectId = getFirebaseProjectId();
-  const firebaseClientConfig = getFirebaseClientConfig(firebaseProjectId);
   let activeApiUrl = '';
   let backendStatus = 'unknown';
-  let restPollTimer = null;
   let configFetchPromise = null;
   let lastConfigFetchAt = 0;
+  let lastFailureRefreshAt = 0;
   let firstConnectionResolve;
   let firstConnectionResolved = false;
   const firstConnection = new Promise((resolve) => { firstConnectionResolve = resolve; });
@@ -142,81 +126,53 @@
     resolveFirstConnection();
   }
 
-  async function readFirestoreRestDocument() {
+  async function readFirestoreRestDocument({ afterFailure = false } = {}) {
     if (!firebaseProjectId) return activeApiUrl;
+    const now = Date.now();
+    if (configFetchPromise) return configFetchPromise;
+    if (afterFailure) {
+      if (now - lastFailureRefreshAt < FIRESTORE_REFRESH_COOLDOWN_MS) return activeApiUrl;
+      lastFailureRefreshAt = now;
+    } else if (now - lastConfigFetchAt < FIRESTORE_REFRESH_COOLDOWN_MS) {
+      return activeApiUrl;
+    }
+    lastConfigFetchAt = now;
     const documentUrl = new URL(
       `/v1/projects/${encodeURIComponent(firebaseProjectId)}/databases/(default)/documents/${FIRESTORE_COLLECTION}/${FIRESTORE_DOCUMENT}`,
       'https://firestore.googleapis.com'
     );
     const controller = typeof AbortController === 'function' ? new AbortController() : null;
     const timeout = controller ? setTimeout(() => controller.abort(), FIRESTORE_REQUEST_TIMEOUT_MS) : null;
-    try {
-      const options = { method: 'GET', cache: 'no-store', headers: { Accept: 'application/json' } };
-      if (controller) options.signal = controller.signal;
-      const response = await nativeFetch(documentUrl.href, options);
-      if (!response.ok) return activeApiUrl;
-      const document = await response.json();
-      const fields = document && document.fields;
-      applyFirestoreData({
-        apiUrl: fields && fields.apiUrl && fields.apiUrl.stringValue,
-        status: fields && fields.status && fields.status.stringValue
-      });
-      return activeApiUrl;
-    } catch {
-      return activeApiUrl;
-    } finally {
-      if (timeout) clearTimeout(timeout);
-    }
-  }
-
-  function startRestPolling() {
-    if (!firebaseProjectId || restPollTimer) return;
-    readFirestoreRestDocument();
-    restPollTimer = setInterval(readFirestoreRestDocument, FIRESTORE_POLL_INTERVAL_MS);
-    if (typeof restPollTimer.unref === 'function') restPollTimer.unref();
-  }
-
-  function startRealtimeFirestoreListener() {
-    if (!firebaseClientConfig || !firebaseProjectId) {
-      startRestPolling();
-      readFirestoreRestDocument().finally(resolveFirstConnection);
-      return;
-    }
-
-    let listenerStarted = false;
-    const importTimeout = setTimeout(() => {
-      if (!listenerStarted) {
-        startRestPolling();
-        resolveFirstConnection();
+    configFetchPromise = (async () => {
+      try {
+        const options = { method: 'GET', cache: 'no-store', headers: { Accept: 'application/json' } };
+        if (controller) options.signal = controller.signal;
+        const response = await nativeFetch(documentUrl.href, options);
+        if (!response.ok) return activeApiUrl;
+        const document = await response.json();
+        const fields = document && document.fields;
+        applyFirestoreData({
+          apiUrl: fields && fields.apiUrl && fields.apiUrl.stringValue,
+          status: fields && fields.status && fields.status.stringValue
+        });
+        return activeApiUrl;
+      } catch {
+        return activeApiUrl;
+      } finally {
+        if (timeout) clearTimeout(timeout);
+        configFetchPromise = null;
       }
-    }, 8000);
-
-    Promise.all([
-      import(`https://www.gstatic.com/firebasejs/${FIRESTORE_SDK_VERSION}/firebase-app.js`),
-      import(`https://www.gstatic.com/firebasejs/${FIRESTORE_SDK_VERSION}/firebase-firestore.js`)
-    ]).then(([appSdk, firestoreSdk]) => {
-      clearTimeout(importTimeout);
-      const appName = 'sb-phone-api-client';
-      const app = appSdk.getApps().find((item) => item.name === appName) ||
-        appSdk.initializeApp(firebaseClientConfig, appName);
-      const firestore = firestoreSdk.getFirestore(app);
-      const reference = firestoreSdk.doc(firestore, FIRESTORE_COLLECTION, FIRESTORE_DOCUMENT);
-      listenerStarted = true;
-      firestoreSdk.onSnapshot(reference, (snapshot) => {
-        if (snapshot.exists()) applyFirestoreData(snapshot.data());
-        else resolveFirstConnection();
-      }, () => {
-        startRestPolling();
-        resolveFirstConnection();
-      });
-    }).catch(() => {
-      clearTimeout(importTimeout);
-      startRestPolling();
-      readFirestoreRestDocument().finally(resolveFirstConnection);
-    });
+    })();
+    return configFetchPromise;
   }
 
-  startRealtimeFirestoreListener();
+  if (activeApiUrl) {
+    resolveFirstConnection();
+  } else if (firebaseProjectId) {
+    readFirestoreRestDocument().finally(resolveFirstConnection);
+  } else {
+    resolveFirstConnection();
+  }
   const connectionReady = Promise.race([
     firstConnection,
     new Promise((resolve) => {
@@ -270,6 +226,7 @@
     const canRetry = ['GET', 'HEAD', 'OPTIONS'].includes(requestMethod);
     const maxAttempts = canRetry ? 3 : 1;
     const requestInit = init || {};
+    let refreshedAfterFailure = false;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       try {
@@ -281,10 +238,31 @@
           return response;
         }
         setConnectionState('reconnecting');
+        if (!refreshedAfterFailure && firebaseProjectId) {
+          refreshedAfterFailure = true;
+          const previousApiUrl = activeApiUrl;
+          await readFirestoreRestDocument({ afterFailure: true });
+          if (activeApiUrl && activeApiUrl !== previousApiUrl) {
+            destination = new URL(`${getRequestUrl(input).pathname}${getRequestUrl(input).search}`, `${activeApiUrl}/`);
+          }
+        }
         if (!canRetry || attempt === maxAttempts) return response;
       } catch (error) {
         setConnectionState('reconnecting');
-        if (!canRetry || attempt === maxAttempts || (requestInit.signal && requestInit.signal.aborted)) {
+        if (requestInit.signal && requestInit.signal.aborted) {
+          setConnectionState('offline');
+          throw error;
+        }
+        if (!refreshedAfterFailure && firebaseProjectId) {
+          refreshedAfterFailure = true;
+          const previousApiUrl = activeApiUrl;
+          await readFirestoreRestDocument({ afterFailure: true });
+          if (activeApiUrl && activeApiUrl !== previousApiUrl) {
+            const requestUrl = getRequestUrl(input);
+            destination = new URL(`${requestUrl.pathname}${requestUrl.search}`, `${activeApiUrl}/`);
+          }
+        }
+        if (!canRetry || attempt === maxAttempts) {
           setConnectionState('offline');
           throw error;
         }
@@ -318,7 +296,7 @@
     url: apiUrl,
     connectionReady,
     getConnectionStatus: () => backendStatus,
-    refreshConnection: () => readFirestoreRestDocument(),
+    refreshConnection: () => readFirestoreRestDocument({ afterFailure: true }),
     setBaseUrl(newUrl) {
       try {
         if (!newUrl) localStorage.removeItem('sb_api_base_url');
@@ -341,12 +319,53 @@
 
   window.sbSafeImageUrl = function (value) {
     try {
-      const parsed = new URL(String(value || ''), window.location.origin);
+      const raw = String(value || '').trim();
+      if (!raw) return '/icons/icon-512.png';
+      if (raw.startsWith('/uploads/')) {
+        const parsedUpload = new URL(apiUrl(raw), window.location.origin);
+        if (
+          parsedUpload.protocol === 'https:' ||
+          parsedUpload.origin === window.location.origin ||
+          parsedUpload.hostname === '127.0.0.1' ||
+          parsedUpload.hostname === 'localhost'
+        ) {
+          return parsedUpload.href;
+        }
+      }
+      const parsed = new URL(raw, window.location.origin);
       if (parsed.protocol === 'https:' || parsed.origin === window.location.origin) return parsed.href;
     } catch {
       // Use a local icon when the value is not a safe URL.
     }
     return '/icons/icon-512.png';
+  };
+
+  window.sbImageCrossOrigin = function (value) {
+    try {
+      const raw = String(value || '').trim();
+      if (!raw || raw.startsWith('data:') || raw.startsWith('blob:')) return '';
+      const parsed = new URL(raw, window.location.origin);
+      if (!['http:', 'https:'].includes(parsed.protocol)) return '';
+      if (parsed.origin === window.location.origin) return '';
+      const apiOrigin = normalizeApiOrigin(getApiBaseUrl()) || '';
+      if (apiOrigin && parsed.origin === apiOrigin) return 'anonymous';
+      if (parsed.hostname.endsWith('.trycloudflare.com') && parsed.pathname.startsWith('/uploads/')) return 'anonymous';
+    } catch {
+      // Ignore malformed image URLs
+    }
+    return '';
+  };
+
+  window.sbImageCrossOriginAttr = function (value) {
+    return window.sbImageCrossOrigin(value) === 'anonymous' ? 'crossorigin="anonymous"' : '';
+  };
+
+  window.sbHandleImageError = function (imgEl) {
+    if (!imgEl || imgEl.dataset.sbFallbackApplied === '1') return;
+    imgEl.dataset.sbFallbackApplied = '1';
+    imgEl.onerror = null;
+    imgEl.removeAttribute('crossorigin');
+    imgEl.src = '/icons/icon-512.png';
   };
 
   window.apiUrl = apiUrl;

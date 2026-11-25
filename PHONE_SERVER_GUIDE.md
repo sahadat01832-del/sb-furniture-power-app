@@ -1,6 +1,6 @@
 # ফোনে Backend Server চালানোর গাইড
 
-এই সেটআপে Firebase Hosting-এর `*.web.app` ঠিকানা frontend-এর স্থায়ী লিংক থাকে। ফোনে Node.js API `127.0.0.1:3000`-এ চলে। PM2 API ও tunnel watchdog চালু রাখে; watchdog Cloudflare Quick Tunnel-এর নতুন URL পরীক্ষা করে Firestore-এর `system_config/backend_tunnel` document-এ প্রকাশ করে। Frontend Firestore `onSnapshot()` দিয়ে URL বদল তাৎক্ষণিক পায়। Firebase Web App config না থাকলে helper public Firestore REST read দিয়ে প্রতি ৬০ সেকেন্ডে fallback করে।
+এই সেটআপে Firebase Hosting-এর `*.web.app` ঠিকানা frontend-এর স্থায়ী লিংক থাকে। ফোনে Node.js API `127.0.0.1:3000`-এ চলে; পণ্যের ডেটা ও `/uploads` ছবিও ফোনের সার্ভার থেকে আসে। PM2 API ও tunnel watchdog চালু রাখে; watchdog Cloudflare Quick Tunnel-এর নতুন URL পরীক্ষা করে Firestore-এর `system_config/backend_tunnel` document-এ প্রকাশ করে। ব্রাউজার আগে সংরক্ষিত URL ব্যবহার করে। নতুন ব্রাউজার প্রথমবার Firestore document একবার পড়ে; পুরোনো tunnel ব্যর্থ হলে নতুন URL পেতে আরেকবার পড়ে। নিয়মিত background polling বা realtime listener চলে না, তাই Firebase read কম থাকে।
 
 Cloudflare Quick Tunnel চালাতে Cloudflare account বা custom domain লাগে না; script email login restriction ব্যবহার করে না। URL জানা যে কেউ API-তে request পাঠাতে পারে, তাই admin/reseller কাজ server-side authentication ও rate limit দিয়ে সুরক্ষিত রাখুন।
 
