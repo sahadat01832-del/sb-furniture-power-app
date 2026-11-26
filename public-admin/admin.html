@@ -6,11 +6,13 @@
   <title>এডমিন কন্ট্রোল প্যানেল — SB Furniture &amp; SB POWER</title>
   <link rel="manifest" href="/manifest-admin.json">
   <meta name="theme-color" content="#c2410c">
+  <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
+  <link rel="dns-prefetch" href="https://firestore.googleapis.com">
   <link rel="icon" type="image/svg+xml" href="/icons/admin-icon.svg">
   <link rel="icon" type="image/png" sizes="192x192" href="/icons/admin-icon-192.png">
   <link rel="apple-touch-icon" href="/icons/admin-icon-192.png">
-  <link rel="stylesheet" href="/css/style.css?v=4.0.3">
-  <link rel="stylesheet" href="/css/admin.css?v=4.0.5">
+  <link rel="stylesheet" href="/css/style.css?v=4.0.5">
+  <link rel="stylesheet" href="/css/admin.css?v=4.0.6">
   <link rel="stylesheet" href="/css/pwa-splash.css?v=4.0.1">
   <link rel="stylesheet" href="/css/pwa-install.css?v=4.0.2">
   <link rel="stylesheet" href="/css/animations.css?v=4.0.2">
@@ -637,52 +639,20 @@
     </main>
   </div>
 
-  <!-- Add / Edit Product Modal -->
+  <!-- Add / Edit Product Modal (Streamlined 1-Tap Listing) -->
   <div class="modal-overlay" id="addProductModal" role="dialog" aria-modal="true" aria-labelledby="productFormTitle">
     <div class="modal-dialog modal-dialog-lg">
       <div class="modal-header">
-        <h3 id="productFormTitle">নতুন প্রোডাক্ট যোগ করুন</h3>
+        <h3 id="productFormTitle">➕ নতুন প্রোডাক্ট যোগ করুন</h3>
         <button type="button" class="btn-close" onclick="closeModal('addProductModal')" aria-label="বন্ধ করুন">&times;</button>
       </div>
       <div class="modal-body">
         <input type="hidden" id="editProductId" value="">
 
-        <!-- Group 1: Identity & AI Copywriting -->
-        <div class="adm-form-section">
-          <div class="adm-form-section-head">
-            <span>১. পণ্যের নাম ও পরিচিতি</span>
-            <button type="button" id="btnAiGenCopy" class="adm-btn-ai" onclick="runAiCopyFromTitleOrKeywords()">
-              ✨ AI দিয়ে বিবরণ, ক্যাপশন ও দাম সাজান
-            </button>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label" for="prodTitle">টাইটেল (বাংলা নাম সহ) *</label>
-            <input type="text" id="prodTitle" class="form-control" placeholder="যেমন: T900 Ultra 2 Smartwatch অথবা ৩ দরজার মেলামাইন আলমারি">
-            <div id="aiTextGenStatus" style="display: none; font-size: 0.78rem; color: #6d28d9; margin-top: 6px; font-weight: 600;">
-              ⏳ AI টাইটেল বিশ্লেষণ করে বাংলা বিবরণ, ক্যাপশন ও মূল্য প্রস্তুত করছে...
-            </div>
-          </div>
-
-          <div class="adm-grid-2">
-            <div class="form-group" style="margin-bottom: 0;">
-              <label class="form-label" for="prodSku">SKU কোড *</label>
-              <input type="text" id="prodSku" class="form-control" placeholder="যেমন: SBF-111">
-            </div>
-            <div class="form-group" style="margin-bottom: 0;">
-              <label class="form-label" for="prodShopId">দোকান / শপ নির্বাচন *</label>
-              <select id="prodShopId" class="form-control" onchange="onProdShopChange(this.value)">
-                <option value="1">SB Furniture (নিজস্ব)</option>
-                <option value="2">SB POWER (নিজস্ব)</option>
-              </select>
-            </div>
-          </div>
-        </div>
-
-        <!-- Group 2: Product Photo & AI Vision -->
+        <!-- Step 1: Photo Upload + Auto AI Fill -->
         <div class="adm-form-section photo-upload-group">
           <div class="adm-form-section-head">
-            <span>২. 📸 পণ্যের ছবি (Product Photo) *</span>
+            <span>১. 📸 পণ্যের ছবি দিন (সবচেয়ে সহজ উপায়) *</span>
             <span id="prodUploadStatus" class="upload-status-badge">ছবি নির্বাচন করুন</span>
           </div>
 
@@ -704,10 +674,20 @@
             </div>
           </div>
 
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 8px;">
+            <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 0.8rem; font-weight: 600; color: #5b21b6; cursor: pointer;">
+              <input type="checkbox" id="prodAutoAiOnPhoto" checked>
+              <span>✨ ছবি দিলেই AI অটো-ফিল হবে</span>
+            </label>
+            <button type="button" class="btn-text-link" onclick="toggleManualUrlInput()" style="font-size: 0.78rem; color: var(--adm-text-muted); text-decoration: underline; background: none; border: none; cursor: pointer;">
+              🔗 সরাসরি ছবির লিংক দিন
+            </button>
+          </div>
+
           <!-- 1-Click AI Image-to-Product Autolisting -->
           <div id="aiImageInspectActionBox" class="adm-ai-vision-card" style="display: none;">
-            <div style="font-size: 0.84rem; font-weight: 700; color: #5b21b6; margin-bottom: 8px;">
-              ✨ ছবি (গ্যাজেট বা ফার্নিচার) বিশ্লেষণ করে ১-ক্লিকে টাইটেল, ক্যাপশন, বিবরণ, দাম ও কাঠের হিসাব তৈরি করুন
+            <div style="font-size: 0.82rem; font-weight: 700; color: #5b21b6; margin-bottom: 6px;">
+              ✨ ছবি বিশ্লেষণ করে টাইটেল, ব্র্যান্ড, ক্যাটাগরি, বিবরণ ও দাম অটো-পূরণ করুন
             </div>
             <button type="button" id="btnAiInspectImage" class="adm-btn-ai" style="padding: 9px 18px; font-size: 0.86rem;" onclick="runAiProductImageInspection()">
               <span>⚡ AI দিয়ে সব ফিল্ড পূরণ করুন</span>
@@ -719,97 +699,71 @@
 
           <input type="hidden" id="prodImageUrl" value="">
 
-          <div style="margin-top: 8px; text-align: right;">
-            <button type="button" class="btn-text-link" onclick="toggleManualUrlInput()" style="font-size: 0.78rem; color: var(--adm-text-muted); text-decoration: underline; background: none; border: none; cursor: pointer;">
-              🔗 বা ছবির সরাসরি লিঙ্ক দিতে চাইলে এখানে ক্লিক করুন
-            </button>
-          </div>
           <div id="manualUrlWrapper" style="display: none; margin-top: 6px;">
             <input type="url" id="prodManualImageUrl" class="form-control" placeholder="https://..." oninput="handleManualUrlInput(this.value)">
           </div>
         </div>
 
-        <!-- Group 3: Brand, Category, Shop Details -->
-        <div class="adm-form-section is-shop">
+        <!-- Step 2: Essential Title, Shop & Category -->
+        <div class="adm-form-section">
           <div class="adm-form-section-head">
-            <span>৩. 🏪 ব্র্যান্ড, ক্যাটাগরি ও শপ তথ্য</span>
+            <span>২. 🏷️ নাম, ব্র্যান্ড ও ক্যাটাগরি</span>
+            <button type="button" id="btnAiGenCopy" class="adm-btn-ai" onclick="runAiCopyFromTitleOrKeywords()">
+              ✨ নাম থেকেই AI বিবরণ ও দাম
+            </button>
           </div>
-          <div class="adm-grid-2" style="margin-bottom: 10px;">
+
+          <div class="form-group">
+            <label class="form-label" for="prodTitle">পণ্যের নাম (টাইটেল) *</label>
+            <input type="text" id="prodTitle" class="form-control" placeholder="যেমন: ওয়্যারলেস নেকব্যান্ড ইয়ারফোন অথবা ৩ দরজার আলমারি">
+            <div id="aiTextGenStatus" style="display: none; font-size: 0.78rem; color: #6d28d9; margin-top: 6px; font-weight: 600;">
+              ⏳ AI টাইটেল বিশ্লেষণ করে বাংলা বিবরণ, ক্যাপশন ও মূল্য প্রস্তুত করছে...
+            </div>
+          </div>
+
+          <div class="adm-grid-2">
             <div class="form-group" style="margin-bottom: 0;">
-              <label class="form-label" for="prodBrand">ব্র্যান্ড *</label>
-              <select id="prodBrand" class="form-control">
-                <option value="SB Furniture">SB Furniture</option>
-                <option value="SB POWER">SB POWER</option>
+              <label class="form-label" for="prodShopId">দোকান / ব্র্যান্ড *</label>
+              <select id="prodShopId" class="form-control" onchange="onProdShopChange(this.value)">
+                <option value="1">SB Furniture (নিজস্ব)</option>
+                <option value="2">SB POWER (নিজস্ব)</option>
+                <option value="3">SB Lifestyle &amp; Tools (নিজস্ব)</option>
               </select>
             </div>
             <div class="form-group" style="margin-bottom: 0;">
               <label class="form-label" for="prodCategory">ক্যাটাগরি *</label>
-              <select id="prodCategory" class="form-control">
-                <option value="দোকান ডেকোরেশন">দোকান ডেকোরেশন</option>
+              <select id="prodCategory" class="form-control" onchange="onProdCategoryChange(this.value)">
                 <option value="হোম ও অফিস ফার্নিচার">হোম ও অফিস ফার্নিচার</option>
+                <option value="দোকান ডেকোরেশন">দোকান ডেকোরেশন</option>
                 <option value="ওয়্যারলেস অডিও ও গ্যাজেটস">ওয়্যারলেস অডিও ও গ্যাজেটস</option>
+                <option value="পাওয়ার ব্যাংক ও চার্জার">পাওয়ার ব্যাংক ও চার্জার</option>
+                <option value="স্পিকার ও স্মার্ট গ্যাজেট">স্পিকার ও স্মার্ট গ্যাজেট</option>
                 <option value="ওয়াচ ও ফ্যাশন">ওয়াচ ও ফ্যাশন</option>
                 <option value="পাওয়ার টুলস ও ইলেকট্রিক্যাল">পাওয়ার টুলস ও ইলেকট্রিক্যাল</option>
               </select>
             </div>
           </div>
-          <div class="adm-grid-2" style="margin-bottom: 10px;">
-            <div class="form-group" style="margin-bottom: 0;">
-              <label class="form-label" for="prodShopName">দোকানের নাম</label>
-              <input type="text" id="prodShopName" class="form-control" placeholder="যেমন: SB Furniture / পার্টনার শপ">
-            </div>
-            <div class="form-group" style="margin-bottom: 0;">
-              <label class="form-label" for="prodVendorPhone">ভেন্ডরের ফোন / WhatsApp নম্বর</label>
-              <input type="tel" id="prodVendorPhone" class="form-control" placeholder="01XXXXXXXXX">
-            </div>
-          </div>
-          <div class="adm-grid-2">
-            <div class="form-group" style="margin-bottom: 0;">
-              <label class="form-label" for="prodVendorBadge">ভেন্ডর ব্যাজ</label>
-              <input type="text" id="prodVendorBadge" class="form-control" placeholder="যেমন: নিজস্ব ব্র্যান্ড / স্থানীয় পার্টনার শপ">
-            </div>
-            <div class="form-group" style="margin-bottom: 0;">
-              <label class="form-label" for="prodVendorAddress">শপ লোকেশন / ঠিকানা</label>
-              <input type="text" id="prodVendorAddress" class="form-control" placeholder="যেমন: মিরপুর ১০, ঢাকা">
-            </div>
-          </div>
         </div>
 
-        <!-- Group 4: Pricing, Commission & Live Profit Breakdown -->
+        <!-- Step 3: Simple Pricing & Live Profit -->
         <div class="adm-form-section">
           <div class="adm-form-section-head">
-            <span>৪. 🧮 মূল্য, কমিশন ও লাইভ লাভ হিসাব</span>
+            <span>৩. 💰 দাম ও কমিশন</span>
             <span id="calcMarginBadge" class="adm-metric-badge">মার্জিন: 0%</span>
-          </div>
-
-          <div class="adm-grid-2" style="margin-bottom: 10px;">
-            <div class="form-group" style="margin-bottom: 0;">
-              <label class="form-label" for="prodCommTab">কমিশন ট্যাব *</label>
-              <select id="prodCommTab" class="form-control">
-                <option value="50tk">৫০৳ কমিশন</option>
-                <option value="100tk">১০০৳ কমিশন</option>
-                <option value="500tk">৫০০৳ কমিশন</option>
-                <option value="1000tk">১০০০৳ কমিশন</option>
-              </select>
-            </div>
-            <div class="form-group" style="margin-bottom: 0;">
-              <label class="form-label" for="prodStock">স্টক পরিমাণ</label>
-              <input type="number" id="prodStock" class="form-control" value="50">
-            </div>
           </div>
 
           <div class="adm-grid-3" style="margin-bottom: 12px;">
             <div class="form-group" style="margin-bottom: 0;">
-              <label class="form-label" for="prodWholesalePrice">পাইকারি / ক্রয়মূল্য *</label>
-              <input type="number" id="prodWholesalePrice" class="form-control" placeholder="যেমন: 400" step="0.01" min="0" oninput="updateLiveProfitCalculator()">
+              <label class="form-label" for="prodPrice">গ্রাহক বিক্রয় মূল্য (৳) *</label>
+              <input type="number" id="prodPrice" class="form-control" placeholder="যেমন: 600" step="1" min="1" oninput="onProdRetailPriceInput()">
             </div>
             <div class="form-group" style="margin-bottom: 0;">
-              <label class="form-label" for="prodPrice">গ্রাহক বিক্রয় মূল্য *</label>
-              <input type="number" id="prodPrice" class="form-control" placeholder="যেমন: 600" step="0.01" min="0" oninput="updateLiveProfitCalculator()">
+              <label class="form-label" for="prodWholesalePrice">পাইকারি / খরচ (৳) *</label>
+              <input type="number" id="prodWholesalePrice" class="form-control" placeholder="যেমন: 400" step="1" min="0" oninput="markPricingManual('wholesale'); updateLiveProfitCalculator()">
             </div>
             <div class="form-group" style="margin-bottom: 0;">
-              <label class="form-label" for="prodCommission">রিসেলার কমিশন *</label>
-              <input type="number" id="prodCommission" class="form-control" placeholder="যেমন: 100" step="0.01" min="0" oninput="updateLiveProfitCalculator()">
+              <label class="form-label" for="prodCommission">রিসেলার কমিশন (৳) *</label>
+              <input type="number" id="prodCommission" class="form-control" placeholder="যেমন: 100" step="1" min="0" oninput="markPricingManual('commission'); syncCommissionTabFromAmount(); updateLiveProfitCalculator()">
             </div>
           </div>
 
@@ -829,10 +783,10 @@
           </div>
         </div>
 
-        <!-- Group 5: Furniture AI & Cut-List Calculator -->
+        <!-- Step 4: Furniture Cutlist (Auto-shown only for Furniture) -->
         <div id="furnitureAiCutlistBox" class="adm-form-section is-furniture">
           <div class="adm-form-section-head">
-            <span>🪑 ৫. ফার্নিচার কাঠ ও ৪×৮ বোর্ড ক্যালকুলেটর (AI &amp; Manual)</span>
+            <span>🪑 ফার্নিচার কাঠ ও ৪×৮ বোর্ড ক্যালকুলেটর (AI &amp; Manual)</span>
             <span class="adm-metric-badge" style="background: #fef3c7; color: #92400e;">বোর্ড: ৪×৮ ফুট</span>
           </div>
 
@@ -894,35 +848,93 @@
           <div id="furnAiProviderBadge" style="margin-top: 5px; font-size: 0.74rem; color: #78350f; text-align: right; display: none;"></div>
         </div>
 
-        <!-- Group 6: Materials, Finish, Caption & Description -->
-        <div class="adm-form-section">
-          <div class="adm-form-section-head">
-            <span>৬. 📝 স্পেসিফিকেশন, ক্যাপশন ও বিবরণ</span>
-          </div>
-          <div class="adm-grid-2">
-            <div class="form-group">
-              <label class="form-label" for="prodMaterials">উপকরণ (মেলামাইন / সুপার এস / চিপসেট)</label>
-              <input type="text" id="prodMaterials" class="form-control" placeholder="যেমন: সুপার এস বোর্ড">
-            </div>
-            <div class="form-group">
-              <label class="form-label" for="prodFinish">ফিনিশিং ও কালার</label>
-              <input type="text" id="prodFinish" class="form-control" placeholder="যেমন: White Carrara Marble অথবা ম্যাট ব্ল্যাক">
-            </div>
-          </div>
-          <div class="form-group">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-              <label class="form-label" style="margin-bottom: 0;" for="prodCaption">সোশ্যাল মিডিয়া ক্যাপশন (Social Post Hook)</label>
-              <button type="button" class="btn-text-link" style="font-size: 0.76rem; color: var(--adm-blue); background: none; border: none; cursor: pointer; font-weight: 600;" onclick="copyFieldValue('prodCaption', 'ক্যাপশন কপি হয়েছে!')">📋 ক্যাপশন কপি করুন</button>
-            </div>
-            <textarea id="prodCaption" class="form-control" rows="3" placeholder="ফেসবুক, হোয়াটসঅ্যাপ বা টিকটক পোস্টের জন্য আকর্ষণীয় ক্যাপশন..."></textarea>
-          </div>
-          <div class="form-group" style="margin-bottom: 0;">
-            <label class="form-label" for="prodDesc">বিস্তারিত বিবরণ (Description)</label>
-            <textarea id="prodDesc" class="form-control" rows="5" placeholder="পণ্য সম্পর্কে বিস্তারিত লিখুন..."></textarea>
-          </div>
-        </div>
+        <!-- Step 5: Collapsible Advanced Details (SKU, Stock, Specs, Description, Partner Info) -->
+        <details id="prodAdvancedDetails" class="adm-form-section" style="margin-bottom: 12px;">
+          <summary style="cursor: pointer; font-weight: 700; font-size: 0.9rem; color: var(--adm-text); list-style: none; display: flex; justify-content: space-between; align-items: center;">
+            <span>⚙️ অতিরিক্ত তথ্য (SKU, স্টক, বিবরণ ও শপ সেটিংস)</span>
+            <span id="prodSkuSummaryBadge" style="font-size: 0.76rem; color: var(--adm-blue); font-weight: 700;">অটো SKU</span>
+          </summary>
 
-        <button type="button" class="btn-submit" id="btnSubmitProduct" onclick="submitProductForm()">✅ সংরক্ষণ করুন (1-Click Save)</button>
+          <div style="margin-top: 12px;">
+            <div class="adm-grid-3" style="margin-bottom: 10px;">
+              <div class="form-group" style="margin-bottom: 0;">
+                <label class="form-label" for="prodSku">SKU কোড (অটো তৈরি হয়) *</label>
+                <input type="text" id="prodSku" class="form-control" placeholder="যেমন: SBP-137" oninput="markSkuManual()">
+              </div>
+              <div class="form-group" style="margin-bottom: 0;">
+                <label class="form-label" for="prodStock">স্টক পরিমাণ</label>
+                <input type="number" id="prodStock" class="form-control" value="50">
+              </div>
+              <div class="form-group" style="margin-bottom: 0;">
+                <label class="form-label" for="prodCommTab">কমিশন ট্যাব</label>
+                <select id="prodCommTab" class="form-control">
+                  <option value="50tk">৫০৳ কমিশন</option>
+                  <option value="100tk">১০০৳ কমিশন</option>
+                  <option value="500tk">৫০০৳ কমিশন</option>
+                  <option value="1000tk">১০০০৳ কমিশন</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="adm-grid-2" style="margin-bottom: 10px;">
+              <div class="form-group" style="margin-bottom: 0;">
+                <label class="form-label" for="prodBrand">ব্র্যান্ড *</label>
+                <select id="prodBrand" class="form-control">
+                  <option value="SB Furniture">SB Furniture</option>
+                  <option value="SB POWER">SB POWER</option>
+                  <option value="SB Lifestyle & Tools">SB Lifestyle &amp; Tools</option>
+                </select>
+              </div>
+              <div class="form-group" style="margin-bottom: 0;">
+                <label class="form-label" for="prodMaterials">উপকরণ (বোর্ড / মেটেরিয়াল)</label>
+                <input type="text" id="prodMaterials" class="form-control" placeholder="যেমন: সুপার এস বোর্ড / প্রিমিয়াম এবিএস">
+              </div>
+            </div>
+
+            <div class="adm-grid-2" style="margin-bottom: 10px;">
+              <div class="form-group" style="margin-bottom: 0;">
+                <label class="form-label" for="prodFinish">ফিনিশিং ও কালার</label>
+                <input type="text" id="prodFinish" class="form-control" placeholder="যেমন: White Carrara Marble অথবা ম্যাট ব্ল্যাক">
+              </div>
+              <div class="form-group" style="margin-bottom: 0;">
+                <label class="form-label" for="prodShopName">দোকানের নাম</label>
+                <input type="text" id="prodShopName" class="form-control" placeholder="যেমন: SB POWER">
+              </div>
+            </div>
+
+            <div class="adm-grid-3" style="margin-bottom: 10px;">
+              <div class="form-group" style="margin-bottom: 0;">
+                <label class="form-label" for="prodVendorPhone">ভেন্ডর ফোন</label>
+                <input type="tel" id="prodVendorPhone" class="form-control" placeholder="01XXXXXXXXX">
+              </div>
+              <div class="form-group" style="margin-bottom: 0;">
+                <label class="form-label" for="prodVendorBadge">ভেন্ডর ব্যাজ</label>
+                <input type="text" id="prodVendorBadge" class="form-control" placeholder="নিজস্ব ব্র্যান্ড">
+              </div>
+              <div class="form-group" style="margin-bottom: 0;">
+                <label class="form-label" for="prodVendorAddress">ঠিকানা</label>
+                <input type="text" id="prodVendorAddress" class="form-control" placeholder="কালীগঞ্জ, গাজীপুর">
+              </div>
+            </div>
+
+            <div class="form-group">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                <label class="form-label" style="margin-bottom: 0;" for="prodCaption">সোশ্যাল মিডিয়া ক্যাপশন</label>
+                <button type="button" class="btn-text-link" style="font-size: 0.76rem; color: var(--adm-blue); background: none; border: none; cursor: pointer; font-weight: 600;" onclick="copyFieldValue('prodCaption', 'ক্যাপশন কপি হয়েছে!')">📋 কপি করুন</button>
+              </div>
+              <textarea id="prodCaption" class="form-control" rows="3" placeholder="ফেসবুক, হোয়াটসঅ্যাপ বা টিকটক পোস্টের ক্যাপশন..."></textarea>
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label class="form-label" for="prodDesc">বিস্তারিত বিবরণ (Description)</label>
+              <textarea id="prodDesc" class="form-control" rows="4" placeholder="পণ্য সম্পর্কে বিস্তারিত লিখুন..."></textarea>
+            </div>
+          </div>
+        </details>
+
+        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+          <button type="button" class="btn-submit" style="flex: 2; min-width: 180px;" id="btnSubmitProduct" onclick="submitProductForm(false)">✅ প্রোডাক্ট সংরক্ষণ করুন</button>
+          <button type="button" class="btn-nav" style="flex: 1; min-width: 150px; min-height: 46px; font-weight: 700;" id="btnSubmitAndNext" onclick="submitProductForm(true)">➕ সেভ করে আরেকটি যোগ</button>
+        </div>
       </div>
     </div>
   </div>
@@ -1172,11 +1184,11 @@
     </div>
   </div>
 
-  <script src="/js/app-config.js?v=4.0.0"></script>
-  <script src="/js/api.js?v=4.0.2"></script>
-  <script src="/js/admin.js?v=4.0.5"></script>
+  <script src="/js/app-config.js?v=4.0.1"></script>
+  <script src="/js/api.js?v=4.0.4"></script>
+  <script src="/js/admin.js?v=4.0.7"></script>
   <script src="/js/admin-referrals.js?v=1.0.2"></script>
-  <script src="/js/admin-users.js?v=4.0.4"></script>
+  <script src="/js/admin-users.js?v=4.0.5"></script>
   <script src="/js/pwa-install.js?v=3.2.2" defer></script>
   <script src="/js/pwa-splash.js?v=1.0.0"></script>
   <script>

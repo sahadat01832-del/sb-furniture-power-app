@@ -26,11 +26,6 @@ const seedData = async ({
   }
 
   // 2. Check if products already exist
-  if (!includeDemoProducts) {
-    console.log('Demo catalog seed skipped. Add real products from the admin panel.');
-    return;
-  }
-
   const countRow = await get('SELECT COUNT(*) as count FROM products');
   if (countRow.count > 0) {
     console.log(`Database already has ${countRow.count} products. Preserving the existing catalog.`);

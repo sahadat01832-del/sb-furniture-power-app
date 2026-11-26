@@ -95,9 +95,12 @@ function renderAdminUsersTable(users) {
 
     const statusToggleBtn = isSelf
       ? '<span class="adm-self-tag">✓ বর্তমান অ্যাডমিন</span>'
-      : (isSuspended
-          ? `<button type="button" class="action-btn-sm adm-btn-soft-success" onclick="toggleUserStatus(${Number(u.id)}, 'active')">✅ সক্রিয় করুন</button>`
-          : `<button type="button" class="action-btn-sm adm-btn-soft-danger" onclick="toggleUserStatus(${Number(u.id)}, 'suspended')">🚫 স্থগিত করুন</button>`);
+      : `
+          ${isSuspended
+            ? `<button type="button" class="action-btn-sm adm-btn-soft-success" onclick="toggleUserStatus(${Number(u.id)}, 'active')">✅ সক্রিয় করুন</button>`
+            : `<button type="button" class="action-btn-sm adm-btn-soft-danger" onclick="toggleUserStatus(${Number(u.id)}, 'suspended')">🚫 স্থগিত করুন</button>`}
+          ${currentRole !== 'admin' ? `<button type="button" class="action-btn-sm adm-btn-neutral" onclick="resetUserPasswordByAdmin(${Number(u.id)})">🔑 পাসওয়ার্ড রিসেট</button>` : ''}
+        `;
 
     return `
       <tr style="${isSuspended ? 'opacity: 0.78; background: rgba(220, 38, 38, 0.04);' : ''}">
@@ -371,6 +374,34 @@ function escapeHtml(str) {
     .replace(/'/g, '&#039;');
 }
 
+async function resetUserPasswordByAdmin(userId) {
+  const newPass = window.prompt('নতুন পাসওয়ার্ড লিখুন (কমপক্ষে ৮ অক্ষর):');
+  if (!newPass) return;
+  const bytes = new TextEncoder().encode(newPass).length;
+  if (bytes < 8 || bytes > 72) {
+    return alert('নতুন পাসওয়ার্ড ৮ থেকে ৭২ বাইটের মধ্যে হতে হবে');
+  }
+  try {
+    const res = await fetch(api(`/api/admin/users/${userId}/password`), {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`
+      },
+      body: JSON.stringify({ new_password: newPass })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(data.message || 'পাসওয়ার্ড রিসেট সম্পন্ন!');
+    } else {
+      alert(data.message || 'পাসওয়ার্ড রিসেট ব্যর্থ হয়েছে');
+    }
+  } catch (err) {
+    console.error('Reset user password error:', err);
+    alert('সার্ভার ত্রুটি ঘটেছে');
+  }
+}
+
 // Content Guide & Settings Loader
 function loadAdminContentGuide() {
   // Ensure content guide view is refreshed and brand contacts are accurate
@@ -409,6 +440,7 @@ window.submitAddUserForm = submitAddUserForm;
 window.quickChangeRole = quickChangeRole;
 window.saveSelectedUserRole = saveSelectedUserRole;
 window.toggleUserStatus = toggleUserStatus;
+window.resetUserPasswordByAdmin = resetUserPasswordByAdmin;
 window.openAdminPasswordModal = openAdminPasswordModal;
 window.closeAdminPasswordModal = closeAdminPasswordModal;
 window.submitAdminPasswordChange = submitAdminPasswordChange;

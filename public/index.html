@@ -6,13 +6,15 @@
   <title>SB Furniture &amp; SB POWER — ফার্নিচার, গ্যাজেট ও অনলাইন অর্ডার</title>
   <meta name="description" content="SB Furniture ও SB POWER-এর পণ্য দেখুন ও অর্ডার করুন। অ্যাডমিন অনুমোদিত রিসেলাররা পণ্যভিত্তিক কমিশন পাবেন।">
   <meta name="theme-color" content="#c2410c">
+  <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
+  <link rel="dns-prefetch" href="https://firestore.googleapis.com">
 
   <!-- PWA & Mobile Icons -->
   <link rel="manifest" href="/manifest.json">
   <link rel="icon" type="image/svg+xml" href="/icons/icon.svg">
   <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
   <link rel="apple-touch-icon" href="/icons/icon-192.png">
-  <link rel="stylesheet" href="/css/style.css?v=4.0.4">
+  <link rel="stylesheet" href="/css/style.css?v=4.0.5">
   <link rel="stylesheet" href="/css/pwa-splash.css?v=4.0.1">
   <link rel="stylesheet" href="/css/pwa-install.css?v=4.0.2">
   <link rel="stylesheet" href="/css/animations.css?v=4.0.2">
@@ -123,6 +125,7 @@
         <button type="button" class="quick-shop-pill active" data-brand="all" onclick="filterByBrand('all')">সব পণ্য</button>
         <button type="button" class="quick-shop-pill" data-brand="SB Furniture" onclick="filterByBrand('SB Furniture')">🪑 SB Furniture</button>
         <button type="button" class="quick-shop-pill" data-brand="SB POWER" onclick="filterByBrand('SB POWER')">⚡ SB POWER</button>
+        <button type="button" class="quick-shop-pill" data-brand="SB Lifestyle & Tools" onclick="filterByBrand('SB Lifestyle & Tools')">🕶️ SB Lifestyle &amp; Tools</button>
         <button type="button" id="btnReshuffleFeed" class="quick-shop-pill quick-reshuffle-pill" onclick="reshuffleCatalogFeed()" aria-label="পণ্য তালিকা নতুনভাবে সাজিয়ে দেখুন">🔀 নতুনভাবে দেখুন</button>
       </div>
 
@@ -485,12 +488,12 @@
   <div id="toast" class="toast-msg" role="status" aria-live="polite"></div>
 
   <!-- JavaScript Modules -->
-  <script src="/js/app-config.js?v=4.0.0"></script>
-  <script src="/js/api.js?v=4.0.1"></script>
+  <script src="/js/app-config.js?v=4.0.1"></script>
+  <script src="/js/api.js?v=4.0.4"></script>
   <script src="/js/catalog-algorithm.js?v=1.0.0"></script>
-  <script src="/js/catalog.js?v=4.0.4"></script>
+  <script src="/js/catalog.js?v=4.0.5"></script>
   <script src="/js/leaderboard.js?v=4.0.0"></script>
-  <script src="/js/app.js?v=4.0.2"></script>
+  <script src="/js/app.js?v=4.0.3"></script>
   <script src="/js/referrals.js?v=1.0.2"></script>
   <script src="/js/pwa-install.js?v=3.2.2" defer></script>
   <script src="/js/pwa-splash.js?v=1.0.0"></script>

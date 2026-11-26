@@ -758,3 +758,36 @@ test('13. Reseller Leaderboard: Real delivered sales only, no invented prizes', 
   }
 });
 
+test('14. SB Lifestyle & Tools brand is supported across admin creation and storefront filtering', async () => {
+  const adminLogin = await request('/api/auth/login', {
+    method: 'POST',
+    body: { phone: config.ADMIN.phone, password: config.ADMIN.password }
+  });
+  const adminToken = adminLogin.body.token;
+  const createRes = await request('/api/admin/products', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${adminToken}` },
+    body: {
+      title: 'টেস্ট ওয়াচ (Test Watch) — Code: SBL-TEST-01',
+      sku: 'SBL-TEST-01',
+      brand: 'SB Lifestyle & Tools',
+      category: 'ওয়াচ ও ফ্যাশন',
+      regular_price: 599,
+      reseller_commission: 100,
+      commission_tab: '100tk',
+      wholesale_price: 400,
+      image_url: '/icons/icon-512.png',
+      stock: 10,
+      is_active: 1
+    }
+  });
+  assert.equal(createRes.status, 201);
+  const createdId = createRes.body.product_id;
+
+  const filterRes = await request('/api/products?brand=' + encodeURIComponent('SB Lifestyle & Tools'));
+  assert.equal(filterRes.status, 200);
+  assert.ok(filterRes.body.products.some((p) => p.sku === 'SBL-TEST-01'));
+
+  await run('DELETE FROM products WHERE id = ?', [createdId]);
+});
+

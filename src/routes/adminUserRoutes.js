@@ -262,6 +262,46 @@ router.put('/users/:id/status', async (req, res) => {
 });
 
 // ==========================================
+// 3b. PUT /api/admin/users/:id/password
+// Reset password for customer or reseller account
+// ==========================================
+router.put('/users/:id/password', async (req, res) => {
+  try {
+    const userId = parseInt(req.params.id, 10);
+    const { new_password } = req.body || {};
+
+    if (!Number.isSafeInteger(userId) || userId < 1) {
+      return res.status(400).json({ success: false, message: 'অবৈধ ইউজার আইডি' });
+    }
+    if (typeof new_password !== 'string' || Buffer.byteLength(new_password, 'utf8') < 8 || Buffer.byteLength(new_password, 'utf8') > 72) {
+      return res.status(400).json({ success: false, message: 'নতুন পাসওয়ার্ড ৮ থেকে ৭২ বাইটের মধ্যে হতে হবে' });
+    }
+
+    const targetUser = await get('SELECT id, name, role FROM users WHERE id = ?', [userId]);
+    if (!targetUser) {
+      return res.status(404).json({ success: false, message: 'ইউজার পাওয়া যায়নি' });
+    }
+    if (targetUser.role === 'admin') {
+      return res.status(403).json({ success: false, message: 'অ্যাডমিন পাসওয়ার্ড কেবল প্রোফাইল সেটিংস থেকে পরিবর্তনযোগ্য' });
+    }
+
+    const passwordHash = await hashPassword(new_password);
+    await run(
+      'UPDATE users SET password_hash = ?, token_version = token_version + 1 WHERE id = ?',
+      [passwordHash, userId]
+    );
+
+    return res.json({
+      success: true,
+      message: `${targetUser.name}-এর পাসওয়ার্ড রিসেট করা হয়েছে!`
+    });
+  } catch (error) {
+    console.error('Admin Reset User Password Error:', error);
+    return res.status(500).json({ success: false, message: 'পাসওয়ার্ড রিসেট করতে ব্যর্থ হয়েছে' });
+  }
+});
+
+// ==========================================
 // 4. PUT /api/admin/profile/password
 // Easy password update for logged-in admin
 // ==========================================

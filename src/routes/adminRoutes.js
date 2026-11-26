@@ -41,7 +41,7 @@ const orderToClient = (order) => {
 };
 
 const PRODUCT_DEFAULT_IMAGE = 'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?auto=format&fit=crop&w=800&q=80';
-const PRODUCT_BRANDS = new Set(['SB Furniture', 'SB POWER']);
+const PRODUCT_BRANDS = new Set(['SB Furniture', 'SB POWER', 'SB Lifestyle & Tools']);
 const COMMISSION_TABS = new Set(['50tk', '100tk', '500tk', '1000tk']);
 
 function validateProductPayload(input) {
@@ -145,7 +145,7 @@ function validateProductPayload(input) {
 
   if (input.shop_type !== undefined && ['own', 'partner'].includes(input.shop_type)) {
     data.shop_type = input.shop_type;
-  } else if (data.shop_name && !['SB Furniture', 'SB POWER'].includes(data.shop_name)) {
+  } else if (data.shop_name && !['SB Furniture', 'SB POWER', 'SB Lifestyle & Tools'].includes(data.shop_name)) {
     data.shop_type = 'partner';
   } else {
     data.shop_type = 'own';
@@ -233,9 +233,35 @@ function validateAnnouncementPayload(input) {
 // Require Admin Role for all routes in this router
 router.use(verifyToken, requireRole('admin'));
 
-const UPLOADS_DIR = path.join(__dirname, '..', '..', 'public', 'uploads');
+const UPLOADS_DIR = path.resolve(__dirname, '..', '..', 'public', 'uploads');
 if (!fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
+
+async function unlinkUnreferencedUpload(imageUrl, excludeProductId = null, { tempOnly = false } = {}) {
+  const cleanUrl = typeof imageUrl === 'string' ? imageUrl.trim() : '';
+  if (!cleanUrl.startsWith('/uploads/')) return false;
+
+  const relativePath = cleanUrl.replace(/^\/+/, '');
+  const publicRoot = path.resolve(__dirname, '..', '..', 'public');
+  const resolved = path.resolve(publicRoot, relativePath);
+  if (!resolved.startsWith(UPLOADS_DIR + path.sep)) return false;
+
+  if (tempOnly && !/^prod_[0-9]+_[a-f0-9]+\.(?:jpg|jpeg|png|webp|gif)$/i.test(path.basename(resolved))) {
+    return false;
+  }
+
+  const refSql = excludeProductId
+    ? 'SELECT id FROM products WHERE image_url = ? AND id != ? LIMIT 1'
+    : 'SELECT id FROM products WHERE image_url = ? LIMIT 1';
+  const refRow = excludeProductId
+    ? await get(refSql, [cleanUrl, excludeProductId])
+    : await get(refSql, [cleanUrl]);
+  if (refRow) return false;
+
+  if (!fs.existsSync(resolved)) return false;
+  await fs.promises.unlink(resolved);
+  return true;
 }
 
 function detectImageMime(buffer) {
@@ -352,6 +378,21 @@ router.post('/upload-image', async (req, res) => {
   } catch (error) {
     console.error('Image upload failed:', error);
     return res.status(500).json({ success: false, message: 'ছবি আপলোড করতে ব্যর্থ হয়েছে' });
+  }
+});
+
+// Clean up abandoned temporary draft image uploads (strictly unreferenced prod_* files)
+router.delete('/upload-image', async (req, res) => {
+  try {
+    const rawUrl = req.body && req.body.url;
+    if (typeof rawUrl !== 'string' || !rawUrl.trim()) {
+      return res.status(400).json({ success: false, message: 'মুছে ফেলার জন্য ছবির URL দিন' });
+    }
+    const deleted = await unlinkUnreferencedUpload(rawUrl, null, { tempOnly: true });
+    return res.json({ success: true, deleted });
+  } catch (error) {
+    console.error('Cleanup temp upload failed:', error);
+    return res.status(500).json({ success: false, message: 'অস্থায়ী ছবি মুছতে ব্যর্থ হয়েছে' });
   }
 });
 
@@ -479,7 +520,7 @@ router.get('/analytics', async (req, res) => {
       SELECT COALESCE(SUM(oi.unit_wholesale_price * oi.quantity), 0) as payable
       FROM order_items oi
       JOIN orders o ON oi.order_id = o.id
-      WHERE o.status = 'delivered' AND (oi.shop_type = 'partner' OR oi.shop_name NOT IN ('SB Furniture', 'SB POWER')) AND o.partner_settled = 0
+      WHERE o.status = 'delivered' AND (oi.shop_type = 'partner' OR oi.shop_name NOT IN ('SB Furniture', 'SB POWER', 'SB Lifestyle & Tools')) AND o.partner_settled = 0
     `);
 
     // Partner Shop Settled
@@ -980,7 +1021,7 @@ router.get('/products', async (req, res) => {
 
     if (shop && shop !== 'all') {
       if (shop.toLowerCase() === 'partner') {
-        whereSql += " AND shop_name NOT IN ('SB Furniture', 'SB POWER') AND shop_name IS NOT NULL";
+        whereSql += " AND shop_name NOT IN ('SB Furniture', 'SB POWER', 'SB Lifestyle & Tools') AND shop_name IS NOT NULL";
       } else {
         whereSql += ' AND (shop_name = ? OR brand = ?)';
         params.push(shop, shop);
@@ -1029,7 +1070,7 @@ router.post('/products', async (req, res) => {
         shopId = existingShop.id;
         shopType = existingShop.shop_type;
       } else {
-        const isPartner = !['SB Furniture', 'SB POWER'].includes(shopName);
+        const isPartner = !['SB Furniture', 'SB POWER', 'SB Lifestyle & Tools'].includes(shopName);
         shopType = isPartner ? 'partner' : 'own';
         const newShop = await run(
           `INSERT INTO shops (name, shop_type, phone, address) VALUES (?, ?, ?, ?)`,
@@ -1117,7 +1158,7 @@ router.put('/products/:id', async (req, res) => {
         shopId = existingShop.id;
         shopType = existingShop.shop_type;
       } else {
-        const isPartner = !['SB Furniture', 'SB POWER'].includes(shopName);
+        const isPartner = !['SB Furniture', 'SB POWER', 'SB Lifestyle & Tools'].includes(shopName);
         shopType = isPartner ? 'partner' : 'own';
         const newShop = await run(
           `INSERT INTO shops (name, shop_type, phone, address) VALUES (?, ?, ?, ?)`,
@@ -1180,6 +1221,11 @@ router.put('/products/:id', async (req, res) => {
       ]
     );
 
+    // Clean up orphaned local upload file when replaced on product edit
+    if (product.image_url && product.image_url !== updated.image_url) {
+      await unlinkUnreferencedUpload(product.image_url, productId).catch(() => {});
+    }
+
     return res.json({
       success: true,
       message: 'প্রোডাক্ট তথ্য সফলভাবে আপডেট হয়েছে!'
@@ -1190,18 +1236,85 @@ router.put('/products/:id', async (req, res) => {
   }
 });
 
-// Product Management: Delete Product
+// Toggle product active/inactive status cleanly
+router.patch('/products/:id/status', async (req, res) => {
+  try {
+    const productId = parseInt(req.params.id, 10);
+    if (!Number.isSafeInteger(productId) || productId < 1) {
+      return res.status(400).json({ success: false, message: 'প্রোডাক্ট আইডি সঠিক নয়' });
+    }
+    const rawActive = req.body && req.body.is_active;
+    const nextActive = (rawActive === true || rawActive === 1 || rawActive === '1') ? 1 : ((rawActive === false || rawActive === 0 || rawActive === '0') ? 0 : null);
+    if (nextActive === null) {
+      return res.status(400).json({ success: false, message: 'সক্রিয়তার মান ০ অথবা ১ দিন' });
+    }
+    const result = await run('UPDATE products SET is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [nextActive, productId]);
+    if (result.changes === 0) {
+      return res.status(404).json({ success: false, message: 'প্রোডাক্ট পাওয়া যায়নি' });
+    }
+    return res.json({
+      success: true,
+      is_active: nextActive,
+      message: nextActive ? 'প্রোডাক্টটি পুনরায় সক্রিয় করা হয়েছে!' : 'প্রোডাক্ট নিষ্ক্রিয় করা হয়েছে'
+    });
+  } catch (error) {
+    console.error('Toggle Product Status Error:', error);
+    return res.status(500).json({ success: false, message: 'প্রোডাক্ট স্ট্যাটাস পরিবর্তন ব্যর্থ হয়েছে' });
+  }
+});
+
+// Product Management: Delete Product (soft-delete by default; permanent=true removes unused product + image)
 router.delete('/products/:id', async (req, res) => {
   try {
     const productId = parseInt(req.params.id, 10);
     if (!Number.isSafeInteger(productId) || productId < 1) {
       return res.status(400).json({ success: false, message: 'প্রোডাক্ট আইডি সঠিক নয়' });
     }
-    await run('UPDATE products SET is_active = 0 WHERE id = ?', [productId]);
-    return res.json({ success: true, message: 'প্রোডাক্ট নিষ্ক্রিয় করা হয়েছে' });
+    const permanent = String(req.query.permanent || '').toLowerCase() === 'true';
+
+    if (!permanent) {
+      const result = await run('UPDATE products SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [productId]);
+      if (result.changes === 0) {
+        return res.status(404).json({ success: false, message: 'প্রোডাক্ট পাওয়া যায়নি' });
+      }
+      return res.json({ success: true, softDeleted: true, message: 'প্রোডাক্ট নিষ্ক্রিয় করা হয়েছে' });
+    }
+
+    const existing = await get('SELECT id, image_url FROM products WHERE id = ?', [productId]);
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'প্রোডাক্ট পাওয়া যায়নি' });
+    }
+
+    const outcome = await withTransaction(async ({ get: txGet, run: txRun }) => {
+      const orderRef = await txGet('SELECT id FROM order_items WHERE product_id = ? LIMIT 1', [productId]);
+      if (orderRef) {
+        await txRun('UPDATE products SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [productId]);
+        return { softDeleted: true };
+      }
+      await txRun('DELETE FROM products WHERE id = ?', [productId]);
+      return { softDeleted: false };
+    });
+
+    if (outcome.softDeleted) {
+      return res.json({
+        success: true,
+        softDeleted: true,
+        message: 'এই পণ্যে পূর্বের অর্ডার থাকায় হিসাব রক্ষার্থে স্থায়ী ডিলিটের বদলে নিষ্ক্রিয় রাখা হয়েছে।'
+      });
+    }
+
+    if (existing.image_url) {
+      await unlinkUnreferencedUpload(existing.image_url, productId).catch(() => {});
+    }
+
+    return res.json({
+      success: true,
+      softDeleted: false,
+      message: 'প্রোডাক্ট, SKU ও ছবি স্থায়ীভাবে মুছে ফেলা হয়েছে!'
+    });
   } catch (error) {
     console.error('Delete Product Error:', error);
-    return res.status(500).json({ success: false, message: 'প্রোডাক্ট নিষ্ক্রিয় করতে ব্যর্থ হয়েছে' });
+    return res.status(500).json({ success: false, message: 'প্রোডাক্ট মুছে ফেলতে ব্যর্থ হয়েছে' });
   }
 });
 
@@ -1249,6 +1362,20 @@ router.post('/ai/inspect-image', async (req, res) => {
       const trimmed = raw.trim();
       if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
         imageUrl = trimmed;
+      } else if (trimmed.startsWith('/uploads/') || trimmed.startsWith('/images/')) {
+        const publicRoot = path.resolve(__dirname, '../../public');
+        const uploadsRoot = path.join(publicRoot, 'uploads');
+        const imagesRoot = path.join(publicRoot, 'images');
+        const relativePath = trimmed.replace(/^\/+/, '');
+        const resolved = path.resolve(publicRoot, relativePath);
+        const isSafeLocal = resolved.startsWith(uploadsRoot + path.sep) || resolved.startsWith(imagesRoot + path.sep);
+        if (!isSafeLocal || !fs.existsSync(resolved)) {
+          return res.status(400).json({ success: false, message: 'স্থানীয় ছবির ফাইল পাওয়া যায়নি' });
+        }
+        const buffer = fs.readFileSync(resolved);
+        const detected = detectImageMime(buffer);
+        if (detected) mimeType = detected.mime;
+        imageBase64 = buffer.toString('base64');
       } else {
         const mimeMatch = trimmed.match(/^data:([^;]+);base64,/);
         if (mimeMatch) {

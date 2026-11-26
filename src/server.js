@@ -108,8 +108,16 @@ const trackingLimiter = rateLimit({
   legacyHeaders: false,
   message: { success: false, message: 'অনেকবার ভুল অর্ডার খোঁজা হয়েছে। ১৫ মিনিট পর আবার চেষ্টা করুন।' }
 });
+const orderLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: config.NODE_ENV === 'production' ? 20 : 1000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'অনেকগুলো অর্ডার রিকোয়েস্ট পাঠানো হয়েছে। কিছুক্ষণ পর আবার চেষ্টা করুন।' }
+});
 app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/register', authLimiter);
+app.post('/api/orders', orderLimiter);
 app.use('/api/orders/track', trackingLimiter);
 app.use('/api/', limiter);
 
@@ -192,7 +200,10 @@ const uploadsDir = path.join(__dirname, '..', 'public', 'uploads');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
-app.use('/uploads', express.static(uploadsDir));
+app.use('/uploads', express.static(uploadsDir, {
+  maxAge: '7d',
+  etag: true
+}));
 
 // Direct APK Downloads & Static Distribution
 app.use('/dist-apk', express.static(path.join(__dirname, '..', 'dist-apk')));

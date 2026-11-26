@@ -63,6 +63,60 @@ function extractJsonFromModelContent(raw) {
 }
 
 /**
+ * Fast reachability check so unreachable LAN OmniRoute endpoints fail in ~1.2s
+ * instead of blocking for 30s across all fallback model retries.
+ */
+async function probeOmniRoute(endpoint, apiKey, timeoutMs = 1200) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const headers = {};
+    if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+    const res = await fetch(`${endpoint}/v1/models`, {
+      method: 'GET',
+      headers,
+      signal: controller.signal
+    });
+    return res.ok;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function runOmniRouteChain(endpoints, models, messages, deadlineAt, validateResult) {
+  for (const target of endpoints) {
+    if (!target || !target.url) continue;
+    const remainingBeforeProbe = deadlineAt - Date.now();
+    if (remainingBeforeProbe < 500) break;
+
+    const reachable = await probeOmniRoute(target.url, target.apiKey, Math.min(1200, remainingBeforeProbe));
+    if (!reachable) continue;
+
+    for (const model of models) {
+      const remainingMs = deadlineAt - Date.now();
+      if (remainingMs < 1000) break;
+      try {
+        const result = await callChatCompletion(
+          target.url,
+          target.apiKey,
+          model,
+          messages,
+          Math.min(OMNIROUTE_TIMEOUT_MS, remainingMs)
+        );
+        if (validateResult(result)) {
+          return { result, provider: `${target.label} (${model})` };
+        }
+      } catch {
+        // Try next model candidate
+      }
+    }
+  }
+  return null;
+}
+
+/**
  * Call an OmniRoute chat endpoint with timeout
  */
 async function callChatCompletion(endpoint, apiKey, model, messages, timeoutMs = OMNIROUTE_TIMEOUT_MS) {
@@ -157,42 +211,21 @@ Return strictly JSON with this structure:
     'auto'
   ].filter(Boolean);
 
-  // Tier 1: Try PC OmniRoute
-  if (pcEndpoint) {
-    for (const model of candidates) {
-      if (rawParts) break;
-      const remainingMs = deadlineAt - Date.now();
-      if (remainingMs < 1000) break;
-      try {
-        const result = await callChatCompletion(pcEndpoint, pcApiKey, model, messages, Math.min(OMNIROUTE_TIMEOUT_MS, remainingMs));
-        if (result && Array.isArray(result.parts) && result.parts.length > 0) {
-          rawParts = result.parts;
-          providerUsed = `OmniRoute (${model})`;
-          break;
-        }
-      } catch (err) {
-        // Continue to next candidate
-      }
-    }
-  }
+  const endpoints = [
+    pcEndpoint ? { url: pcEndpoint, apiKey: pcApiKey, label: 'OmniRoute' } : null,
+    phoneEndpoint && phoneEndpoint !== pcEndpoint ? { url: phoneEndpoint, apiKey: phoneApiKey, label: 'Phone OmniRoute' } : null
+  ].filter(Boolean);
 
-  // Tier 2: Try Phone OmniRoute
-  if (!rawParts && phoneEndpoint && phoneEndpoint !== pcEndpoint) {
-    for (const model of candidates) {
-      if (rawParts) break;
-      const remainingMs = deadlineAt - Date.now();
-      if (remainingMs < 1000) break;
-      try {
-        const result = await callChatCompletion(phoneEndpoint, phoneApiKey, model, messages, Math.min(OMNIROUTE_TIMEOUT_MS, remainingMs));
-        if (result && Array.isArray(result.parts) && result.parts.length > 0) {
-          rawParts = result.parts;
-          providerUsed = `Phone OmniRoute (${model})`;
-          break;
-        }
-      } catch (err) {
-        // Continue
-      }
-    }
+  const outcome = await runOmniRouteChain(
+    endpoints,
+    candidates,
+    messages,
+    deadlineAt,
+    (res) => Boolean(res && Array.isArray(res.parts) && res.parts.length > 0)
+  );
+  if (outcome) {
+    rawParts = outcome.result.parts;
+    providerUsed = outcome.provider;
   }
 
   // Tier 3: Zero-dependency Local Parametric Fallback Engine
@@ -223,6 +256,50 @@ Return strictly JSON with this structure:
   };
 }
 
+const VALID_CATEGORIES = [
+  'হোম ও অফিস ফার্নিচার',
+  'দোকান ডেকোরেশন',
+  'ওয়্যারলেস অডিও ও গ্যাজেটস',
+  'পাওয়ার ব্যাংক ও চার্জার',
+  'স্পিকার ও স্মার্ট গ্যাজেট',
+  'ওয়াচ ও ফ্যাশন',
+  'পাওয়ার টুলস ও ইলেকট্রিক্যাল'
+];
+
+function inferBrandFromCategory(category, explicitBrand, isFurniture) {
+  if (explicitBrand && ['SB Furniture', 'SB POWER', 'SB Lifestyle & Tools'].includes(explicitBrand)) {
+    return explicitBrand;
+  }
+  const cat = String(category || '');
+  if (isFurniture || cat.includes('ফার্নিচার') || cat.includes('ডেকোরেশন')) return 'SB Furniture';
+  if (cat.includes('ওয়াচ') || cat.includes('ফ্যাশন') || cat.includes('টুলস') || cat.includes('ইলেকট্রিক্যাল')) {
+    return 'SB Lifestyle & Tools';
+  }
+  return 'SB POWER';
+}
+
+function normalizeAiPricing(retailRaw, wholesaleRaw, commissionRaw, isFurniture) {
+  const retail = Math.max(100, Math.round(Number(retailRaw) || (isFurniture ? 6500 : 850)));
+  let commission = Math.round(Number(commissionRaw) || 0);
+  if (commission <= 0) {
+    if (retail < 500) commission = 50;
+    else if (retail < 2000) commission = 100;
+    else if (retail < 10000) commission = 500;
+    else commission = 1000;
+  } else if (commission >= 750 && retail >= 5000) commission = 1000;
+  else if (commission >= 300 && retail >= 1500) commission = 500;
+  else if (commission >= 75 && retail >= 400) commission = 100;
+  else commission = 50;
+
+  if (commission >= retail) commission = Math.min(50, Math.max(0, retail - 20));
+
+  let wholesale = Math.round(Number(wholesaleRaw) || Math.max(0, retail - commission - Math.round(retail * 0.15)));
+  if (wholesale + commission > retail) {
+    wholesale = Math.max(0, retail - commission - Math.round(retail * 0.12));
+  }
+  return { retail, wholesale, commission };
+}
+
 /**
  * Universal Multimodal Vision Inspection:
  * Analyzes ANY product photo (Gadgets, Electronics, Accessories, Furniture, Lifestyle).
@@ -249,17 +326,19 @@ async function inspectProductImageWithAi({ imageBase64, mimeType = 'image/jpeg',
   }
 
   const promptText = `
-You are Bangladesh's #1 eCommerce & D2C copywriting genius and retail merchandiser for 'SB Furniture & SB POWER' (https://sb-power-marketplace.web.app).
+You are Bangladesh's #1 eCommerce & D2C copywriting genius and retail merchandiser for 'SB Furniture, SB POWER & SB Lifestyle & Tools' (https://sb-power-marketplace.web.app).
 Analyze this product photo with extreme precision and write a world-class, high-converting product listing in natural, persuasive Bangladeshi Bengali (no robotic AI slop, no bland generic phrases like 'আপনার স্টাইল ও ফিটনেসের সেরা সঙ্গী').
 
-Identify what product is depicted:
-- If FURNITURE (Almirah, Wardrobe, Bed, Dressing Table, Bookshelf, Office Desk, Shop Counter, Pharmacy Rack, Sofa, etc.), set is_furniture: true.
-- If GADGET or ELECTRONICS or LIFESTYLE (Smartwatch, Earbuds, Neckband, Speaker, Power Bank, Charger, Trimmer, Lamp, Kitchenware, etc.), set is_furniture: false.
+Identify what product is depicted and assign the matching brand and category:
+- Brand 'SB Furniture' (is_furniture: true): 'হোম ও অফিস ফার্নিচার' or 'দোকান ডেকোরেশন' (Almirah, Wardrobe, Dressing Table, Desk, Stool, Shop Counter, Rack, etc.).
+- Brand 'SB POWER' (is_furniture: false): 'ওয়্যারলেস অডিও ও গ্যাজেটস' (Earbuds, Headphones, Neckbands), 'পাওয়ার ব্যাংক ও চার্জার' (Power Banks, Chargers, Cables), or 'স্পিকার ও স্মার্ট গ্যাজেট' (Speakers, Mini Fans, Phone Coolers, Flashlights, Smartwatches).
+- Brand 'SB Lifestyle & Tools' (is_furniture: false): 'ওয়াচ ও ফ্যাশন' (Analog Watches, Sunglasses, Wallets) or 'পাওয়ার টুলস ও ইলেকট্রিক্যাল' (Generators, Concrete Drills, Heavy Tools).
 
 Return strictly a single JSON object matching this schema:
 {
-  "title": "High-converting professional title. Formula: [Brand/Model] [Bengali Name] ([Key 2-3 Specs / Dimensions / Features]) — [Color / Variant / Finish in Bengali]. Example: T900 Ultra 2 Smartwatch স্মার্টওয়াচ (2.09\" HD AMOLED Display, Bluetooth Calling) — ব্ল্যাক টাইটানিয়াম ফিনিশ",
-  "category": "Exactly one of: 'হোম ও অফিস ফার্নিচার', 'ওয়্যারলেস অডিও ও গ্যাজেটস', 'দোকান ডেকোরেশন'",
+  "title": "High-converting professional title in Bangla + English + details. Example: প্রিমিয়াম ব্ল্যাক ওয়্যারলেস নেকব্যান্ড ইয়ারফোন (Wireless Neckband) — ম্যাট ব্ল্যাক",
+  "brand": "Exactly one of: 'SB Furniture', 'SB POWER', 'SB Lifestyle & Tools'",
+  "category": "Exactly one of: 'হোম ও অফিস ফার্নিচার', 'দোকান ডেকোরেশন', 'ওয়্যারলেস অডিও ও গ্যাজেটস', 'পাওয়ার ব্যাংক ও চার্জার', 'স্পিকার ও স্মার্ট গ্যাজেট', 'ওয়াচ ও ফ্যাশন', 'পাওয়ার টুলস ও ইলেকট্রিক্যাল'",
   "is_furniture": true or false,
   "materials": "পণ্যের মূল টেকসই উপাদান বাংলায় (যেমন: প্রিমিয়াম জিঙ্ক অ্যালয় মেটাল বডি ও স্কিন-ফ্রেন্ডলি সিলিকন ওশান স্ট্র্যাপ অথবা সুপার এস ওয়াটারপ্রুফ মেলামাইন বোর্ড, ২ মিমি পিভিসি এজ ব্যান্ডিং ও হাইড্রলিক কব্জা)",
   "finish": "কালার ও ফিনিশ বাংলায় (যেমন: কানাডিয়ান ওক ও স্ক্র্যাচপ্রুফ উড গ্রেইন অথবা ম্যাট ব্ল্যাক ও মেটালিক ফিনিশ)",
@@ -318,42 +397,21 @@ CRITICAL RULES:
     'auto'
   ].filter(Boolean);
 
-  // Tier 1: Try PC OmniRoute
-  if (pcEndpoint) {
-    for (const model of visionModels) {
-      if (rawData) break;
-      const remainingMs = deadlineAt - Date.now();
-      if (remainingMs < 1000) break;
-      try {
-        const result = await callChatCompletion(pcEndpoint, pcApiKey, model, messages, Math.min(OMNIROUTE_TIMEOUT_MS, remainingMs));
-        if (result && result.title) {
-          rawData = result;
-          providerUsed = `OmniRoute Vision (${model})`;
-          break;
-        }
-      } catch (err) {
-        // Try next candidate
-      }
-    }
-  }
+  const endpoints = [
+    pcEndpoint ? { url: pcEndpoint, apiKey: pcApiKey, label: 'OmniRoute Vision' } : null,
+    phoneEndpoint && phoneEndpoint !== pcEndpoint ? { url: phoneEndpoint, apiKey: phoneApiKey, label: 'Phone OmniRoute Vision' } : null
+  ].filter(Boolean);
 
-  // Tier 2: Try Phone OmniRoute
-  if (!rawData && phoneEndpoint && phoneEndpoint !== pcEndpoint) {
-    for (const model of visionModels) {
-      if (rawData) break;
-      const remainingMs = deadlineAt - Date.now();
-      if (remainingMs < 1000) break;
-      try {
-        const result = await callChatCompletion(phoneEndpoint, phoneApiKey, model, messages, Math.min(OMNIROUTE_TIMEOUT_MS, remainingMs));
-        if (result && result.title) {
-          rawData = result;
-          providerUsed = `Phone OmniRoute Vision (${model})`;
-          break;
-        }
-      } catch (err) {
-        // Try next
-      }
-    }
+  const outcome = await runOmniRouteChain(
+    endpoints,
+    visionModels,
+    messages,
+    deadlineAt,
+    (res) => Boolean(res && res.title)
+  );
+  if (outcome) {
+    rawData = outcome.result;
+    providerUsed = outcome.provider;
   }
 
   // Tier 3: Local Smart Fallback
@@ -375,7 +433,12 @@ CRITICAL RULES:
     providerUsed = 'Built-in Intelligent Template';
   }
 
-  const isFurniture = Boolean(rawData.is_furniture || (rawData.category && rawData.category.includes('ফার্নিচার')));
+  const isFurniture = Boolean(rawData.is_furniture || (rawData.category && (rawData.category.includes('ফার্নিচার') || rawData.category.includes('ডেকোরেশন'))));
+  const category = VALID_CATEGORIES.includes(rawData.category)
+    ? rawData.category
+    : (isFurniture ? 'হোম ও অফিস ফার্নিচার' : 'ওয়্যারলেস অডিও ও গ্যাজেটস');
+  const brand = inferBrandFromCategory(category, rawData.brand, isFurniture);
+  const pricing = normalizeAiPricing(rawData.suggested_retail_price, rawData.suggested_wholesale_price, rawData.suggested_commission, isFurniture);
   let cutlist = null;
 
   if (isFurniture && Array.isArray(rawData.parts) && rawData.parts.length > 0) {
@@ -385,16 +448,17 @@ CRITICAL RULES:
   return {
     success: true,
     provider_used: providerUsed,
-    title: rawData.title || (isFurniture ? 'কাস্টম মেলামাইন ফার্নিচার' : 'স্মার্ট গ্যাজেট প্রোডাক্ট'),
-    category: rawData.category || (isFurniture ? 'হোম ও অফিস ফার্নিচার' : 'ওয়্যারলেস অডিও ও গ্যাজেটস'),
+    title: rawData.title || (isFurniture ? 'কাস্টম মেলামাইন ফার্নিচার' : 'প্রিমিয়াম গ্যাজেট ও প্রোডাক্ট'),
+    brand,
+    category,
     is_furniture: isFurniture,
     materials: rawData.materials || (isFurniture ? 'সুপার এস মেলামাইন বোর্ড' : 'উচ্চমানের পলিমার'),
     finish: rawData.finish || (isFurniture ? 'ন্যাচারাল উড ও মেটালিক ফিনিশ' : 'ম্যাট ব্ল্যাক'),
     caption: rawData.caption || '',
     description: rawData.description || '',
-    suggested_retail_price: Number(rawData.suggested_retail_price) || (isFurniture ? 6500 : 950),
-    suggested_wholesale_price: Number(rawData.suggested_wholesale_price) || (isFurniture ? 4000 : 550),
-    suggested_commission: Number(rawData.suggested_commission) || (isFurniture ? 500 : 120),
+    suggested_retail_price: pricing.retail,
+    suggested_wholesale_price: pricing.wholesale,
+    suggested_commission: pricing.commission,
     estimated_dimensions: rawData.estimated_dimensions || { height: 0, width: 0, depth: 0 },
     cutlist: cutlist || { parts: [], total_boards: 0, estimated_board_cost: 0 }
   };
@@ -417,16 +481,17 @@ async function generateProductCopyFromKeywords({ keywords = '', category = '', b
   }
 
   const promptText = `
-You are Bangladesh's #1 eCommerce & D2C copywriting genius and retail merchandiser for 'SB Furniture & SB POWER' (https://sb-power-marketplace.web.app).
+You are Bangladesh's #1 eCommerce & D2C copywriting genius and retail merchandiser for 'SB Furniture, SB POWER & SB Lifestyle & Tools' (https://sb-power-marketplace.web.app).
 Based on these product details/keywords: "${keywords.trim()}" (Category Hint: "${category || 'Auto-detect'}").
 
 Generate a complete, world-class, high-converting retail listing in natural, persuasive Bangladeshi Bengali (no robotic AI slop, no bland generic phrases like 'আপনার স্টাইল ও ফিটনেসের সেরা সঙ্গী').
-Identify whether this product is FURNITURE (is_furniture: true) or GADGET/ELECTRONICS/LIFESTYLE (is_furniture: false).
+Identify the matching brand ('SB Furniture', 'SB POWER', or 'SB Lifestyle & Tools') and category.
 
 Return strictly JSON matching this schema:
 {
-  "title": "High-converting professional title. Formula: [Brand/Model] [Bengali Name] ([Key 2-3 Specs / Dimensions / Features]) — [Color / Variant / Finish in Bengali]. Example: T900 Ultra 2 Smartwatch স্মার্টওয়াচ (2.09\" HD AMOLED Display, Bluetooth Calling) — ব্ল্যাক টাইটানিয়াম ফিনিশ",
-  "category": "Exactly one of: 'হোম ও অফিস ফার্নিচার', 'ওয়্যারলেস অডিও ও গ্যাজেটস', 'দোকান ডেকোরেশন'",
+  "title": "High-converting professional title in Bangla + English. Example: প্রিমিয়াম ব্লুটুথ স্মার্টওয়াচ (HD Display & Calling) — ব্ল্যাক ফিনিশ",
+  "brand": "Exactly one of: 'SB Furniture', 'SB POWER', 'SB Lifestyle & Tools'",
+  "category": "Exactly one of: 'হোম ও অফিস ফার্নিচার', 'দোকান ডেকোরেশন', 'ওয়্যারলেস অডিও ও গ্যাজেটস', 'পাওয়ার ব্যাংক ও চার্জার', 'স্পিকার ও স্মার্ট গ্যাজেট', 'ওয়াচ ও ফ্যাশন', 'পাওয়ার টুলস ও ইলেকট্রিক্যাল'",
   "is_furniture": true or false,
   "materials": "পণ্যের মূল টেকসই উপাদান বাংলায় (যেমন: প্রিমিয়াম জিঙ্ক অ্যালয় মেটাল বডি ও সিলিকন ওশান স্ট্র্যাপ অথবা সুপার এস ওয়াটারপ্রুফ মেলামাইন বোর্ড, ২ মিমি পিভিসি এজ ব্যান্ডিং ও হাইড্রলিক কব্জা)",
   "finish": "কালার ও ফিনিশ বাংলায় (যেমন: কানাডিয়ান ওক ও ন্যাচারাল উড গ্রেইন অথবা ম্যাট ব্ল্যাক ও মেটালিক ফিনিশ)",
@@ -476,40 +541,21 @@ RULES:
     'auto'
   ].filter(Boolean);
 
-  if (pcEndpoint) {
-    for (const model of candidates) {
-      if (rawData) break;
-      const remainingMs = deadlineAt - Date.now();
-      if (remainingMs < 1000) break;
-      try {
-        const result = await callChatCompletion(pcEndpoint, pcApiKey, model, messages, Math.min(OMNIROUTE_TIMEOUT_MS, remainingMs));
-        if (result && result.title) {
-          rawData = result;
-          providerUsed = `OmniRoute (${model})`;
-          break;
-        }
-      } catch (err) {
-        // Next
-      }
-    }
-  }
+  const endpoints = [
+    pcEndpoint ? { url: pcEndpoint, apiKey: pcApiKey, label: 'OmniRoute' } : null,
+    phoneEndpoint && phoneEndpoint !== pcEndpoint ? { url: phoneEndpoint, apiKey: phoneApiKey, label: 'Phone OmniRoute' } : null
+  ].filter(Boolean);
 
-  if (!rawData && phoneEndpoint && phoneEndpoint !== pcEndpoint) {
-    for (const model of candidates) {
-      if (rawData) break;
-      const remainingMs = deadlineAt - Date.now();
-      if (remainingMs < 1000) break;
-      try {
-        const result = await callChatCompletion(phoneEndpoint, phoneApiKey, model, messages, Math.min(OMNIROUTE_TIMEOUT_MS, remainingMs));
-        if (result && result.title) {
-          rawData = result;
-          providerUsed = `Phone OmniRoute (${model})`;
-          break;
-        }
-      } catch (err) {
-        // Next
-      }
-    }
+  const outcome = await runOmniRouteChain(
+    endpoints,
+    candidates,
+    messages,
+    deadlineAt,
+    (res) => Boolean(res && res.title)
+  );
+  if (outcome) {
+    rawData = outcome.result;
+    providerUsed = outcome.provider;
   }
 
   const isFurniture = Boolean(
@@ -549,6 +595,12 @@ RULES:
   }
 
   let cutlist = null;
+  const resolvedCategory = VALID_CATEGORIES.includes(rawData.category)
+    ? rawData.category
+    : (isFurniture ? 'হোম ও অফিস ফার্নিচার' : 'ওয়্যারলেস অডিও ও গ্যাজেটস');
+  const resolvedBrand = inferBrandFromCategory(resolvedCategory, rawData.brand, isFurniture);
+  const pricing = normalizeAiPricing(rawData.suggested_retail_price, rawData.suggested_wholesale_price, rawData.suggested_commission, isFurniture);
+
   if (isFurniture && Array.isArray(rawData.parts) && rawData.parts.length > 0) {
     cutlist = calculateCutlist(rawData.parts, { boardPrice });
   }
@@ -557,15 +609,16 @@ RULES:
     success: true,
     provider_used: providerUsed,
     title: rawData.title || keywords,
-    category: rawData.category || (isFurniture ? 'হোম ও অফিস ফার্নিচার' : 'ওয়্যারলেস অডিও ও গ্যাজেটস'),
+    brand: resolvedBrand,
+    category: resolvedCategory,
     is_furniture: isFurniture,
     materials: rawData.materials || (isFurniture ? 'সুপার এস মেলামাইন বোর্ড' : 'উচ্চমানের ম্যাটেরিয়াল'),
     finish: rawData.finish || (isFurniture ? 'ন্যাচারাল উড ফিনিশ' : 'ম্যাট ফিনিশ'),
     caption: rawData.caption || '',
     description: rawData.description || '',
-    suggested_retail_price: Number(rawData.suggested_retail_price) || (isFurniture ? 6500 : 1200),
-    suggested_wholesale_price: Number(rawData.suggested_wholesale_price) || (isFurniture ? 4200 : 700),
-    suggested_commission: Number(rawData.suggested_commission) || (isFurniture ? 500 : 150),
+    suggested_retail_price: pricing.retail,
+    suggested_wholesale_price: pricing.wholesale,
+    suggested_commission: pricing.commission,
     estimated_dimensions: rawData.estimated_dimensions || { height: 0, width: 0, depth: 0 },
     cutlist: cutlist || { parts: [], total_boards: 0, estimated_board_cost: 0 }
   };

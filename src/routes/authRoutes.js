@@ -2,7 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
 const { query, get, run } = require('../db');
-const { hashPassword, comparePassword, generateToken, verifyToken } = require('../auth');
+const { hashPassword, comparePassword, generateToken, verifyToken, optionalAuth } = require('../auth');
 const config = require('../config');
 
 const normalizePhone = (value) => {
@@ -372,8 +372,15 @@ router.put('/notifications/:id/read', verifyToken, async (req, res) => {
   }
 });
 
-// Logout
-router.post('/logout', (req, res) => {
+// Logout (revokes current JWT via token_version bump and clears cookie)
+router.post('/logout', optionalAuth, async (req, res) => {
+  try {
+    if (req.user && req.user.id) {
+      await run('UPDATE users SET token_version = token_version + 1 WHERE id = ?', [req.user.id]);
+    }
+  } catch (error) {
+    console.error('Logout token revocation error:', error);
+  }
   res.clearCookie('token', {
     httpOnly: true,
     secure: config.NODE_ENV === 'production',

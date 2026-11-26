@@ -190,7 +190,7 @@ router.post('/', optionalAuth, async (req, res) => {
       totalWholesale += itemWholesale;
       totalPlatformProfit += itemPlatformProfit;
 
-      const shopType = product.shop_type || (product.shop_name && !['SB Furniture', 'SB POWER'].includes(product.shop_name) ? 'partner' : 'own');
+      const shopType = product.shop_type || (product.shop_name && !['SB Furniture', 'SB POWER', 'SB Lifestyle & Tools'].includes(product.shop_name) ? 'partner' : 'own');
 
       validatedItems.push({
         product_id: product.id,

@@ -30,6 +30,8 @@ const readyPromise = new Promise((resolve) => {
     db.run('PRAGMA busy_timeout = 5000;');
     db.run('PRAGMA journal_mode = WAL;');
     db.run('PRAGMA synchronous = NORMAL;');
+    db.run('PRAGMA temp_store = MEMORY;');
+    db.run('PRAGMA cache_size = -4000;');
     db.run('PRAGMA foreign_keys = ON;', () => resolve());
   });
 });
@@ -273,6 +275,11 @@ const initializeSchema = async () => {
      VALUES (?, 'own', ?, ?, ?)`,
     ['SB POWER', '01634664224', 'কালীগঞ্জ, গাজীপুর', 'SB POWER সেলস টিম']
   );
+  await run(
+    `INSERT OR IGNORE INTO shops (name, shop_type, phone, address, contact_person)
+     VALUES (?, 'own', ?, ?, ?)`,
+    ['SB Lifestyle & Tools', '01634664224', 'কালীগঞ্জ, গাজীপুর', 'SB POWER সেলস টিম']
+  );
 
   // Shop wholesale settlements table (Partner shop payouts)
   await run(`
@@ -406,7 +413,7 @@ const initializeSchema = async () => {
     await run("ALTER TABLE products ADD COLUMN caption TEXT");
   }
 
-  await run("UPDATE products SET shop_name = brand WHERE (shop_name IS NULL OR shop_name = 'SB Furniture') AND brand = 'SB POWER'");
+  await run("UPDATE products SET shop_name = brand WHERE (shop_name IS NULL OR shop_name = 'SB Furniture') AND brand IN ('SB POWER', 'SB Lifestyle & Tools')");
 
   // Link shops and set shop_type
   await run(`
@@ -421,9 +428,15 @@ const initializeSchema = async () => {
         shop_type = 'own'
     WHERE shop_name = 'SB POWER' AND shop_id IS NULL
   `);
+  await run(`
+    UPDATE products
+    SET shop_id = (SELECT id FROM shops WHERE name = 'SB Lifestyle & Tools'),
+        shop_type = 'own'
+    WHERE shop_name = 'SB Lifestyle & Tools' AND shop_id IS NULL
+  `);
 
   // Ensure any partner shop exists in shops table and link
-  const partnerProds = await query("SELECT DISTINCT shop_name, vendor_phone, vendor_address FROM products WHERE shop_name NOT IN ('SB Furniture', 'SB POWER') AND shop_name IS NOT NULL");
+  const partnerProds = await query("SELECT DISTINCT shop_name, vendor_phone, vendor_address FROM products WHERE shop_name NOT IN ('SB Furniture', 'SB POWER', 'SB Lifestyle & Tools') AND shop_name IS NOT NULL");
   for (const p of partnerProds) {
     await run(
       `INSERT OR IGNORE INTO shops (name, shop_type, phone, address) VALUES (?, 'partner', ?, ?)`,
@@ -605,6 +618,7 @@ const initializeSchema = async () => {
   await run(`CREATE INDEX IF NOT EXISTS idx_products_shop_type ON products(shop_type);`);
   await run(`CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);`);
   await run(`CREATE INDEX IF NOT EXISTS idx_products_price ON products(regular_price);`);
+  await run(`CREATE INDEX IF NOT EXISTS idx_products_active_brand_cat ON products(is_active, brand, category);`);
   await run(`CREATE INDEX IF NOT EXISTS idx_orders_reseller ON orders(reseller_id);`);
   await run(`CREATE INDEX IF NOT EXISTS idx_orders_customer_user ON orders(customer_user_id);`);
   await run(`CREATE INDEX IF NOT EXISTS idx_orders_referrer_user ON orders(referrer_user_id);`);

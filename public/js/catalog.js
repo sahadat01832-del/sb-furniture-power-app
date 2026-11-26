@@ -191,8 +191,9 @@ function renderProductGrid(products) {
 
   grid.innerHTML = products.map((item) => {
     const isFurniture = item.brand === 'SB Furniture';
+    const isLifestyle = item.brand === 'SB Lifestyle & Tools';
     const resellerAccess = hasResellerAccess();
-    const brandBadgeClass = isFurniture ? 'brand-furniture' : 'brand-power';
+    const brandBadgeClass = isFurniture ? 'brand-furniture' : (isLifestyle ? 'brand-lifestyle' : 'brand-power');
     const rawSafeImageUrl = safeCatalogImageUrl(item.image_url);
     const imageUrl = escapeCatalogHtml(rawSafeImageUrl);
     const imgCors = imageCorsAttrCatalog(rawSafeImageUrl);
@@ -470,10 +471,13 @@ function stripMarkdownForPlainShare(rawText) {
 // 1-Click Social Sharing Copy Generator
 function generateShareText(item) {
   const isFurniture = item.brand === 'SB Furniture';
+  const isLifestyle = item.brand === 'SB Lifestyle & Tools';
   const phone = String(isFurniture ? '01929621855' : '01634664224').replace(/\D/g, '');
   const trustLine = isFurniture
     ? 'SB Furniture-এর ফার্নিচার ও দোকান সাজানোর পণ্য।'
-    : 'SB POWER-এর গ্যাজেট; পণ্যের ব্র্যান্ড ও বিবরণ দেখে অর্ডার করুন।';
+    : isLifestyle
+      ? 'SB Lifestyle & Tools-এর পণ্য; কন্ডিশন ও বিবরণ দেখে অর্ডার করুন।'
+      : 'SB POWER-এর গ্যাজেট; পণ্যের ব্র্যান্ড ও বিবরণ দেখে অর্ডার করুন।';
 
   const activeUser = (typeof currentUser !== 'undefined' && currentUser) ? currentUser : JSON.parse(localStorage.getItem('sb_user') || 'null');
   const refCode = activeUser && ['reseller', 'admin'].includes(activeUser.role) ? activeUser.referral_code : '';

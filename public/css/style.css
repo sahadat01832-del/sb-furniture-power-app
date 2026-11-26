@@ -858,6 +858,10 @@ header {
   background: var(--brand-power);
   color: #ffffff;
 }
+.brand-lifestyle {
+  background: #0f766e;
+  color: #ffffff;
+}
 
 .product-body {
   display: flex;

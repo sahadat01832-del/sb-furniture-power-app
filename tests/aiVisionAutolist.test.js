@@ -173,3 +173,21 @@ test('AI Vision 3: PATCH /api/admin/products/:id/quick-update updates stock and 
   assert.equal(dbProd.stock, 45);
   assert.equal(dbProd.regular_price, 550000); // Paisa conversion checked
 });
+
+test('AI Vision 4: POST /api/admin/ai/inspect-image resolves local /uploads/products path safely', async () => {
+  const res = await request('/api/admin/ai/inspect-image', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${adminToken}` },
+    body: {
+      image_url: '/uploads/products/SBP-101.jpg',
+      board_price: 1800
+    }
+  });
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.success, true);
+  assert.ok(res.body.analysis);
+  assert.ok(res.body.analysis.title);
+  assert.ok(res.body.analysis.category);
+  assert.ok(['SB Furniture', 'SB POWER', 'SB Lifestyle & Tools'].includes(res.body.analysis.brand));
+});

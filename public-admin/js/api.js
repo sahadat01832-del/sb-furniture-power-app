@@ -102,10 +102,29 @@
     }
   }
 
+  function warmOriginConnection(originUrl) {
+    try {
+      if (!originUrl || !window.document || !window.document.head) return;
+      const normalized = normalizeApiOrigin(originUrl);
+      if (!normalized || normalized === window.location.origin) return;
+      const id = 'sb-preconnect-api';
+      let link = window.document.getElementById(id);
+      if (!link) {
+        link = window.document.createElement('link');
+        link.id = id;
+        link.rel = 'preconnect';
+        link.crossOrigin = 'anonymous';
+        window.document.head.appendChild(link);
+      }
+      if (link.href !== normalized && link.href !== `${normalized}/`) link.href = normalized;
+    } catch {}
+  }
+
   function saveActiveApiUrl(apiUrl) {
     const normalized = normalizeApiOrigin(apiUrl);
     if (!normalized) return false;
     activeApiUrl = normalized;
+    warmOriginConnection(normalized);
     try {
       if (firebaseProjectId) localStorage.setItem(`${API_CACHE_PREFIX}${firebaseProjectId}`, activeApiUrl);
     } catch {
@@ -167,6 +186,7 @@
   }
 
   if (activeApiUrl) {
+    warmOriginConnection(activeApiUrl);
     resolveFirstConnection();
   } else if (firebaseProjectId) {
     readFirestoreRestDocument().finally(resolveFirstConnection);

@@ -74,7 +74,7 @@ router.get('/', preventProductCaching, optionalAuth, async (req, res) => {
     if (tab && tab !== 'all' && !['50tk', '100tk', '500tk', '1000tk'].includes(tab)) {
       return res.status(400).json({ success: false, message: 'কমিশন ফিল্টার সঠিক নয়' });
     }
-    if (brand && brand !== 'all' && !['SB Furniture', 'SB POWER'].includes(brand)) {
+    if (brand && brand !== 'all' && !['SB Furniture', 'SB POWER', 'SB Lifestyle & Tools'].includes(brand)) {
       return res.status(400).json({ success: false, message: 'ব্র্যান্ড ফিল্টার সঠিক নয়' });
     }
     if (shop && shop !== 'all') {
@@ -240,10 +240,13 @@ router.get('/:idOrSku', preventProductCaching, optionalAuth, async (req, res) =>
 
     // Generate brand-specific copy preview
     const isFurniture = product.brand === 'SB Furniture';
+    const isLifestyle = product.brand === 'SB Lifestyle & Tools';
     const contactPhone = isFurniture ? config.SB_FURNITURE.phone : config.SB_POWER.phone;
     const trustLine = isFurniture
       ? config.SB_FURNITURE.trust_line
-      : 'SB POWER-এর গ্যাজেট; পণ্যের ব্র্যান্ড ও বিবরণ দেখে অর্ডার করুন।';
+      : isLifestyle
+        ? 'SB Lifestyle & Tools-এর পণ্য; কন্ডিশন ও বিবরণ দেখে অর্ডার করুন।'
+        : 'SB POWER-এর গ্যাজেট; পণ্যের ব্র্যান্ড ও বিবরণ দেখে অর্ডার করুন।';
 
     if (req.query.ref !== undefined && (typeof req.query.ref !== 'string' || req.query.ref.length > 40 || !/^[a-z0-9_-]*$/i.test(req.query.ref))) {
       return res.status(400).json({ success: false, message: 'রেফারেল কোড সঠিক নয়' });
