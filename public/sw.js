@@ -1,4 +1,4 @@
-const CACHE_NAME = 'sb-furniture-v33';
+const CACHE_NAME = 'sb-furniture-v37';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
@@ -18,6 +18,7 @@ const ASSETS_TO_CACHE = [
   '/js/pwa-splash.js',
   '/js/referrals.js',
   '/js/admin-referrals.js',
+  '/js/admin-users.js',
   '/js/admin.js',
   '/manifest.json',
   '/manifest-admin.json',
