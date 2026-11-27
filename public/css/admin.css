@@ -174,6 +174,26 @@
 #adminProductsSection .product-copy-action { background: #25d366; color: #fff; font-weight: 700; border: 0; }
 #adminProductsSection .product-stock-action { background: #0284c7; color: #fff; font-size: 0.72rem; border: 0; }
 
+#adminCutlistsSection > .table-responsive {
+  border-radius: 10px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  overscroll-behavior-y: auto;
+  touch-action: pan-x pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+#adminCutlistsSection > .table-responsive table { min-width: 0; }
+#adminCutlistsSection > .table-responsive th,
+#adminCutlistsSection > .table-responsive td { padding: 8px 7px; }
+#adminCutlistsSection > .table-responsive td:nth-child(2),
+#adminCutlistsSection > .table-responsive td:nth-child(4),
+#adminCutlistsSection > .table-responsive td:nth-child(5),
+#adminCutlistsSection > .table-responsive td:nth-child(6),
+#adminCutlistsSection > .table-responsive td:nth-child(7),
+#adminCutlistsSection > .table-responsive td:nth-child(8) .action-btn-sm,
+#adminCutlistsSection > .table-responsive .status-badge { white-space: nowrap; }
+
 @media (max-width: 1100px) {
   #adminProductsSection .product-management-tools { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   #adminProductsSection .product-management-tools .product-search-field { grid-column: 1 / -1; }
@@ -670,6 +690,11 @@
     border: 1px solid var(--adm-border);
     border-radius: var(--adm-radius-md);
     overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    overscroll-behavior-y: auto;
+    touch-action: pan-x pan-y;
+    -webkit-overflow-scrolling: touch;
     margin-top: 10px;
   }
   .table-responsive table {
@@ -1299,6 +1324,8 @@
       background: transparent;
       border: 0;
       overflow: visible;
+      overscroll-behavior: auto;
+      touch-action: pan-y;
     }
     #adminOrdersSection table, #adminPayoutsSection table, #adminShopsSection table, #adminProductsSection table, #adminCutlistsSection > .table-responsive table, #adminAnnouncementsSection table, #adminUsersSection table, #adminAnalyticsSection table,
     #adminOrdersSection tbody, #adminPayoutsSection tbody, #adminShopsSection tbody, #adminProductsSection tbody, #adminCutlistsSection > .table-responsive tbody, #adminAnnouncementsSection tbody, #adminUsersSection tbody, #adminAnalyticsSection tbody {

@@ -251,6 +251,11 @@ test('Frontend 5: Storefront SEO files, Open Graph metadata, JSON-LD schema, and
 test('Frontend 6: Admin modals, light-mode isolation, native prompt replacement, and public-admin parity', () => {
   const rootDir = path.join(__dirname, '..');
   const adminCss = fs.readFileSync(path.join(rootDir, 'public', 'css', 'admin.css'), 'utf8');
+  const styleCss = fs.readFileSync(path.join(rootDir, 'public', 'css', 'style.css'), 'utf8');
+  const tableRespMatch = styleCss.match(/\.table-responsive\s*\{([^}]*)\}/);
+  assert.ok(tableRespMatch, 'Expected .table-responsive rule in public/css/style.css');
+  assert.ok(tableRespMatch[1].includes('overscroll-behavior-y: auto'), 'Expected vertical overscroll chaining enabled on .table-responsive');
+  assert.ok(!tableRespMatch[1].includes('overscroll-behavior: contain'), 'Do not trap vertical scroll in .table-responsive');
   for (const selector of [
     '.modal-overlay',
     '.modal-overlay.active',
@@ -259,6 +264,8 @@ test('Frontend 6: Admin modals, light-mode isolation, native prompt replacement,
     '#toast.toast-msg.show',
     '.product-toolbar',
     '.status-badge',
+    'overscroll-behavior-y: auto',
+    'touch-action: pan-x pan-y',
     'html:has(body.admin-mode)'
   ]) {
     assert.ok(adminCss.includes(selector), `Expected ${selector} in public/css/admin.css`);

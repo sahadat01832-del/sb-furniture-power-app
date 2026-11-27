@@ -1,4 +1,4 @@
-const CACHE_NAME = 'sb-furniture-v45';
+const CACHE_NAME = 'sb-furniture-v46';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',

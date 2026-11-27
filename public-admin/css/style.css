@@ -2727,8 +2727,11 @@ header {
 /* ================= Tables ================= */
 .table-responsive {
   overflow-x: auto;
-  scrollbar-gutter: stable;
-  overscroll-behavior: contain;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  overscroll-behavior-y: auto;
+  touch-action: pan-x pan-y;
+  -webkit-overflow-scrolling: touch;
   border-radius: var(--radius-md);
   border: 1px solid var(--border-subtle);
   background: var(--surface-card);
