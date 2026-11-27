@@ -71,7 +71,7 @@ router.get('/', preventProductCaching, optionalAuth, async (req, res) => {
     if (search && search.trim().length > 100) {
       return res.status(400).json({ success: false, message: 'সার্চের লেখা ১০০ অক্ষরের মধ্যে দিন' });
     }
-    if (tab && tab !== 'all' && !['50tk', '100tk', '500tk', '1000tk'].includes(tab)) {
+    if (tab && tab !== 'all' && !['50tk', '100tk', '200tk', '500tk', '1000tk', '1500tk'].includes(tab)) {
       return res.status(400).json({ success: false, message: 'কমিশন ফিল্টার সঠিক নয়' });
     }
     if (brand && brand !== 'all' && !['SB Furniture', 'SB POWER', 'SB Lifestyle & Tools'].includes(brand)) {

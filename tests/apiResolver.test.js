@@ -232,3 +232,74 @@ test('sbSafeImageUrl resolves /uploads/ via active API origin and rejects unsafe
   );
   assert.equal(window.sbImageCrossOrigin('/icons/icon-512.png'), '');
 });
+
+test('concurrent read requests both switch when a stale cached tunnel fails', async () => {
+  const { window } = loadResolver({
+    cachedApiUrl: 'https://old-phone.example',
+    firestoreDocument: { fields: {
+      apiUrl: { stringValue: 'https://new-phone.example' },
+      status: { stringValue: 'online' }
+    } },
+    apiResponder: async (url) => {
+      if (url.startsWith('https://old-phone.example')) throw new TypeError('Failed to fetch');
+      return { ok: true, status: 200 };
+    }
+  });
+  await window.SB_API.connectionReady;
+
+  const [productsRes, configRes] = await Promise.all([
+    window.fetch(window.apiUrl('/api/products')),
+    window.fetch(window.apiUrl('/api/config'))
+  ]);
+  assert.equal(productsRes.status, 200);
+  assert.equal(configRes.status, 200);
+  assert.equal(window.SB_API.getBaseUrl(), 'https://new-phone.example');
+});
+
+test('dead Firestore tunnel falls back to configured APP_CONFIG.apiUrl and updates active origin', async () => {
+  const { window, storage } = loadResolver({
+    configuredApiUrl: 'https://live-fallback.example',
+    firestoreDocument: { fields: {
+      apiUrl: { stringValue: 'https://dead-firestore.example' },
+      status: { stringValue: 'online' }
+    } },
+    apiResponder: async (url) => {
+      if (url.startsWith('https://dead-firestore.example')) throw new TypeError('Failed to fetch');
+      return { ok: true, status: 200 };
+    }
+  });
+  await window.SB_API.connectionReady;
+
+  const response = await window.fetch(window.apiUrl('/api/products'));
+  assert.equal(response.status, 200);
+  assert.equal(response.url, 'https://live-fallback.example/api/products');
+  assert.equal(window.SB_API.getBaseUrl(), 'https://live-fallback.example');
+  assert.equal(storage.get('sb_active_phone_api_url:sb-power-demo'), 'https://live-fallback.example');
+});
+
+test('stale service worker cache fallback refreshes Firestore and retries live tunnel when online', async () => {
+  const { window, calls, getFirestoreReads } = loadResolver({
+    cachedApiUrl: 'https://old-phone.example',
+    firestoreDocument: { fields: {
+      apiUrl: { stringValue: 'https://new-phone.example' },
+      status: { stringValue: 'online' }
+    } },
+    apiResponder: async (url) => {
+      if (url.startsWith('https://old-phone.example')) {
+        return {
+          ok: true,
+          status: 200,
+          headers: new Headers({ 'X-SB-SW-Cache': '1' })
+        };
+      }
+      return { ok: true, status: 200 };
+    }
+  });
+  await window.SB_API.connectionReady;
+
+  const response = await window.fetch(window.apiUrl('/api/products'));
+  assert.equal(response.status, 200);
+  assert.equal(response.url, 'https://new-phone.example/api/products');
+  assert.equal(getFirestoreReads(), 1);
+  assert.equal(calls.some((call) => call.url === 'https://new-phone.example/api/products'), true);
+});

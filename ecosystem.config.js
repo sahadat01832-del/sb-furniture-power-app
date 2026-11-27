@@ -12,6 +12,7 @@ function processConfig(name, script, logName) {
     script,
     cwd: root,
     instances: 1,
+    exec_mode: 'fork',
     autorestart: true,
     watch: false,
     exp_backoff_restart_delay: 1000,

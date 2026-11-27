@@ -29,9 +29,7 @@ window.addEventListener('beforeinstallprompt', (e) => {
       const banner = document.getElementById('pwaInstallBanner');
       if (banner) {
         banner.style.display = 'flex';
-        // Force reflow for CSS transition
-        void banner.offsetWidth;
-        banner.classList.add('show');
+        requestAnimationFrame(() => banner.classList.add('show'));
       }
     }, 1500);
   }

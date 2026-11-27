@@ -124,7 +124,7 @@
       const term = input ? input.value.trim() : '';
       if (!results) return;
       if (term.length < 2) {
-        results.innerHTML = '';
+        results.replaceChildren();
         return;
       }
       results.innerHTML = '<div class="referral-state">সদস্য খোঁজা হচ্ছে…</div>';

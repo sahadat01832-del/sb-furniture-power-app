@@ -46,12 +46,30 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 
-function showToast(message) {
+let adminToastTimer = null;
+
+function showToast(message, type = 'info') {
   const toast = document.getElementById('toast');
   if (!toast) return;
   toast.textContent = message;
+  toast.classList.toggle('is-error', type === 'error');
   toast.classList.add('show');
-  setTimeout(() => toast.classList.remove('show'), 3000);
+  if (adminToastTimer) clearTimeout(adminToastTimer);
+  adminToastTimer = setTimeout(() => {
+    toast.classList.remove('show', 'is-error');
+  }, 3400);
+}
+
+function toggleAdminPassVisibility() {
+  const input = document.getElementById('adminPassInput');
+  const btn = document.getElementById('btnToggleAdminPass');
+  if (!input) return;
+  const nextType = input.type === 'password' ? 'text' : 'password';
+  input.type = nextType;
+  if (btn) {
+    btn.textContent = nextType === 'text' ? 'লুকান' : 'দেখুন';
+    btn.setAttribute('aria-label', nextType === 'text' ? 'পাসওয়ার্ড লুকান' : 'পাসওয়ার্ড দেখুন');
+  }
 }
 
 function showLoginView() {
@@ -74,11 +92,18 @@ async function submitAdminLogin() {
   const phone = document.getElementById('adminPhoneInput').value.trim();
   const password = document.getElementById('adminPassInput').value;
   const error = document.getElementById('adminLoginError');
+  const submitBtn = document.getElementById('btnAdminLoginSubmit');
   if (error) { error.textContent = ''; error.hidden = true; }
 
   if (!phone || !password) {
     if (error) { error.textContent = 'ফোন নম্বর ও পাসওয়ার্ড—দুটিই লিখুন।'; error.hidden = false; }
     return;
+  }
+
+  const prevLabel = submitBtn ? submitBtn.textContent : '';
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.textContent = '⏳ যাচাই হচ্ছে...';
   }
 
   try {
@@ -104,6 +129,11 @@ async function submitAdminLogin() {
   } catch (err) {
     console.error(err);
     if (error) { error.textContent = 'সার্ভারে সংযোগ হচ্ছে না। ইন্টারনেট দেখে আবার চেষ্টা করুন।'; error.hidden = false; }
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = prevLabel || 'নিরাপদে লগইন করুন';
+    }
   }
 }
 
@@ -540,7 +570,10 @@ async function loadAdminProfitDashboard() {
       headers: { Authorization: `Bearer ${adminToken}` }
     });
     const data = await res.json();
-    if (!data.success || !data.analytics || !data.analytics.profit_dashboard) return;
+    if (!res.ok || !data.success || !data.analytics || !data.analytics.profit_dashboard) {
+      showToast(data.message || 'লাভ ও হিসাব লোড করা যায়নি', 'error');
+      return;
+    }
     const p = data.analytics.profit_dashboard;
 
     // Today
@@ -603,6 +636,7 @@ async function loadAdminProfitDashboard() {
     if (elCPayoutApp) elCPayoutApp.textContent = `${comm.approved_payouts || 0} ৳`;
   } catch (err) {
     console.error('Profit Dashboard Error:', err);
+    showToast('লাভ ও হিসাব লোড ব্যর্থ হয়েছে', 'error');
   }
 }
 
@@ -654,9 +688,9 @@ async function loadAdminShops() {
           <td data-label="করণীয়">
             <div style="display: flex; gap: 4px; flex-wrap: wrap;">
               ${!isOwn ? `
-                <button class="action-btn-sm btn-deliver" onclick="openSettleShopModal(${s.id}, '${escapeAdminHtml(s.name).replace(/'/g, "\\'")}', ${s.pending_payable || 0})">💸 পাওনা পরিশোধ</button>
+                <button class="action-btn-sm btn-deliver" onclick="openSettleShopModal(${Number(s.id)})">💸 পাওনা পরিশোধ</button>
               ` : ''}
-              <button class="action-btn-sm btn-ship" onclick="viewShopSettlements(${s.id}, '${escapeAdminHtml(s.name).replace(/'/g, "\\'")}')">📜 হিস্ট্রি</button>
+              <button class="action-btn-sm btn-ship" onclick="viewShopSettlements(${Number(s.id)})">📜 হিস্ট্রি</button>
             </div>
           </td>
         </tr>
@@ -714,10 +748,13 @@ async function submitAddShopForm() {
 }
 
 function openSettleShopModal(shopId, shopName, pendingPayable) {
+  const shop = adminShopsList.find((item) => Number(item.id) === Number(shopId));
+  const resolvedName = shopName !== undefined ? shopName : (shop ? shop.name : '-');
+  const resolvedPending = pendingPayable !== undefined ? pendingPayable : (shop ? (shop.pending_payable || 0) : 0);
   document.getElementById('settleShopId').value = shopId;
-  document.getElementById('settleShopName').textContent = shopName;
-  document.getElementById('settlePendingAmount').textContent = `${pendingPayable} ৳`;
-  document.getElementById('settleAmountInput').value = pendingPayable > 0 ? pendingPayable : '';
+  document.getElementById('settleShopName').textContent = resolvedName;
+  document.getElementById('settlePendingAmount').textContent = `${resolvedPending} ৳`;
+  document.getElementById('settleAmountInput').value = resolvedPending > 0 ? resolvedPending : '';
   document.getElementById('settleTrxIdInput').value = '';
   document.getElementById('settleNotesInput').value = '';
   openModal('settleShopModal');
@@ -755,7 +792,9 @@ async function submitShopSettlement() {
 }
 
 async function viewShopSettlements(shopId, shopName) {
-  document.getElementById('historyModalTitle').textContent = `📜 ${shopName} — পেমেন্ট হিস্ট্রি`;
+  const shop = adminShopsList.find((item) => Number(item.id) === Number(shopId));
+  const resolvedName = shopName !== undefined ? shopName : (shop ? shop.name : 'শপ');
+  document.getElementById('historyModalTitle').textContent = `📜 ${resolvedName} — পেমেন্ট হিস্ট্রি`;
   const body = document.getElementById('shopSettlementsBody');
   body.innerHTML = '<div style="text-align: center; padding: 20px;"><span class="spinner"></span> হিস্ট্রি লোড হচ্ছে...</div>';
   openModal('shopSettlementsModal');
@@ -851,59 +890,106 @@ async function loadAdminPayouts() {
 
 async function approvePayoutPrompt(payoutId) {
   const payout = window._adminPayoutsById && window._adminPayoutsById[payoutId];
-  if (!payout) return showToast('ক্যাশআউট তথ্য পাওয়া যায়নি। তালিকাটি আবার লোড করুন।');
+  if (!payout) return showToast('ক্যাশআউট তথ্য পাওয়া যায়নি। তালিকাটি আবার লোড করুন।', 'error');
   const { amount, payment_method: method, account_number: account } = payout;
-  const trxId = prompt(`${method.toUpperCase()} নম্বর ${account}-এ ${amount} ৳ পাঠানোর পর ট্রানজেকশন আইডি (TrxID) দিন:`);
-  if (!trxId) return;
 
-  try {
-    const res = await fetch(api(`/api/admin/payouts/${payoutId}`), {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${adminToken}`
-      },
-      body: JSON.stringify({ status: 'approved', admin_trx_id: trxId.trim() })
-    });
-    const data = await res.json();
-    if (data.success) {
-      showToast('✅ ক্যাশআউট অনুমোদন সম্পন্ন হয়েছে!');
-      loadAdminPayouts();
-      loadAdminStats();
-    } else {
-      alert(data.message);
+  openAdminPromptModal({
+    title: '✅ ক্যাশআউট অনুমোদন (TrxID)',
+    description: `${String(method || '').toUpperCase()} নম্বর ${account}-এ ${amount} ৳ পাঠানোর পর ট্রানজেকশন আইডি (TrxID) লিখুন:`,
+    submitText: '✅ অনুমোদন নিশ্চিত করুন',
+    fields: [
+      {
+        name: 'admin_trx_id',
+        label: 'ট্রানজেকশন আইডি (TrxID) *',
+        type: 'text',
+        placeholder: 'যেমন: BGD7H8K9M2',
+        required: true
+      }
+    ],
+    onSubmit: async (values, showError) => {
+      const trxId = String(values.admin_trx_id || '').trim();
+      if (!trxId) {
+        showError('অনুগ্রহ করে সঠিক ট্রানজেকশন আইডি (TrxID) লিখুন');
+        return false;
+      }
+      try {
+        const res = await fetch(api(`/api/admin/payouts/${payoutId}`), {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${adminToken}`
+          },
+          body: JSON.stringify({ status: 'approved', admin_trx_id: trxId })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast('✅ ক্যাশআউট অনুমোদন সম্পন্ন হয়েছে!');
+          loadAdminPayouts();
+          loadAdminStats();
+          return true;
+        }
+        showError(data.message || 'ক্যাশআউট আপডেট ব্যর্থ হয়েছে');
+        return false;
+      } catch (err) {
+        console.error(err);
+        showError('সার্ভারের সাথে সংযোগ ব্যর্থ হয়েছে');
+        return false;
+      }
     }
-  } catch (err) {
-    console.error(err);
-    alert('ক্যাশআউট আপডেট ব্যর্থ হয়েছে');
-  }
+  });
 }
 
 async function rejectPayoutPrompt(payoutId) {
-  const notes = prompt('ক্যাশআউট বাতিল করার কারণ লিখুন:');
-  if (notes === null) return;
+  const payout = window._adminPayoutsById && window._adminPayoutsById[payoutId];
+  const desc = payout
+    ? `${String(payout.payment_method || '').toUpperCase()} (${payout.account_number}) · ${payout.amount} ৳ রিকোয়েস্ট বাতিল করার কারণ লিখুন:`
+    : 'ক্যাশআউট বাতিল করার কারণ লিখুন:';
 
-  try {
-    const res = await fetch(api(`/api/admin/payouts/${payoutId}`), {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${adminToken}`
-      },
-      body: JSON.stringify({ status: 'rejected', notes })
-    });
-    const data = await res.json();
-    if (data.success) {
-      showToast('ক্যাশআউট বাতিল করা হয়েছে');
-      loadAdminPayouts();
-      loadAdminStats();
-    } else {
-      alert(data.message);
+  openAdminPromptModal({
+    title: '❌ ক্যাশআউট বাতিল করুন',
+    description: desc,
+    submitText: '❌ বাতিল নিশ্চিত করুন',
+    fields: [
+      {
+        name: 'notes',
+        label: 'বাতিল করার কারণ *',
+        type: 'textarea',
+        placeholder: 'যেমন: নম্বরটি ভুল ছিল বা অ্যাকাউন্ট ভেরিফাইড নয়',
+        rows: 3,
+        required: true
+      }
+    ],
+    onSubmit: async (values, showError) => {
+      const notes = String(values.notes || '').trim();
+      if (!notes) {
+        showError('ক্যাশআউট বাতিলের কারণ লিখুন');
+        return false;
+      }
+      try {
+        const res = await fetch(api(`/api/admin/payouts/${payoutId}`), {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${adminToken}`
+          },
+          body: JSON.stringify({ status: 'rejected', notes })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast('ক্যাশআউট বাতিল করা হয়েছে');
+          loadAdminPayouts();
+          loadAdminStats();
+          return true;
+        }
+        showError(data.message || 'ব্যর্থ হয়েছে');
+        return false;
+      } catch (err) {
+        console.error(err);
+        showError('সার্ভারের সাথে সংযোগ ব্যর্থ হয়েছে');
+        return false;
+      }
     }
-  } catch (err) {
-    console.error(err);
-    alert('ব্যর্থ হয়েছে');
-  }
+  });
 }
 
 // ================= SECTION 3: PRODUCTS (CRUD) =================
@@ -1542,9 +1628,23 @@ async function openAddProductModal(preferredShopId = null) {
   if (aiBox) aiBox.style.display = 'none';
   initImageDragAndDropAndPaste();
 
+  const furnHeightEl = document.getElementById('furnDimHeight');
+  if (furnHeightEl) furnHeightEl.value = '72';
+  const furnWidthEl = document.getElementById('furnDimWidth');
+  if (furnWidthEl) furnWidthEl.value = '36';
+  const furnDepthEl = document.getElementById('furnDimDepth');
+  if (furnDepthEl) furnDepthEl.value = '18';
+  const furnBoardEl = document.getElementById('furnBoardPrice');
+  if (furnBoardEl) furnBoardEl.value = shopBoardPrice;
+  const furnProviderBadge = document.getElementById('furnAiProviderBadge');
+  if (furnProviderBadge) {
+    furnProviderBadge.style.display = 'none';
+    furnProviderBadge.textContent = '';
+  }
+
   checkFurnitureCutlistVisibility();
   const tbody = document.getElementById('furniturePartsTableBody');
-  if (tbody) tbody.innerHTML = '';
+  if (tbody) tbody.replaceChildren();
   recalculateFurnitureCutlist();
 
   openModal('addProductModal');
@@ -1632,12 +1732,27 @@ function editProductModal(id) {
   if (aiBox) aiBox.style.display = p.image_url ? 'block' : 'none';
   initImageDragAndDropAndPaste();
 
-  if (catEl) catEl.onchange = checkFurnitureCutlistVisibility;
   checkFurnitureCutlistVisibility();
+  const cut = p.furniture_cutlist && typeof p.furniture_cutlist === 'object' ? p.furniture_cutlist : null;
+  const furnBoardEl = document.getElementById('furnBoardPrice');
+  if (furnBoardEl) furnBoardEl.value = (cut && Number(cut.board_price) > 0) ? cut.board_price : shopBoardPrice;
+  const dims = cut && cut.dimensions && typeof cut.dimensions === 'object' ? cut.dimensions : {};
+  const furnHeightEl = document.getElementById('furnDimHeight');
+  if (furnHeightEl) furnHeightEl.value = Number(dims.height) > 0 ? dims.height : 72;
+  const furnWidthEl = document.getElementById('furnDimWidth');
+  if (furnWidthEl) furnWidthEl.value = Number(dims.width) > 0 ? dims.width : 36;
+  const furnDepthEl = document.getElementById('furnDimDepth');
+  if (furnDepthEl) furnDepthEl.value = Number(dims.depth) > 0 ? dims.depth : 18;
+  const furnProviderBadge = document.getElementById('furnAiProviderBadge');
+  if (furnProviderBadge) {
+    furnProviderBadge.style.display = 'none';
+    furnProviderBadge.textContent = '';
+  }
+
   const tbody = document.getElementById('furniturePartsTableBody');
-  if (tbody) tbody.innerHTML = '';
-  if (p.furniture_cutlist && Array.isArray(p.furniture_cutlist.parts)) {
-    p.furniture_cutlist.parts.forEach(part => addManualFurniturePartRow(part));
+  if (tbody) tbody.replaceChildren();
+  if (cut && Array.isArray(cut.parts)) {
+    cut.parts.forEach(part => addManualFurniturePartRow(part));
   }
   recalculateFurnitureCutlist();
 
@@ -1693,6 +1808,16 @@ async function submitProductForm(addAnother = false) {
 
   const cutlistData = recalculateFurnitureCutlist();
   if (cutlistData.parts && cutlistData.parts.length > 0) {
+    const dimH = parseFloat(document.getElementById('furnDimHeight')?.value);
+    const dimW = parseFloat(document.getElementById('furnDimWidth')?.value);
+    const dimD = parseFloat(document.getElementById('furnDimDepth')?.value);
+    if (dimH > 0 || dimW > 0 || dimD > 0) {
+      cutlistData.dimensions = {
+        height: dimH > 0 ? dimH : 72,
+        width: dimW > 0 ? dimW : 36,
+        depth: dimD > 0 ? dimD : 18
+      };
+    }
     payload.furniture_cutlist = cutlistData;
   } else {
     payload.furniture_cutlist = null;
@@ -1855,11 +1980,128 @@ function openModal(id) {
   }
 }
 
+let adminPromptSubmitHandler = null;
+
+function openAdminPromptModal({
+  title = 'তথ্য দিন',
+  description = '',
+  fields = [],
+  submitText = 'নিশ্চিত করুন',
+  onSubmit = null
+}) {
+  const modal = document.getElementById('adminActionPromptModal');
+  const titleEl = document.getElementById('adminActionPromptTitle');
+  const descEl = document.getElementById('adminActionPromptDesc');
+  const fieldsEl = document.getElementById('adminActionPromptFields');
+  const errorEl = document.getElementById('adminActionPromptError');
+  const submitBtn = document.getElementById('adminActionPromptSubmit');
+  if (!modal || !fieldsEl || !submitBtn) return false;
+
+  if (titleEl) titleEl.textContent = title;
+  if (descEl) {
+    descEl.textContent = description;
+    descEl.style.display = description ? 'block' : 'none';
+  }
+  if (errorEl) {
+    errorEl.textContent = '';
+    errorEl.style.display = 'none';
+  }
+  submitBtn.disabled = false;
+  submitBtn.textContent = submitText;
+
+  fieldsEl.replaceChildren();
+  fields.forEach((f, idx) => {
+    const group = document.createElement('div');
+    group.className = 'form-group';
+    group.style.marginBottom = idx === fields.length - 1 ? '4px' : '12px';
+
+    if (f.label) {
+      const label = document.createElement('label');
+      label.className = 'form-label';
+      label.htmlFor = `adminPromptField_${f.name}`;
+      label.textContent = f.label;
+      group.appendChild(label);
+    }
+
+    const input = document.createElement(f.type === 'textarea' ? 'textarea' : 'input');
+    input.id = `adminPromptField_${f.name}`;
+    input.name = f.name;
+    input.className = 'form-control';
+    if (f.type !== 'textarea') input.type = f.type || 'text';
+    else input.rows = f.rows || 3;
+    if (f.placeholder) input.placeholder = f.placeholder;
+    if (f.value !== undefined && f.value !== null) input.value = String(f.value);
+    if (f.min !== undefined) input.min = String(f.min);
+    if (f.step !== undefined) input.step = String(f.step);
+    if (f.required) input.required = true;
+    group.appendChild(input);
+    fieldsEl.appendChild(group);
+  });
+
+  adminPromptSubmitHandler = onSubmit;
+  openModal('adminActionPromptModal');
+  setTimeout(() => {
+    const firstInput = fieldsEl.querySelector('input, textarea');
+    if (firstInput) firstInput.focus();
+  }, 40);
+  return true;
+}
+
+async function submitAdminPromptModal() {
+  if (typeof adminPromptSubmitHandler !== 'function') {
+    closeModal('adminActionPromptModal');
+    return;
+  }
+  const fieldsEl = document.getElementById('adminActionPromptFields');
+  const errorEl = document.getElementById('adminActionPromptError');
+  const submitBtn = document.getElementById('adminActionPromptSubmit');
+  const values = {};
+  if (fieldsEl) {
+    fieldsEl.querySelectorAll('input, textarea').forEach((el) => {
+      values[el.name] = el.value;
+    });
+  }
+  if (errorEl) {
+    errorEl.textContent = '';
+    errorEl.style.display = 'none';
+  }
+
+  const showPromptError = (msg) => {
+    if (errorEl) {
+      errorEl.textContent = msg;
+      errorEl.style.display = 'block';
+    } else {
+      showToast(msg, 'error');
+    }
+  };
+
+  const prevText = submitBtn ? submitBtn.textContent : '';
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.textContent = '⏳ প্রক্রিয়াকরণ...';
+  }
+  try {
+    const shouldClose = await adminPromptSubmitHandler(values, showPromptError);
+    if (shouldClose !== false) {
+      adminPromptSubmitHandler = null;
+      closeModal('adminActionPromptModal');
+    }
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = prevText;
+    }
+  }
+}
+
 function closeModal(id) {
   const modal = document.getElementById(id);
   if (modal) modal.classList.remove('active');
   if (id === 'addProductModal') {
     cleanupAbandonedTempUploads();
+  }
+  if (id === 'adminActionPromptModal') {
+    adminPromptSubmitHandler = null;
   }
 }
 
@@ -1867,7 +2109,8 @@ function closeModal(id) {
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     document.querySelectorAll('.modal-overlay.active').forEach((m) => {
-      m.classList.remove('active');
+      if (m.id) closeModal(m.id);
+      else m.classList.remove('active');
     });
   }
 });
@@ -1884,7 +2127,13 @@ async function loadAdminAnalytics() {
       headers: { Authorization: `Bearer ${adminToken}` }
     });
     const data = await res.json();
-    if (!data.success) return;
+    if (!res.ok || !data.success) {
+      const msg = escapeAdminHtml(data?.message || 'এনালিটিক্স লোড করা যায়নি');
+      if (prodTbody) prodTbody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: #dc2626; padding: 16px;">${msg}</td></tr>`;
+      if (resTbody) resTbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: #dc2626; padding: 16px;">${msg}</td></tr>`;
+      showToast(data?.message || 'এনালিটিক্স লোড করা যায়নি', 'error');
+      return;
+    }
 
     const { top_products, top_resellers } = data.analytics;
 
@@ -1920,6 +2169,9 @@ async function loadAdminAnalytics() {
     }
   } catch (err) {
     console.error('Analytics Fetch Error:', err);
+    if (prodTbody) prodTbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #dc2626; padding: 16px;">এনালিটিক্স ডাটা লোড করতে সমস্যা হয়েছে।</td></tr>';
+    if (resTbody) resTbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #dc2626; padding: 16px;">এনালিটিক্স ডাটা লোড করতে সমস্যা হয়েছে।</td></tr>';
+    showToast('এনালিটিক্স লোড করতে সমস্যা হয়েছে', 'error');
   }
 }
 
@@ -1994,12 +2246,12 @@ async function loadAdminAnnouncements() {
 
     tbody.innerHTML = data.announcements.map((a) => `
       <tr>
-        <td>#${a.id}</td>
-        <td><strong>${escapeAdminHtml(a.title)}</strong></td>
-        <td style="max-width: 260px;">${escapeAdminHtml(a.message)}</td>
-        <td><span class="adm-pill-neutral">${escapeAdminHtml(a.type)}</span></td>
-        <td><span style="color: ${a.is_active ? '#047857' : '#dc2626'}; font-weight: 700;">${a.is_active ? 'সক্রিয়' : 'নিষ্ক্রিয়'}</span></td>
-        <td>
+        <td data-label="আইডি">#${a.id}</td>
+        <td data-label="শিরোনাম"><strong>${escapeAdminHtml(a.title)}</strong></td>
+        <td data-label="বার্তা" style="max-width: 260px;">${escapeAdminHtml(a.message)}</td>
+        <td data-label="ধরন"><span class="adm-pill-neutral">${escapeAdminHtml(a.type)}</span></td>
+        <td data-label="স্ট্যাটাস"><span style="color: ${a.is_active ? '#047857' : '#dc2626'}; font-weight: 700;">${a.is_active ? 'সক্রিয়' : 'নিষ্ক্রিয়'}</span></td>
+        <td data-label="অ্যাকশন">
           <div style="display: flex; gap: 6px;">
             <button class="action-btn-sm btn-ship" onclick="editAnnouncementModal(${a.id})">এডিট</button>
             <button class="action-btn-sm btn-cancel" onclick="deleteAnnouncement(${a.id})">মুছুন</button>
@@ -2323,11 +2575,12 @@ function applyFurnitureBoardCostToWholesale() {
     const wholesaleInput = document.getElementById('prodWholesalePrice');
     if (wholesaleInput) {
       wholesaleInput.value = calc.estimated_board_cost;
+      markPricingManual('wholesale');
       updateLiveProfitCalculator();
       showToast(`✅ বোর্ডের খরচ ${calc.estimated_board_cost}৳ পাইকারি মূল্যে যুক্ত হয়েছে!`);
     }
   } else {
-    alert('প্রথমে পার্টস যুক্ত করে বোর্ডের খরচ হিসাব করুন');
+    showToast('প্রথমে পার্টস যুক্ত করে বোর্ডের খরচ হিসাব করুন', 'error');
   }
 }
 
@@ -2363,7 +2616,7 @@ async function runFurnitureAiEstimate() {
     const data = await res.json();
     if (data.success && Array.isArray(data.parts)) {
       const tbody = document.getElementById('furniturePartsTableBody');
-      if (tbody) tbody.innerHTML = '';
+      if (tbody) tbody.replaceChildren();
       data.parts.forEach(part => addManualFurniturePartRow(part));
       recalculateFurnitureCutlist();
 
@@ -2530,7 +2783,7 @@ function applyAiProductAnalysisToForm(analysis, providerFallbackLabel) {
     }
 
     const tbody = document.getElementById('furniturePartsTableBody');
-    if (tbody) tbody.innerHTML = '';
+    if (tbody) tbody.replaceChildren();
     if (a.cutlist && Array.isArray(a.cutlist.parts) && a.cutlist.parts.length > 0) {
       a.cutlist.parts.forEach((p) => addManualFurniturePartRow(p));
     }
@@ -2762,43 +3015,72 @@ async function copyMarketingText() {
 }
 
 async function promptQuickStockPrice(productId, currentStock, currentPrice) {
-  const newStockStr = prompt(`স্টক সংখ্যা আপডেট করুন (বর্তমান: ${currentStock} টি):`, currentStock);
-  if (newStockStr === null) return;
-  const newStock = parseInt(newStockStr, 10);
-  if (isNaN(newStock) || newStock < 0) {
-    return alert('সঠিক স্টক সংখ্যা দিন');
-  }
-
-  const newPriceStr = prompt(`বিক্রয় মূল্য আপডেট করুন (বর্তমান: ${currentPrice} ৳):`, currentPrice);
-  if (newPriceStr === null) return;
-  const newPrice = parseFloat(newPriceStr);
-  if (isNaN(newPrice) || newPrice < 1) {
-    return alert('সঠিক বিক্রয় মূল্য দিন');
-  }
-
-  try {
-    const res = await fetch(api(`/api/admin/products/${productId}/quick-update`), {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${adminToken}`
+  openAdminPromptModal({
+    title: '⚡ দ্রুত স্টক ও মূল্য আপডেট',
+    description: `পণ্য #${productId}-এর নতুন স্টক ও বিক্রয় মূল্য নির্ধারণ করুন:`,
+    submitText: '💾 আপডেট সংরক্ষণ করুন',
+    fields: [
+      {
+        name: 'stock',
+        label: `নতুন স্টক সংখ্যা (বর্তমান: ${currentStock} টি) *`,
+        type: 'number',
+        value: currentStock,
+        min: 0,
+        step: 1,
+        required: true
       },
-      body: JSON.stringify({ stock: newStock, regular_price: newPrice })
-    });
-    const data = await res.json();
-    if (data.success) {
-      showToast('✅ স্টক ও মূল্য সফলভাবে আপডেট হয়েছে!');
-      loadAdminProducts();
-    } else {
-      alert(data.message || 'আপডেট ব্যর্থ হয়েছে');
+      {
+        name: 'regular_price',
+        label: `নতুন বিক্রয় মূল্য (বর্তমান: ${currentPrice} ৳) *`,
+        type: 'number',
+        value: currentPrice,
+        min: 1,
+        step: 'any',
+        required: true
+      }
+    ],
+    onSubmit: async (values, showError) => {
+      const newStock = parseInt(values.stock, 10);
+      if (!Number.isSafeInteger(newStock) || newStock < 0) {
+        showError('অনুগ্রহ করে সঠিক পূর্ণসংখ্যা স্টক দিন (০ বা বেশি)');
+        return false;
+      }
+      const newPrice = parseFloat(values.regular_price);
+      if (!Number.isFinite(newPrice) || newPrice < 1) {
+        showError('অনুগ্রহ করে সঠিক বিক্রয় মূল্য দিন (কমপক্ষে ১ ৳)');
+        return false;
+      }
+      try {
+        const res = await fetch(api(`/api/admin/products/${productId}/quick-update`), {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${adminToken}`
+          },
+          body: JSON.stringify({ stock: newStock, regular_price: newPrice })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast('✅ স্টক ও মূল্য সফলভাবে আপডেট হয়েছে!');
+          loadAdminProducts();
+          return true;
+        }
+        showError(data.message || 'আপডেট ব্যর্থ হয়েছে');
+        return false;
+      } catch (err) {
+        console.error(err);
+        showError('সার্ভারে যোগাযোগ করতে ব্যর্থ হয়েছে');
+        return false;
+      }
     }
-  } catch (err) {
-    alert('সার্ভারে যোগাযোগ করতে ব্যর্থ হয়েছে');
-  }
+  });
 }
 
 // Expose globals for window inline events
 window.switchAdminSection = switchAdminSection;
+window.toggleAdminPassVisibility = toggleAdminPassVisibility;
+window.openAdminPromptModal = openAdminPromptModal;
+window.submitAdminPromptModal = submitAdminPromptModal;
 window.submitAdminLogin = submitAdminLogin;
 window.adminLogout = adminLogout;
 window.loadAdminOrders = loadAdminOrders;
@@ -2924,6 +3206,13 @@ function openCutlistDbEditor(productId) {
 
   const cut = p.furniture_cutlist || {};
   document.getElementById('cutDbBoardPrice').value = cut.board_price || shopBoardPrice;
+  const dims = cut.dimensions && typeof cut.dimensions === 'object' ? cut.dimensions : {};
+  const hEl = document.getElementById('cutDbHeight');
+  const wEl = document.getElementById('cutDbWidth');
+  const dEl = document.getElementById('cutDbDepth');
+  if (hEl) hEl.value = Number(dims.height) > 0 ? dims.height : 72;
+  if (wEl) wEl.value = Number(dims.width) > 0 ? dims.width : 36;
+  if (dEl) dEl.value = Number(dims.depth) > 0 ? dims.depth : 18;
 
   const tbody = document.getElementById('cutDbPartsBody');
   if (tbody) tbody.replaceChildren();
@@ -3061,6 +3350,18 @@ async function saveCutlistDbEditor() {
   if (!p) return;
 
   const cutlistData = recalcCutlistDbEditor();
+  if (cutlistData.parts.length > 0) {
+    const dimH = parseFloat(document.getElementById('cutDbHeight')?.value);
+    const dimW = parseFloat(document.getElementById('cutDbWidth')?.value);
+    const dimD = parseFloat(document.getElementById('cutDbDepth')?.value);
+    if (dimH > 0 || dimW > 0 || dimD > 0) {
+      cutlistData.dimensions = {
+        height: dimH > 0 ? dimH : 72,
+        width: dimW > 0 ? dimW : 36,
+        depth: dimD > 0 ? dimD : 18
+      };
+    }
+  }
   const btn = document.getElementById('btnCutDbSave');
   if (btn) {
     btn.disabled = true;
@@ -3102,8 +3403,9 @@ async function saveCutlistDbEditor() {
     });
     const data = await res.json();
     if (data.success) {
-      p.furniture_cutlist = payload.furniture_cutlist;
+      p.furniture_cutlist = data.furniture_cutlist !== undefined ? data.furniture_cutlist : payload.furniture_cutlist;
       renderCutlistDbTable();
+      recalcCutlistDbEditor();
       showToast('✅ ফার্নিচার বোর্ড ও পার্টস ডাটাবেজে সেভ হয়েছে!');
     } else {
       showToast(data.message || 'সেভ করা যায়নি', 'error');

@@ -42,6 +42,8 @@ dns.lookup = function patchedDnsLookup(hostname, options, callback) {
 };
 
 const {
+  CONFIG_COLLECTION,
+  CONFIG_DOCUMENT,
   extractQuickTunnelUrl,
   publishPhoneApiUrl,
   publishPhoneApiStatus
@@ -58,6 +60,8 @@ const HEALTH_TIMEOUT_MS = 5_000;
 const STARTUP_TIMEOUT_MS = 60_000;
 const INITIAL_BACKOFF_MS = 1_000;
 const MAX_BACKOFF_MS = 60_000;
+const MAX_CONSECUTIVE_REMOTE_FAILURES = 3;
+const FIRESTORE_AUDIT_INTERVAL_MS = 10 * 60_000;
 
 let stopping = false;
 let activeChild = null;
@@ -109,9 +113,33 @@ async function publishStatus(status, apiUrl = activeTunnelUrl) {
   try {
     if (status === 'online' && apiUrl) await publishPhoneApiUrl(apiUrl);
     else await publishPhoneApiStatus(status, apiUrl || undefined);
+    return true;
   } catch (error) {
     const code = error && error.code ? error.code : 'firestore_unavailable';
     console.error(`Firestore tunnel status update failed (${code}).`);
+    return false;
+  }
+}
+
+async function readPublishedTunnelState() {
+  const projectId = String(process.env.FIREBASE_PROJECT_ID || '').trim();
+  if (!projectId) return null;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), HEALTH_TIMEOUT_MS);
+  try {
+    const url = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/databases/(default)/documents/${CONFIG_COLLECTION}/${CONFIG_DOCUMENT}`;
+    const response = await fetch(url, { signal: controller.signal, cache: 'no-store' });
+    if (!response.ok) return null;
+    const doc = await response.json();
+    const fields = doc && doc.fields;
+    return {
+      apiUrl: fields && fields.apiUrl && fields.apiUrl.stringValue ? fields.apiUrl.stringValue : '',
+      status: fields && fields.status && fields.status.stringValue ? fields.status.stringValue : ''
+    };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -230,7 +258,9 @@ async function superviseTunnel() {
       const reachable = await verifyTunnel(url, tunnel.isAlive);
       if (reachable && tunnel.isAlive()) {
         activeTunnelUrl = url;
-        await publishStatus('online', url);
+        let firestoreSynced = await publishStatus('online', url);
+        let consecutiveRemoteFailures = 0;
+        let lastFirestoreAuditAt = Date.now();
         console.log(`Public API is healthy at ${url}.`);
         let checkRunning = false;
         const healthTimer = setInterval(async () => {
@@ -239,14 +269,34 @@ async function superviseTunnel() {
           try {
             const localHealthy = await fetchHealth(LOCAL_HEALTH_URL);
             if (!localHealthy) {
+              firestoreSynced = false;
               await publishStatus('reconnecting', activeTunnelUrl);
               return;
             }
             const remoteHealthy = await fetchHealth(`${activeTunnelUrl}/health`);
             if (!remoteHealthy && tunnel.isAlive()) {
-              console.error('Public tunnel health check failed; restarting cloudflared.');
+              consecutiveRemoteFailures += 1;
+              if (consecutiveRemoteFailures < MAX_CONSECUTIVE_REMOTE_FAILURES) {
+                console.warn(`Public tunnel health check failed (${consecutiveRemoteFailures}/${MAX_CONSECUTIVE_REMOTE_FAILURES}); waiting before restart.`);
+                return;
+              }
+              console.error('Public tunnel health check failed repeatedly; restarting cloudflared.');
+              firestoreSynced = false;
               await publishStatus('reconnecting', activeTunnelUrl);
               await terminateChild(tunnel.child);
+              return;
+            }
+            consecutiveRemoteFailures = 0;
+            if (!firestoreSynced) {
+              firestoreSynced = await publishStatus('online', activeTunnelUrl);
+              lastFirestoreAuditAt = Date.now();
+            } else if (Date.now() - lastFirestoreAuditAt >= FIRESTORE_AUDIT_INTERVAL_MS) {
+              lastFirestoreAuditAt = Date.now();
+              const published = await readPublishedTunnelState();
+              if (published && (published.apiUrl !== activeTunnelUrl || published.status !== 'online')) {
+                console.warn(`Firestore tunnel pointer drifted (${published.apiUrl || 'empty'}:${published.status || 'unknown'}); restoring ${activeTunnelUrl}.`);
+                firestoreSynced = await publishStatus('online', activeTunnelUrl);
+              }
             }
           } finally {
             checkRunning = false;

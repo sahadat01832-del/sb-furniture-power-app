@@ -9,8 +9,8 @@
   transform: translateX(-50%) translateY(130%);
   width: calc(100% - 24px);
   max-width: 520px;
-  background: rgba(255, 255, 255, 0.96);
-  border: 1px solid #fddac3;
+  background: var(--surface-card, rgba(255, 255, 255, 0.96));
+  border: 1px solid var(--brand-tint-bd, #fddac3);
   border-radius: 16px;
   box-shadow: 0 18px 42px -8px rgba(24, 21, 18, 0.22), 0 4px 12px rgba(194, 65, 12, 0.1);
   z-index: 115;
@@ -26,7 +26,13 @@
   transform: translateX(-50%) translateY(0);
 }
 
-body:has(.modal-overlay.active) .pwa-install-banner {
+@media (min-width: 768px) {
+  .pwa-install-banner {
+    bottom: 20px;
+  }
+}
+
+html:has(dialog[open]) .pwa-install-banner {
   opacity: 0;
   pointer-events: none;
   transform: translateX(-50%) translateY(130%);
@@ -54,7 +60,7 @@ body:has(.modal-overlay.active) .pwa-install-banner {
 .pwa-banner-title {
   font-size: 0.9rem;
   font-weight: 700;
-  color: #181512;
+  color: var(--text-primary, #181512);
   margin-bottom: 2px;
   display: flex;
   align-items: center;
@@ -63,18 +69,18 @@ body:has(.modal-overlay.active) .pwa-install-banner {
 }
 
 .pwa-banner-badge {
-  background: #ecfdf5;
-  color: #047857;
+  background: var(--clr-emerald-100, #ecfdf5);
+  color: var(--clr-emerald-700, #047857);
   font-size: 0.68rem;
   font-weight: 700;
   padding: 2px 7px;
   border-radius: 999px;
-  border: 1px solid #a7f3d0;
+  border: 1px solid var(--clr-emerald-200, #a7f3d0);
 }
 
 .pwa-banner-desc {
   font-size: 0.76rem;
-  color: #706a60;
+  color: var(--text-muted, #706a60);
   line-height: 1.35;
   white-space: nowrap;
   overflow: hidden;
@@ -107,9 +113,9 @@ body:has(.modal-overlay.active) .pwa-install-banner {
 }
 
 .btn-pwa-dismiss {
-  background: #f4f1ec;
-  border: 1px solid #e7e1d7;
-  color: #524d46;
+  background: var(--surface-subtle, #f4f1ec);
+  border: 1px solid var(--border-subtle, #e7e1d7);
+  color: var(--text-secondary, #524d46);
   width: 32px;
   height: 32px;
   border-radius: 50%;
@@ -122,8 +128,8 @@ body:has(.modal-overlay.active) .pwa-install-banner {
 }
 
 .btn-pwa-dismiss:hover {
-  background: #e7e1d7;
-  color: #181512;
+  background: var(--surface-hover, #e7e1d7);
+  color: var(--text-primary, #181512);
 }
 
 .btn-pwa-primary {

@@ -69,8 +69,22 @@ function recomputeFurnitureCutlist(input, shopBoardPrice) {
     .filter((part) => part && typeof part === 'object');
   const boardPrice = Number(cutlist.board_price) > 0 ? Number(cutlist.board_price) : shopBoardPrice;
   const recomputed = calculateCutlist(parts, { boardPrice });
+  if (recomputed.parts.length === 0) return null;
 
-  return recomputed.parts.length > 0 ? JSON.stringify(recomputed) : null;
+  if (cutlist.dimensions && typeof cutlist.dimensions === 'object' && !Array.isArray(cutlist.dimensions)) {
+    const height = Number(cutlist.dimensions.height);
+    const width = Number(cutlist.dimensions.width);
+    const depth = Number(cutlist.dimensions.depth);
+    if (
+      Number.isFinite(height) && height > 0 && height <= 1000 &&
+      Number.isFinite(width) && width > 0 && width <= 1000 &&
+      Number.isFinite(depth) && depth > 0 && depth <= 1000
+    ) {
+      recomputed.dimensions = { height, width, depth };
+    }
+  }
+
+  return JSON.stringify(recomputed);
 }
 
 function validateProductPayload(input, shopBoardPrice = DEFAULT_BOARD_PRICE) {
@@ -186,8 +200,13 @@ function validateProductPayload(input, shopBoardPrice = DEFAULT_BOARD_PRICE) {
     }
     data.commission_tab = input.commission_tab;
   } else {
-    data.commission_tab = `${data.reseller_commission}tk`;
-    if (!COMMISSION_TABS.has(data.commission_tab)) data.commission_tab = '50tk';
+    const comm = Number(data.reseller_commission) || 0;
+    if (comm >= 1500) data.commission_tab = '1500tk';
+    else if (comm >= 1000) data.commission_tab = '1000tk';
+    else if (comm >= 500) data.commission_tab = '500tk';
+    else if (comm >= 200) data.commission_tab = '200tk';
+    else if (comm >= 100) data.commission_tab = '100tk';
+    else data.commission_tab = '50tk';
   }
 
   if (input.image_url !== undefined && typeof input.image_url !== 'string') {
@@ -1245,7 +1264,8 @@ router.put('/products/:id', async (req, res) => {
 
     return res.json({
       success: true,
-      message: 'প্রোডাক্ট তথ্য সফলভাবে আপডেট হয়েছে!'
+      message: 'প্রোডাক্ট তথ্য সফলভাবে আপডেট হয়েছে!',
+      furniture_cutlist: updated.furniture_cutlist ? JSON.parse(updated.furniture_cutlist) : null
     });
   } catch (error) {
     console.error('Update Product Error:', error);

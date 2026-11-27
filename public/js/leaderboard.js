@@ -30,7 +30,7 @@ async function openLeaderboardModal() {
     if (leaders.length === 0) {
       container.innerHTML = `
         <div class="leaderboard-campaign-header">
-          <h4>বাস্তব বিক্রির তালিকা</h4>
+          <h2>বাস্তব বিক্রির তালিকা</h2>
           <p>সফল ডেলিভারি এখনো নেই। প্রথম delivered অর্ডার এলে এখানে রিসেলার তালিকা দেখা যাবে।</p>
         </div>
       `;
@@ -70,23 +70,23 @@ async function openLeaderboardModal() {
 
     container.innerHTML = `
       <div class="leaderboard-campaign-header">
-        <h4>📊 ${escapeLeaderboardHtml(data.campaign || 'সফল অর্ডারের তালিকা')}</h4>
+        <h2>📊 ${escapeLeaderboardHtml(data.campaign || 'সফল অর্ডারের তালিকা')}</h2>
         <p>${escapeLeaderboardHtml(data.rules || 'শুধু delivered অর্ডারের বাস্তব তথ্য এখানে দেখানো হয়।')}</p>
       </div>
 
       <div style="margin-top: 20px;">
-        <h4 style="color: var(--text-primary); font-size: 1rem; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between;">
+        <h3 style="color: var(--text-primary); font-size: 1rem; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between;">
           <span>📊 শীর্ষ রিসেলারদের লাইভ তালিকা</span>
           <span style="font-size: 0.75rem; color: var(--brand-success); font-weight: 700;">● লাইভ আপডেট</span>
-        </h4>
+        </h3>
         <div class="table-responsive">
           <table>
             <thead>
               <tr>
-                <th style="text-align: center; width: 56px;">র‌্যাংক</th>
-                <th>রিসেলার নাম</th>
-                <th style="text-align: center;">সফল সেল</th>
-                <th style="text-align: right;">অর্জন</th>
+                <th scope="col" style="text-align: center; width: 56px;">র‌্যাংক</th>
+                <th scope="col">রিসেলার নাম</th>
+                <th scope="col" style="text-align: center;">সফল সেল</th>
+                <th scope="col" style="text-align: right;">অর্জন</th>
               </tr>
             </thead>
             <tbody>

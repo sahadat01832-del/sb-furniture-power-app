@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
+const vm = require('vm');
 const { execFileSync } = require('child_process');
 
 const app = require('../src/server');
@@ -216,4 +217,162 @@ test('Product Lifecycle 4: Soft delete, re-activate, permanent delete frees SKU 
 
   const checkAfter = await req(`/api/products/sku/${encodeURIComponent(testSku)}`);
   assert.equal(checkAfter.status, 404);
+});
+
+test('Frontend 5: Storefront SEO files, Open Graph metadata, JSON-LD schema, and admin noindex', () => {
+  const rootDir = path.join(__dirname, '..');
+  const robotsTxt = fs.readFileSync(path.join(rootDir, 'public', 'robots.txt'), 'utf8');
+  assert.match(robotsTxt, /^Allow:\s*\/$/m);
+  assert.match(robotsTxt, /^Disallow:\s*\/admin$/m);
+  assert.match(robotsTxt, /^Sitemap:\s*https:\/\/sb-power-marketplace\.web\.app\/sitemap\.xml$/m);
+
+  const sitemapXml = fs.readFileSync(path.join(rootDir, 'public', 'sitemap.xml'), 'utf8');
+  assert.match(sitemapXml, /<loc>https:\/\/sb-power-marketplace\.web\.app\/<\/loc>/);
+
+  const indexHtml = fs.readFileSync(path.join(rootDir, 'public', 'index.html'), 'utf8');
+  assert.match(indexHtml, /<title>SB Power BD/);
+  assert.match(indexHtml, /rel="canonical" href="https:\/\/sb-power-marketplace\.web\.app\/"/);
+  assert.match(indexHtml, /property="og:title" content="SB Power BD/);
+  assert.match(indexHtml, /property="og:image" content="https:\/\/sb-power-marketplace\.web\.app\/icons\/icon-512\.png"/);
+
+  const ldMatch = indexHtml.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/);
+  assert.ok(ldMatch, 'Expected JSON-LD structured data script in public/index.html');
+  const schema = JSON.parse(ldMatch[1]);
+  assert.equal(schema['@type'], 'Store');
+  assert.equal(schema.name, 'SB Power BD');
+  assert.equal(schema.url, 'https://sb-power-marketplace.web.app/');
+
+  for (const adminFile of ['public/admin.html', 'public-admin/index.html']) {
+    const adminHtml = fs.readFileSync(path.join(rootDir, adminFile), 'utf8');
+    assert.match(adminHtml, /<meta name="robots" content="noindex, nofollow">/);
+  }
+});
+
+test('Frontend 6: Admin modals, light-mode isolation, native prompt replacement, and public-admin parity', () => {
+  const rootDir = path.join(__dirname, '..');
+  const adminCss = fs.readFileSync(path.join(rootDir, 'public', 'css', 'admin.css'), 'utf8');
+  for (const selector of [
+    '.modal-overlay',
+    '.modal-overlay.active',
+    '.modal-dialog',
+    '#toast.toast-msg',
+    '#toast.toast-msg.show',
+    '.product-toolbar',
+    '.status-badge',
+    'html:has(body.admin-mode)'
+  ]) {
+    assert.ok(adminCss.includes(selector), `Expected ${selector} in public/css/admin.css`);
+  }
+
+  for (const adminFile of ['public/admin.html', 'public-admin/index.html']) {
+    const html = fs.readFileSync(path.join(rootDir, adminFile), 'utf8');
+    for (const token of [
+      'class="admin-mode"',
+      'id="adminLoginForm"',
+      'id="btnToggleAdminPass"',
+      'id="adminActionPromptModal"',
+      'cutlist-calculator.js',
+      'id="cutDbWarnings"',
+      'id="furnCutlistWarnings"',
+      'id="furnBoardPrice"',
+      'id="cutDbBoardPrice"'
+    ]) {
+      assert.ok(html.includes(token), `Expected ${token} in ${adminFile}`);
+    }
+  }
+
+  const adminJs = fs.readFileSync(path.join(rootDir, 'public', 'js', 'admin.js'), 'utf8');
+  assert.doesNotMatch(adminJs, /\bwindow\.prompt\s*\(|\bconst\s+\w+\s*=\s*prompt\(/);
+  assert.ok(adminJs.includes('openAdminPromptModal'));
+
+  for (const relPath of [
+    'css/admin.css',
+    'css/style.css',
+    'js/admin.js',
+    'js/admin-users.js',
+    'js/admin-referrals.js',
+    'js/app-config.js'
+  ]) {
+    const pubContent = fs.readFileSync(path.join(rootDir, 'public', relPath), 'utf8');
+    const apkContent = fs.readFileSync(path.join(rootDir, 'public-admin', relPath), 'utf8');
+    assert.equal(apkContent, pubContent, `Expected public-admin/${relPath} to match public/${relPath}`);
+  }
+});
+
+test('Frontend 7: app-config.js keeps Capacitor APKs off 127.0.0.1 and commission_tab resolves tiers', async () => {
+  const rootDir = path.join(__dirname, '..');
+  for (const cfgFile of ['public/js/app-config.js', 'public-admin/js/app-config.js']) {
+    const code = fs.readFileSync(path.join(rootDir, cfgFile), 'utf8');
+    const runConfig = (location, capacitor) => {
+      const ctx = {
+        window: {
+          location,
+          ...(capacitor !== undefined ? { Capacitor: capacitor } : {})
+        }
+      };
+      ctx.window.window = ctx.window;
+      vm.runInNewContext(code, ctx);
+      return ctx.window.APP_CONFIG.VITE_DEV_API_URL;
+    };
+
+    assert.equal(runConfig({ protocol: 'http:', hostname: 'localhost' }), 'http://127.0.0.1:3000');
+    assert.equal(runConfig({ protocol: 'http:', hostname: '127.0.0.1' }), 'http://127.0.0.1:3000');
+    assert.equal(
+      runConfig({ protocol: 'https:', hostname: 'localhost' }, { isNativePlatform: () => true }),
+      ''
+    );
+    assert.equal(runConfig({ protocol: 'https:', hostname: 'localhost' }), '');
+    assert.equal(runConfig({ protocol: 'https:', hostname: 'sb-power-marketplace.web.app' }), '');
+  }
+
+  const testSku = `TIER-TST-${Date.now()}`;
+  const created = await req('/api/admin/products', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${adminToken}` },
+    body: JSON.stringify({
+      title: 'Commission Tier Test Cabinet',
+      sku: testSku,
+      brand: 'SB Furniture',
+      category: 'ফার্নিচার',
+      regular_price: 5500,
+      wholesale_price: 4000,
+      reseller_commission: 250,
+      stock: 5,
+      image_url: '/uploads/tier-test.png',
+      furniture_cutlist: {
+        board_price: 1900,
+        dimensions: { height: 70, width: 32, depth: 18 },
+        parts: [{ name: 'Side Panel', length: 70, width: 18, qty: 2 }]
+      }
+    })
+  });
+  assert.equal(created.status, 201);
+  const createdId = created.body.product_id;
+  assert.ok(createdId);
+
+  const prodRes = await req(`/api/products/${encodeURIComponent(testSku)}`, {
+    headers: { Authorization: `Bearer ${adminToken}` }
+  });
+  assert.equal(prodRes.status, 200);
+  assert.equal(prodRes.body.product.commission_tab, '200tk');
+  assert.deepEqual(prodRes.body.product.furniture_cutlist.dimensions, { height: 70, width: 32, depth: 18 });
+
+  const updated = await req(`/api/admin/products/${createdId}`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${adminToken}` },
+    body: JSON.stringify({
+      furniture_cutlist: {
+        board_price: 2000,
+        dimensions: { height: 84, width: 42, depth: 20 },
+        parts: [{ name: 'Side Panel', length: 70, width: 18, qty: 2 }]
+      }
+    })
+  });
+  assert.equal(updated.status, 200);
+  assert.deepEqual(updated.body.furniture_cutlist.dimensions, { height: 84, width: 42, depth: 20 });
+
+  await req(`/api/admin/products/${createdId}?permanent=true`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${adminToken}` }
+  });
 });

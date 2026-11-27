@@ -275,7 +275,7 @@
 
     if (!DEFAULT_SORTS.has(sortMode)) {
       if (['price_asc', 'price_desc', 'commission_desc', 'newest', 'id_asc'].includes(sortMode)) {
-        return products.slice().sort((a, b) => compareExplicitSort(a, b, sortMode));
+        return products.toSorted((a, b) => compareExplicitSort(a, b, sortMode));
       }
     }
 

@@ -375,31 +375,63 @@ function escapeHtml(str) {
 }
 
 async function resetUserPasswordByAdmin(userId) {
+  const runReset = async (newPass, showError) => {
+    const trimmed = String(newPass || '');
+    const bytes = new TextEncoder().encode(trimmed).length;
+    if (bytes < 8 || bytes > 72) {
+      const msg = 'নতুন পাসওয়ার্ড ৮ থেকে ৭২ বাইটের মধ্যে হতে হবে';
+      if (showError) showError(msg);
+      else alert(msg);
+      return false;
+    }
+    try {
+      const res = await fetch(api(`/api/admin/users/${userId}/password`), {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${adminToken}`
+        },
+        body: JSON.stringify({ new_password: trimmed })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast(data.message || 'পাসওয়ার্ড রিসেট সম্পন্ন!');
+        return true;
+      }
+      const msg = data.message || 'পাসওয়ার্ড রিসেট ব্যর্থ হয়েছে';
+      if (showError) showError(msg);
+      else alert(msg);
+      return false;
+    } catch (err) {
+      console.error('Reset user password error:', err);
+      if (showError) showError('সার্ভার ত্রুটি ঘটেছে');
+      else alert('সার্ভার ত্রুটি ঘটেছে');
+      return false;
+    }
+  };
+
+  if (typeof window.openAdminPromptModal === 'function') {
+    window.openAdminPromptModal({
+      title: '🔑 ইউজারের পাসওয়ার্ড রিসেট',
+      description: `ইউজার #${userId}-এর জন্য নতুন পাসওয়ার্ড দিন (কমপক্ষে ৮ অক্ষর):`,
+      submitText: '🔑 পাসওয়ার্ড আপডেট করুন',
+      fields: [
+        {
+          name: 'new_password',
+          label: 'নতুন পাসওয়ার্ড *',
+          type: 'password',
+          placeholder: 'কমপক্ষে ৮ অক্ষর লিখুন',
+          required: true
+        }
+      ],
+      onSubmit: (values, showError) => runReset(values.new_password, showError)
+    });
+    return;
+  }
+
   const newPass = window.prompt('নতুন পাসওয়ার্ড লিখুন (কমপক্ষে ৮ অক্ষর):');
   if (!newPass) return;
-  const bytes = new TextEncoder().encode(newPass).length;
-  if (bytes < 8 || bytes > 72) {
-    return alert('নতুন পাসওয়ার্ড ৮ থেকে ৭২ বাইটের মধ্যে হতে হবে');
-  }
-  try {
-    const res = await fetch(api(`/api/admin/users/${userId}/password`), {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${adminToken}`
-      },
-      body: JSON.stringify({ new_password: newPass })
-    });
-    const data = await res.json();
-    if (data.success) {
-      showToast(data.message || 'পাসওয়ার্ড রিসেট সম্পন্ন!');
-    } else {
-      alert(data.message || 'পাসওয়ার্ড রিসেট ব্যর্থ হয়েছে');
-    }
-  } catch (err) {
-    console.error('Reset user password error:', err);
-    alert('সার্ভার ত্রুটি ঘটেছে');
-  }
+  await runReset(newPass);
 }
 
 // Content Guide & Settings Loader

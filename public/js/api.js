@@ -7,6 +7,7 @@
   const FIRESTORE_REQUEST_TIMEOUT_MS = 4000;
   const FIRESTORE_REFRESH_COOLDOWN_MS = 15_000;
   const CONNECTION_READY_TIMEOUT_MS = 5000;
+  const READ_REQUEST_TIMEOUT_MS = 10_000;
   const nativeFetch = window.fetch.bind(window);
 
   function getFirebaseProjectId() {
@@ -39,9 +40,8 @@
   let configFetchPromise = null;
   let lastConfigFetchAt = 0;
   let lastFailureRefreshAt = 0;
-  let firstConnectionResolve;
+  const { promise: firstConnection, resolve: firstConnectionResolve } = Promise.withResolvers();
   let firstConnectionResolved = false;
-  const firstConnection = new Promise((resolve) => { firstConnectionResolve = resolve; });
 
   if (firebaseProjectId) {
     try {
@@ -133,6 +133,33 @@
     return true;
   }
 
+  function clearCachedApiUrl() {
+    activeApiUrl = '';
+    try {
+      if (firebaseProjectId) localStorage.removeItem(`${API_CACHE_PREFIX}${firebaseProjectId}`);
+    } catch {
+      // Storage can be unavailable in restricted WebViews.
+    }
+  }
+
+  function getConfiguredFallbackOrigin() {
+    const appConfig = window.APP_CONFIG || {};
+    return normalizeApiOrigin(appConfig.apiUrl);
+  }
+
+  function isSwCachedResponse(response) {
+    try {
+      return Boolean(
+        response &&
+        response.headers &&
+        typeof response.headers.get === 'function' &&
+        response.headers.get('X-SB-SW-Cache') === '1'
+      );
+    } catch {
+      return false;
+    }
+  }
+
   function applyFirestoreData(data) {
     if (!data || typeof data !== 'object') return;
     if (data.apiUrl) saveActiveApiUrl(data.apiUrl);
@@ -202,10 +229,11 @@
   ]);
 
   function getApiBaseUrl() {
-    if (activeApiUrl) return activeApiUrl;
     const appConfig = window.APP_CONFIG || {};
     const devApiUrl = appConfig.VITE_DEV_API_URL || appConfig.devApiUrl || window.VITE_DEV_API_URL || '';
+    // An explicit development origin outranks the cached/tunnel pointer.
     if (devApiUrl) return String(devApiUrl).trim().replace(/\/+$/, '');
+    if (activeApiUrl) return activeApiUrl;
     if (appConfig.apiUrl) return String(appConfig.apiUrl).trim().replace(/\/+$/, '');
     try {
       const stored = localStorage.getItem('sb_api_base_url');
@@ -246,50 +274,99 @@
     const canRetry = ['GET', 'HEAD', 'OPTIONS'].includes(requestMethod);
     const maxAttempts = canRetry ? 3 : 1;
     const requestInit = init || {};
+    const callerSignal = requestInit.signal || (input instanceof Request ? input.signal : undefined);
+    const triedOrigins = new Set([destination.origin]);
     let refreshedAfterFailure = false;
+    let swFallbackResponse = null;
+
+    async function resolveNextDestination(currentDestination) {
+      const requestUrl = getRequestUrl(input);
+      if (!refreshedAfterFailure && firebaseProjectId) {
+        refreshedAfterFailure = true;
+        await readFirestoreRestDocument({ afterFailure: true });
+        if (activeApiUrl && activeApiUrl !== currentDestination.origin && !triedOrigins.has(activeApiUrl)) {
+          triedOrigins.add(activeApiUrl);
+          return new URL(`${requestUrl.pathname}${requestUrl.search}`, `${activeApiUrl}/`);
+        }
+      }
+      if (canRetry) {
+        const fallbackOrigin = getConfiguredFallbackOrigin();
+        if (fallbackOrigin && fallbackOrigin !== currentDestination.origin && !triedOrigins.has(fallbackOrigin)) {
+          triedOrigins.add(fallbackOrigin);
+          return new URL(`${requestUrl.pathname}${requestUrl.search}`, `${fallbackOrigin}/`);
+        }
+      }
+      return currentDestination;
+    }
 
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      let attemptController = null;
+      let attemptTimeout = null;
+      let attemptInit = init;
+      if (canRetry && !callerSignal && typeof AbortController === 'function') {
+        attemptController = new AbortController();
+        attemptTimeout = setTimeout(() => attemptController.abort(), READ_REQUEST_TIMEOUT_MS);
+        attemptInit = { ...(init || {}), signal: attemptController.signal };
+      }
+
       try {
         const response = input instanceof Request
-          ? await nativeFetch(new Request(destination.href, input), init)
-          : await nativeFetch(destination.href, init);
+          ? await nativeFetch(new Request(destination.href, input), attemptInit)
+          : await nativeFetch(destination.href, attemptInit);
+
+        if (isSwCachedResponse(response)) {
+          swFallbackResponse = response;
+          setConnectionState('reconnecting');
+          const nextDestination = await resolveNextDestination(destination);
+          if (nextDestination.origin !== destination.origin) {
+            destination = nextDestination;
+            continue;
+          }
+          setConnectionState('offline');
+          return swFallbackResponse;
+        }
+
         if (response.status < 500) {
+          if (firebaseProjectId && destination.origin !== activeApiUrl && normalizeApiOrigin(destination.origin)) {
+            saveActiveApiUrl(destination.origin);
+          }
           setConnectionState('online');
           return response;
         }
+
         setConnectionState('reconnecting');
-        if (!refreshedAfterFailure && firebaseProjectId) {
-          refreshedAfterFailure = true;
-          const previousApiUrl = activeApiUrl;
-          await readFirestoreRestDocument({ afterFailure: true });
-          if (activeApiUrl && activeApiUrl !== previousApiUrl) {
-            destination = new URL(`${getRequestUrl(input).pathname}${getRequestUrl(input).search}`, `${activeApiUrl}/`);
-          }
-        }
-        if (!canRetry || attempt === maxAttempts) return response;
+        const nextDestination = await resolveNextDestination(destination);
+        const switched = nextDestination.origin !== destination.origin;
+        destination = nextDestination;
+        if (!canRetry || attempt === maxAttempts) return swFallbackResponse || response;
+        if (switched) continue;
       } catch (error) {
+        if (callerSignal && callerSignal.aborted) {
+          setConnectionState('offline');
+          throw error;
+        }
         setConnectionState('reconnecting');
-        if (requestInit.signal && requestInit.signal.aborted) {
-          setConnectionState('offline');
-          throw error;
-        }
-        if (!refreshedAfterFailure && firebaseProjectId) {
-          refreshedAfterFailure = true;
-          const previousApiUrl = activeApiUrl;
-          await readFirestoreRestDocument({ afterFailure: true });
-          if (activeApiUrl && activeApiUrl !== previousApiUrl) {
-            const requestUrl = getRequestUrl(input);
-            destination = new URL(`${requestUrl.pathname}${requestUrl.search}`, `${activeApiUrl}/`);
-          }
-        }
+        const nextDestination = await resolveNextDestination(destination);
+        const switched = nextDestination.origin !== destination.origin;
+        destination = nextDestination;
         if (!canRetry || attempt === maxAttempts) {
+          if (swFallbackResponse) {
+            setConnectionState('offline');
+            return swFallbackResponse;
+          }
+          if (canRetry && activeApiUrl && activeApiUrl === destination.origin) {
+            clearCachedApiUrl();
+          }
           setConnectionState('offline');
           throw error;
         }
+        if (switched) continue;
+      } finally {
+        if (attemptTimeout) clearTimeout(attemptTimeout);
       }
       await retryDelay(attempt);
     }
-    return nativeFetch(destination.href, init);
+    return swFallbackResponse || nativeFetch(destination.href, init);
   }
 
   window.fetch = function (input, init) {

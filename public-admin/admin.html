@@ -3,21 +3,22 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>এডমিন কন্ট্রোল প্যানেল — SB Furniture &amp; SB POWER</title>
-  <link rel="manifest" href="/manifest-admin.json">
+  <title>এডমিন কন্ট্রোল প্যানেল — SB Power BD</title>
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#c2410c">
   <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
   <link rel="dns-prefetch" href="https://firestore.googleapis.com">
   <link rel="icon" type="image/svg+xml" href="/icons/admin-icon.svg">
   <link rel="icon" type="image/png" sizes="192x192" href="/icons/admin-icon-192.png">
   <link rel="apple-touch-icon" href="/icons/admin-icon-192.png">
-  <link rel="stylesheet" href="/css/style.css?v=4.0.5">
-  <link rel="stylesheet" href="/css/admin.css?v=4.0.6">
-  <link rel="stylesheet" href="/css/pwa-splash.css?v=4.0.1">
-  <link rel="stylesheet" href="/css/pwa-install.css?v=4.0.2">
-  <link rel="stylesheet" href="/css/animations.css?v=4.0.2">
+  <link rel="stylesheet" href="/css/style.css?v=5.0.0">
+  <link rel="stylesheet" href="/css/admin.css?v=5.0.0">
+  <link rel="stylesheet" href="/css/pwa-splash.css?v=4.0.2">
+  <link rel="stylesheet" href="/css/pwa-install.css?v=5.0.0">
+  <link rel="stylesheet" href="/css/animations.css?v=5.0.0">
 </head>
-<body>
+<body class="admin-mode">
 
   <div class="startup-splash" id="startupSplash" role="status" aria-live="polite" aria-label="SB অ্যাডমিন অ্যাপ চালু হচ্ছে">
     <div class="startup-splash__content">
@@ -38,16 +39,21 @@
       <p>অর্ডার, পণ্য, AI লিস্টিং ও ক্যাশআউট পরিচালনা করুন</p>
     </div>
 
-    <div class="form-group">
-      <label class="form-label" for="adminPhoneInput">এডমিন ফোন নম্বর</label>
-      <input type="tel" id="adminPhoneInput" class="form-control" placeholder="01XXXXXXXXX" autocomplete="username" inputmode="tel" required>
-    </div>
-    <div class="form-group">
-      <label class="form-label" for="adminPassInput">পাসওয়ার্ড</label>
-      <input type="password" id="adminPassInput" class="form-control" placeholder="আপনার পাসওয়ার্ড" autocomplete="current-password" required>
-    </div>
-    <div id="adminLoginError" class="admin-login-error" role="alert" hidden></div>
-    <button type="button" class="btn-submit" onclick="submitAdminLogin()">নিরাপদে লগইন করুন</button>
+    <form id="adminLoginForm" onsubmit="event.preventDefault(); submitAdminLogin();" novalidate>
+      <div class="form-group">
+        <label class="form-label" for="adminPhoneInput">এডমিন ফোন নম্বর</label>
+        <input type="tel" id="adminPhoneInput" class="form-control" placeholder="01XXXXXXXXX" autocomplete="username" inputmode="tel" enterkeyhint="next" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="adminPassInput">পাসওয়ার্ড</label>
+        <div class="password-input-wrap">
+          <input type="password" id="adminPassInput" class="form-control" placeholder="আপনার পাসওয়ার্ড" autocomplete="current-password" enterkeyhint="done" required>
+          <button type="button" id="btnToggleAdminPass" class="btn-toggle-pass" onclick="toggleAdminPassVisibility()" aria-label="পাসওয়ার্ড দেখুন">দেখুন</button>
+        </div>
+      </div>
+      <div id="adminLoginError" class="admin-login-error" role="alert" hidden></div>
+      <button type="submit" id="btnAdminLoginSubmit" class="btn-submit">নিরাপদে লগইন করুন</button>
+    </form>
     <a class="admin-back-link" href="/">← দোকানে ফিরে যান</a>
   </div>
 
@@ -642,7 +648,7 @@
 
         <div style="display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; align-items: center;">
           <div style="flex: 1; min-width: 220px;">
-            <input type="text" id="userSearchInput" class="form-control" placeholder="🔍 নাম, ফোন নম্বর বা রেফারেল কোড দিয়ে খুঁজুন...">
+            <input type="text" id="userSearchInput" class="form-control" placeholder="🔍 নাম, ফোন বা কোড খুঁজুন...">
           </div>
           <div style="min-width: 150px;">
             <select id="userRoleFilter" class="form-control">
@@ -1287,6 +1293,25 @@
     </div>
   </div>
 
+  <!-- Reusable In-App Input Modal (replaces browser prompt) -->
+  <div class="modal-overlay" id="adminActionPromptModal" role="dialog" aria-modal="true" aria-labelledby="adminActionPromptTitle">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 id="adminActionPromptTitle">তথ্য দিন</h3>
+        <button type="button" class="btn-close" onclick="closeModal('adminActionPromptModal')" aria-label="বন্ধ করুন">&times;</button>
+      </div>
+      <form id="adminActionPromptForm" class="modal-body" onsubmit="event.preventDefault(); submitAdminPromptModal();">
+        <p id="adminActionPromptDesc" style="font-size: 0.86rem; color: var(--adm-text-sec); margin: 0 0 12px;" hidden></p>
+        <div id="adminActionPromptFields"></div>
+        <div id="adminActionPromptError" class="admin-login-error" role="alert" hidden></div>
+        <div style="display: flex; gap: 10px; margin-top: 14px; justify-content: flex-end;">
+          <button type="button" class="btn-nav" onclick="closeModal('adminActionPromptModal')">বাতিল</button>
+          <button type="submit" id="adminActionPromptSubmit" class="btn-submit" style="width: auto; min-width: 130px;">সংরক্ষণ করুন</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <div id="toast" class="toast-msg" role="status" aria-live="polite"></div>
 
   <!-- PWA 1-Click Install Fixed Bottom Banner -->
@@ -1305,14 +1330,14 @@
     </div>
   </div>
 
-  <script src="/js/app-config.js?v=4.0.1"></script>
-  <script src="/js/api.js?v=4.0.4"></script>
-  <script src="/js/cutlist-calculator.js?v=1.0.0"></script>
-  <script src="/js/admin.js?v=4.1.0"></script>
-  <script src="/js/admin-referrals.js?v=1.0.2"></script>
-  <script src="/js/admin-users.js?v=4.0.5"></script>
-  <script src="/js/pwa-install.js?v=3.2.2" defer></script>
-  <script src="/js/pwa-splash.js?v=1.0.0"></script>
+  <script src="/js/app-config.js?v=5.0.0"></script>
+  <script src="/js/api.js?v=5.0.0"></script>
+  <script src="/js/cutlist-calculator.js?v=1.1.0"></script>
+  <script src="/js/admin.js?v=5.0.0"></script>
+  <script src="/js/admin-referrals.js?v=1.1.0"></script>
+  <script src="/js/admin-users.js?v=5.0.0"></script>
+  <script src="/js/pwa-install.js?v=5.0.0" defer></script>
+  <script src="/js/pwa-splash.js?v=4.0.2"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
