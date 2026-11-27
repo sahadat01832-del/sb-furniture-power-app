@@ -172,6 +172,36 @@ test('AI Vision 3: PATCH /api/admin/products/:id/quick-update updates stock and 
   const dbProd = await get('SELECT stock, regular_price FROM products WHERE id = ?', [testProductId]);
   assert.equal(dbProd.stock, 45);
   assert.equal(dbProd.regular_price, 550000); // Paisa conversion checked
+
+  // Update wholesale_price & reseller_commission together and verify commission_tab auto-updates
+  const fullQuickRes = await request(`/api/admin/products/${testProductId}/quick-update`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${adminToken}` },
+    body: {
+      regular_price: 6000,
+      wholesale_price: 4200,
+      reseller_commission: 1000,
+      stock: 30
+    }
+  });
+  assert.equal(fullQuickRes.status, 200);
+  assert.equal(fullQuickRes.body.product.regular_price, 6000);
+  assert.equal(fullQuickRes.body.product.wholesale_price, 4200);
+  assert.equal(fullQuickRes.body.product.reseller_commission, 1000);
+  assert.equal(fullQuickRes.body.product.commission_tab, '1000tk');
+  assert.equal(fullQuickRes.body.product.stock, 30);
+
+  // Reject negative net profit (wholesale + commission > regular_price)
+  const negativeRes = await request(`/api/admin/products/${testProductId}/quick-update`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${adminToken}` },
+    body: {
+      regular_price: 1000,
+      wholesale_price: 800,
+      reseller_commission: 300
+    }
+  });
+  assert.equal(negativeRes.status, 400);
 });
 
 test('AI Vision 4: POST /api/admin/ai/inspect-image resolves local /uploads/products path safely', async () => {

@@ -46,6 +46,16 @@ const PRODUCT_DEFAULT_IMAGE = 'https://images.unsplash.com/photo-1555041469-a586
 const PRODUCT_BRANDS = new Set(['SB Furniture', 'SB POWER', 'SB Lifestyle & Tools']);
 const COMMISSION_TABS = new Set(['50tk', '100tk', '200tk', '500tk', '1000tk', '1500tk']);
 
+function resolveCommissionTab(commissionTaka) {
+  const comm = Number(commissionTaka) || 0;
+  if (comm >= 1500) return '1500tk';
+  if (comm >= 1000) return '1000tk';
+  if (comm >= 500) return '500tk';
+  if (comm >= 200) return '200tk';
+  if (comm >= 100) return '100tk';
+  return '50tk';
+}
+
 const MAX_CUTLIST_PARTS = 200;
 
 // The board count and board cost are money, so they are always rebuilt from the
@@ -200,13 +210,7 @@ function validateProductPayload(input, shopBoardPrice = DEFAULT_BOARD_PRICE) {
     }
     data.commission_tab = input.commission_tab;
   } else {
-    const comm = Number(data.reseller_commission) || 0;
-    if (comm >= 1500) data.commission_tab = '1500tk';
-    else if (comm >= 1000) data.commission_tab = '1000tk';
-    else if (comm >= 500) data.commission_tab = '500tk';
-    else if (comm >= 200) data.commission_tab = '200tk';
-    else if (comm >= 100) data.commission_tab = '100tk';
-    else data.commission_tab = '50tk';
+    data.commission_tab = resolveCommissionTab(data.reseller_commission);
   }
 
   if (input.image_url !== undefined && typeof input.image_url !== 'string') {
@@ -1565,45 +1569,85 @@ router.post('/ai/marketing-copy', async (req, res) => {
   }
 });
 
-// Quick inline update for stock and regular price in admin product table
+// Quick inline update for stock, retail price, wholesale price, and reseller commission
 router.patch('/products/:id/quick-update', async (req, res) => {
   try {
-    const productId = parseInt(req.params.id, 10);
+    const productId = Number(req.params.id);
     if (!Number.isSafeInteger(productId) || productId < 1) {
       return res.status(400).json({ success: false, message: 'প্রোডাক্ট আইডি সঠিক নয়' });
     }
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+      return res.status(400).json({ success: false, message: 'আপডেটের তথ্য সঠিকভাবে পাঠান' });
+    }
 
-    const { stock, regular_price } = req.body || {};
+    const existing = await get('SELECT * FROM products WHERE id = ?', [productId]);
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'প্রোডাক্ট খুঁজে পাওয়া যায়নি' });
+    }
+
+    const { stock, regular_price, wholesale_price, reseller_commission } = req.body;
     const updates = [];
     const params = [];
 
+    let nextRegularPaisa = Number(existing.regular_price) || 0;
+    let nextWholesalePaisa = Number(existing.wholesale_price) || 0;
+    let nextCommissionPaisa = Number(existing.reseller_commission) || 0;
+
     if (stock !== undefined) {
-      const numStock = parseInt(stock, 10);
-      if (isNaN(numStock) || numStock < 0) {
-        return res.status(400).json({ success: false, message: 'স্টক সংখ্যা ০ বা তার বেশি হতে হবে' });
+      const numStock = Number(stock);
+      if (stock === '' || stock === null || !Number.isSafeInteger(numStock) || numStock < 0 || numStock > 1000000) {
+        return res.status(400).json({ success: false, message: 'স্টক সংখ্যা ০ থেকে ১০,০০,০০০-এর মধ্যে পূর্ণসংখ্যা হতে হবে' });
       }
       updates.push('stock = ?');
       params.push(numStock);
     }
 
     if (regular_price !== undefined) {
-      const numPrice = parseFloat(regular_price);
-      if (isNaN(numPrice) || numPrice < 1) {
-        return res.status(400).json({ success: false, message: 'বিক্রয় মূল্য সঠিক নয়' });
+      const paisa = toPaisa(regular_price);
+      if (paisa === null || paisa < 100 || paisa > 50000000 * 100) {
+        return res.status(400).json({ success: false, message: 'বিক্রয় মূল্য সঠিক নয় (কমপক্ষে ১ ৳)' });
       }
+      nextRegularPaisa = paisa;
       updates.push('regular_price = ?');
-      params.push(toPaisa(numPrice));
+      params.push(paisa);
+    }
+
+    if (wholesale_price !== undefined) {
+      const paisa = toPaisa(wholesale_price);
+      if (paisa === null || paisa < 0 || paisa > 50000000 * 100) {
+        return res.status(400).json({ success: false, message: 'পাইকারি মূল্য সঠিক সংখ্যায় দিন' });
+      }
+      nextWholesalePaisa = paisa;
+      updates.push('wholesale_price = ?');
+      params.push(paisa);
+    }
+
+    if (reseller_commission !== undefined) {
+      const paisa = toPaisa(reseller_commission);
+      if (paisa === null || paisa < 0 || paisa > 50000000 * 100) {
+        return res.status(400).json({ success: false, message: 'রিসেলার কমিশন সঠিক সংখ্যায় দিন' });
+      }
+      nextCommissionPaisa = paisa;
+      updates.push('reseller_commission = ?');
+      params.push(paisa);
+      updates.push('commission_tab = ?');
+      params.push(resolveCommissionTab(paisa / 100));
     }
 
     if (updates.length === 0) {
       return res.status(400).json({ success: false, message: 'আপডেটের জন্য স্টক বা মূল্য প্রদান করুন' });
     }
 
-    params.push(productId);
-    const result = await run(`UPDATE products SET ${updates.join(', ')} WHERE id = ?`, params);
-    if (result.changes === 0) {
-      return res.status(404).json({ success: false, message: 'প্রোডাক্ট খুঁজে পাওয়া যায়নি' });
+    if (nextWholesalePaisa + nextCommissionPaisa > nextRegularPaisa) {
+      return res.status(400).json({
+        success: false,
+        message: 'পাইকারি মূল্য ও রিসেলার কমিশনের যোগফল বিক্রয় মূল্যের চেয়ে বেশি হতে পারবে না (নেট লাভ নেগেটিভ)'
+      });
     }
+
+    updates.push('updated_at = CURRENT_TIMESTAMP');
+    params.push(productId);
+    await run(`UPDATE products SET ${updates.join(', ')} WHERE id = ?`, params);
 
     const updated = await get('SELECT * FROM products WHERE id = ?', [productId]);
     return res.json({

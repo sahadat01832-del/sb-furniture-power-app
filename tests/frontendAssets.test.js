@@ -278,6 +278,10 @@ test('Frontend 6: Admin modals, light-mode isolation, native prompt replacement,
       'id="adminLoginForm"',
       'id="btnToggleAdminPass"',
       'id="adminActionPromptModal"',
+      'id="adminProductBrandTabs"',
+      'id="btnToggleQuickPriceMode"',
+      'id="adminQuickPriceBar"',
+      'value="all">সবগুলো',
       'cutlist-calculator.js',
       'id="cutDbWarnings"',
       'id="furnCutlistWarnings"',
@@ -288,9 +292,16 @@ test('Frontend 6: Admin modals, light-mode isolation, native prompt replacement,
     }
   }
 
+  const storefrontHtml = fs.readFileSync(path.join(rootDir, 'public', 'index.html'), 'utf8');
+  assert.ok(storefrontHtml.includes('data-cat="পাওয়ার ব্যাংক ও চার্জার"'));
+  assert.ok(storefrontHtml.includes('data-cat="স্পিকার ও স্মার্ট গ্যাজেট"'));
+
   const adminJs = fs.readFileSync(path.join(rootDir, 'public', 'js', 'admin.js'), 'utf8');
   assert.doesNotMatch(adminJs, /\bwindow\.prompt\s*\(|\bconst\s+\w+\s*=\s*prompt\(/);
   assert.ok(adminJs.includes('openAdminPromptModal'));
+  assert.ok(adminJs.includes('setAdminProductBrandTab'));
+  assert.ok(adminJs.includes('toggleAdminQuickPriceMode'));
+  assert.ok(adminJs.includes('saveAllQuickPriceChanges'));
 
   for (const relPath of [
     'css/admin.css',

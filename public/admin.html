@@ -13,7 +13,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="/icons/admin-icon-192.png">
   <link rel="apple-touch-icon" href="/icons/admin-icon-192.png">
   <link rel="stylesheet" href="/css/style.css?v=5.0.1">
-  <link rel="stylesheet" href="/css/admin.css?v=5.0.1">
+  <link rel="stylesheet" href="/css/admin.css?v=5.0.2">
   <link rel="stylesheet" href="/css/pwa-splash.css?v=4.0.2">
   <link rel="stylesheet" href="/css/pwa-install.css?v=5.0.0">
   <link rel="stylesheet" href="/css/animations.css?v=5.0.0">
@@ -362,12 +362,19 @@
         <div class="adm-section-head">
           <div>
             <h3>🪑 ক্যাটালগ ও পণ্য ব্যবস্থাপনা</h3>
-            <p class="adm-section-sub">ছবি বা টাইটেল থেকে AI অটো-লিস্টিং, বোর্ড হিসাব এবং লাইভ মার্জিন কন্ট্রোল</p>
+            <p class="adm-section-sub">ব্র্যান্ড অনুযায়ী আলাদা ট্যাব, AI অটো-লিস্টিং এবং সরাসরি টেবিলে দ্রুত প্রাইস এডিট</p>
           </div>
-          <button type="button" class="btn-submit" style="width: auto; margin-top: 0; padding: 0 18px; min-height: 42px;" onclick="openAddProductModal()">
-            + নতুন পণ্য যুক্ত করুন
-          </button>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+            <button type="button" id="btnToggleQuickPriceMode" class="adm-btn-quick-price" aria-pressed="false" onclick="toggleAdminQuickPriceMode()">
+              ⚡ দ্রুত প্রাইস এডিট মোড
+            </button>
+            <button type="button" class="btn-submit" style="width: auto; margin-top: 0; padding: 0 18px; min-height: 42px;" onclick="openAddProductModal()">
+              + নতুন পণ্য যুক্ত করুন
+            </button>
+          </div>
         </div>
+
+        <div id="adminProductBrandTabs" class="product-brand-tabs" role="tablist" aria-label="ব্র্যান্ড বা ধরন অনুযায়ী পণ্য"></div>
 
         <div class="product-management-tools" aria-label="পণ্য খোঁজা ও ফিল্টার">
           <label class="product-search-field">
@@ -382,7 +389,7 @@
           </label>
           <label>
             <span>দোকান</span>
-            <select id="adminProductShopFilter" class="form-control" onchange="filterAdminProducts()">
+            <select id="adminProductShopFilter" class="form-control" onchange="onAdminShopFilterChange(this.value)">
               <option value="all">সব দোকান</option>
             </select>
           </label>
@@ -403,11 +410,29 @@
               <option value="25">২৫টি</option>
               <option value="50">৫০টি</option>
               <option value="100">১০০টি</option>
+              <option value="all">সবগুলো</option>
             </select>
           </label>
         </div>
 
         <div id="adminProductQuickFilters" class="product-quick-filters" aria-label="দ্রুত পণ্য ফিল্টার"></div>
+
+        <div id="adminQuickPriceBar" class="quick-price-toolbar" hidden>
+          <div class="quick-price-toolbar-info">
+            <strong>⚡ দ্রুত প্রাইস এডিট মোড চালু আছে</strong>
+            <span>প্রতিটি সারির ঘরে বিক্রয় মূল্য, পাইকারি, কমিশন ও স্টক পরিবর্তন করে সেভ করুন।</span>
+          </div>
+          <div class="quick-price-toolbar-actions">
+            <span id="quickPriceDirtyBadge" class="quick-price-dirty-badge">পরিবর্তিত: ০টি</span>
+            <button type="button" id="btnSaveAllQuickPrices" class="action-btn-sm btn-deliver" onclick="saveAllQuickPriceChanges()" disabled>
+              💾 পরিবর্তিত সব সেভ করুন
+            </button>
+            <button type="button" class="adm-btn-neutral" onclick="toggleAdminQuickPriceMode(false)">
+              ✕ বন্ধ করুন
+            </button>
+          </div>
+        </div>
+
         <div class="product-list-summary">
           <span id="adminProductsCount" role="status" aria-live="polite">পণ্যের তালিকা প্রস্তুত হচ্ছে...</span>
           <button type="button" class="product-reset-button" onclick="resetAdminProductFilters()">ফিল্টার মুছুন</button>
@@ -1333,7 +1358,7 @@
   <script src="/js/app-config.js?v=5.0.0"></script>
   <script src="/js/api.js?v=5.0.0"></script>
   <script src="/js/cutlist-calculator.js?v=1.1.0"></script>
-  <script src="/js/admin.js?v=5.0.0"></script>
+  <script src="/js/admin.js?v=5.0.2"></script>
   <script src="/js/admin-referrals.js?v=1.1.0"></script>
   <script src="/js/admin-users.js?v=5.0.0"></script>
   <script src="/js/pwa-install.js?v=5.0.0" defer></script>

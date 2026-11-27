@@ -7,6 +7,9 @@ let currentAdminSection = 'orders';
 let adminProductsList = [];
 let adminProductsPage = 1;
 let adminProductStatusFilter = 'all';
+let adminProductBrandFilter = 'all';
+let adminQuickPriceEditMode = false;
+const quickPriceDrafts = new Map();
 const unsavedUploadedImageUrls = new Set();
 
 const api = (path) => (typeof window.apiUrl === 'function' ? window.apiUrl(path) : path);
@@ -993,6 +996,38 @@ async function rejectPayoutPrompt(payoutId) {
 }
 
 // ================= SECTION 3: PRODUCTS (CRUD) =================
+const OWN_BRAND_NAMES = ['SB Furniture', 'SB POWER', 'SB Lifestyle & Tools'];
+const ADMIN_BRAND_TABS = [
+  { key: 'all', label: '📦 সব পণ্য' },
+  { key: 'SB Furniture', label: '🪑 SB Furniture' },
+  { key: 'SB POWER', label: '⚡ SB POWER' },
+  { key: 'SB Lifestyle & Tools', label: '🕶️ SB Lifestyle & Tools' },
+  { key: 'partner', label: '🏪 পার্টনার শপ' }
+];
+
+function isPartnerProduct(product) {
+  const shopName = String(product?.shop_name || product?.brand || '');
+  return product?.shop_type === 'partner' || Boolean(shopName && !OWN_BRAND_NAMES.includes(shopName));
+}
+
+function matchesAdminBrandFilter(product, brandKey) {
+  if (!brandKey || brandKey === 'all') return true;
+  const isPartner = isPartnerProduct(product);
+  if (brandKey === 'partner') return isPartner;
+  if (isPartner) return false;
+  return String(product?.brand || '') === brandKey || String(product?.shop_name || '') === brandKey;
+}
+
+function resolveAdminCommissionTab(commAmount) {
+  const comm = Number(commAmount) || 0;
+  if (comm >= 1500) return '1500tk';
+  if (comm >= 1000) return '1000tk';
+  if (comm >= 500) return '500tk';
+  if (comm >= 200) return '200tk';
+  if (comm >= 100) return '100tk';
+  return '50tk';
+}
+
 function formatAdminProductCount(value) {
   return Number(value || 0).toLocaleString('bn-BD');
 }
@@ -1022,6 +1057,29 @@ function populateAdminProductFilters() {
   shopFilter.value = shops.has(selectedShop) ? selectedShop : 'all';
 }
 
+function setAdminProductBrandTab(brandKey) {
+  const validKeys = new Set(ADMIN_BRAND_TABS.map((t) => t.key));
+  adminProductBrandFilter = validKeys.has(brandKey) ? brandKey : 'all';
+  const shopFilter = document.getElementById('adminProductShopFilter');
+  if (shopFilter) {
+    const hasMatchingOption = [...shopFilter.options].some((opt) => opt.value === adminProductBrandFilter);
+    shopFilter.value = hasMatchingOption ? adminProductBrandFilter : 'all';
+  }
+  adminProductsPage = 1;
+  renderAdminProducts();
+}
+
+function onAdminShopFilterChange(shopValue) {
+  if (!shopValue || shopValue === 'all') {
+    adminProductBrandFilter = 'all';
+  } else if (OWN_BRAND_NAMES.includes(shopValue) || shopValue === 'partner') {
+    adminProductBrandFilter = shopValue;
+  } else {
+    adminProductBrandFilter = 'partner';
+  }
+  filterAdminProducts();
+}
+
 function setAdminProductStatusFilter(status) {
   adminProductStatusFilter = ['all', 'active', 'inactive', 'low', 'out'].includes(status) ? status : 'all';
   adminProductsPage = 1;
@@ -1046,6 +1104,7 @@ function resetAdminProductFilters() {
     if (control) control.value = value;
   });
   adminProductStatusFilter = 'all';
+  adminProductBrandFilter = 'all';
   adminProductsPage = 1;
   renderAdminProducts();
 }
@@ -1055,20 +1114,335 @@ function changeAdminProductsPage(offset) {
   renderAdminProducts();
 }
 
+function getQuickPriceDraft(product) {
+  const saved = quickPriceDrafts.get(product.id);
+  if (saved) return saved;
+  return {
+    regular_price: Number(product.regular_price) || 0,
+    wholesale_price: Number(product.wholesale_price) || 0,
+    reseller_commission: Number(product.reseller_commission) || 0,
+    stock: Number(product.stock) || 0
+  };
+}
+
+function isQuickPriceRowDirty(product, draft) {
+  if (!product || !draft) return false;
+  return (
+    Number(draft.regular_price) !== (Number(product.regular_price) || 0) ||
+    Number(draft.wholesale_price) !== (Number(product.wholesale_price) || 0) ||
+    Number(draft.reseller_commission) !== (Number(product.reseller_commission) || 0) ||
+    Number(draft.stock) !== (Number(product.stock) || 0)
+  );
+}
+
+function validateQuickPriceDraft(product, draft) {
+  const regularPrice = Number(draft.regular_price);
+  const wholesalePrice = Number(draft.wholesale_price);
+  const resellerCommission = Number(draft.reseller_commission);
+  const stock = Number(draft.stock);
+  const label = product?.sku || product?.title || `#${product?.id || ''}`;
+
+  if (!Number.isFinite(regularPrice) || regularPrice < 1 || regularPrice > 50000000) {
+    return { valid: false, error: `${label}: বিক্রয় মূল্য কমপক্ষে ১ ৳ হতে হবে`, netProfit: 0 };
+  }
+  if (!Number.isFinite(wholesalePrice) || wholesalePrice < 0 || wholesalePrice > 50000000) {
+    return { valid: false, error: `${label}: পাইকারি মূল্য সঠিক সংখ্যায় দিন`, netProfit: 0 };
+  }
+  if (!Number.isFinite(resellerCommission) || resellerCommission < 0 || resellerCommission > 50000000) {
+    return { valid: false, error: `${label}: রিসেলার কমিশন সঠিক সংখ্যায় দিন`, netProfit: 0 };
+  }
+  if (!Number.isSafeInteger(stock) || stock < 0 || stock > 1000000) {
+    return { valid: false, error: `${label}: স্টক সংখ্যা ০ বা তার বেশি পূর্ণসংখ্যা হতে হবে`, netProfit: 0 };
+  }
+  const netProfit = Math.round((regularPrice - wholesalePrice - resellerCommission) * 100) / 100;
+  if (wholesalePrice + resellerCommission > regularPrice) {
+    return {
+      valid: false,
+      error: `${label}: পাইকারি (${wholesalePrice}৳) + কমিশন (${resellerCommission}৳) বিক্রয় মূল্যের (${regularPrice}৳) চেয়ে বেশি`,
+      netProfit
+    };
+  }
+  return {
+    valid: true,
+    error: '',
+    regular_price: regularPrice,
+    wholesale_price: wholesalePrice,
+    reseller_commission: resellerCommission,
+    stock,
+    netProfit
+  };
+}
+
+function syncQuickPriceToolbarState() {
+  const toggleBtn = document.getElementById('btnToggleQuickPriceMode');
+  const bar = document.getElementById('adminQuickPriceBar');
+  const badge = document.getElementById('quickPriceDirtyBadge');
+  const saveAllBtn = document.getElementById('btnSaveAllQuickPrices');
+
+  if (toggleBtn) {
+    toggleBtn.classList.toggle('is-active', adminQuickPriceEditMode);
+    toggleBtn.setAttribute('aria-pressed', String(adminQuickPriceEditMode));
+    toggleBtn.textContent = adminQuickPriceEditMode ? '✓ প্রাইস এডিট মোড চালু' : '⚡ দ্রুত প্রাইস এডিট মোড';
+  }
+  if (bar) bar.hidden = !adminQuickPriceEditMode;
+
+  let dirtyCount = 0;
+  for (const [id, draft] of quickPriceDrafts.entries()) {
+    const product = adminProductsList.find((item) => item.id === id);
+    if (product && isQuickPriceRowDirty(product, draft)) {
+      dirtyCount += 1;
+    } else if (!product) {
+      quickPriceDrafts.delete(id);
+    }
+  }
+  if (badge) {
+    badge.textContent = `পরিবর্তিত: ${formatAdminProductCount(dirtyCount)}টি`;
+    badge.classList.toggle('has-dirty', dirtyCount > 0);
+  }
+  if (saveAllBtn) {
+    saveAllBtn.disabled = dirtyCount === 0;
+    saveAllBtn.textContent = dirtyCount > 0
+      ? `💾 পরিবর্তিত সব সেভ করুন (${formatAdminProductCount(dirtyCount)})`
+      : '💾 পরিবর্তিত সব সেভ করুন';
+  }
+}
+
+function toggleAdminQuickPriceMode(forceState) {
+  const nextState = typeof forceState === 'boolean' ? forceState : !adminQuickPriceEditMode;
+  if (!nextState && quickPriceDrafts.size > 0) {
+    const hasDirty = [...quickPriceDrafts.entries()].some(([id, draft]) => {
+      const product = adminProductsList.find((item) => item.id === id);
+      return product && isQuickPriceRowDirty(product, draft);
+    });
+    if (hasDirty && !confirm('অসংরক্ষিত প্রাইস পরিবর্তনগুলো বাতিল করে এডিট মোড বন্ধ করতে চান?')) {
+      return;
+    }
+    quickPriceDrafts.clear();
+  }
+  adminQuickPriceEditMode = nextState;
+  renderAdminProducts();
+}
+
+function onQuickPriceFieldInput(productId, field, rawValue) {
+  const product = adminProductsList.find((item) => item.id === productId);
+  if (!product) return;
+
+  const draft = { ...getQuickPriceDraft(product) };
+  draft[field] = rawValue === '' ? NaN : Number(rawValue);
+  if (isQuickPriceRowDirty(product, draft)) {
+    quickPriceDrafts.set(productId, draft);
+  } else {
+    quickPriceDrafts.delete(productId);
+  }
+
+  const row = document.querySelector(`#adminProductsTableBody tr[data-product-id="${productId}"]`);
+  if (row) {
+    const dirty = isQuickPriceRowDirty(product, draft);
+    const check = validateQuickPriceDraft(product, draft);
+    row.classList.toggle('quick-price-row-dirty', dirty && check.valid);
+    row.classList.toggle('quick-price-row-invalid', dirty && !check.valid);
+
+    const tierEl = row.querySelector('.quick-comm-tier');
+    if (tierEl) {
+      const commVal = Number.isFinite(draft.reseller_commission) ? draft.reseller_commission : 0;
+      tierEl.textContent = `ট্যাব: ${resolveAdminCommissionTab(commVal)}`;
+    }
+    const netEl = row.querySelector('.quick-net-profit');
+    if (netEl) {
+      const net = Number.isFinite(check.netProfit) ? check.netProfit : 0;
+      netEl.textContent = `${net > 0 ? '+' : ''}${net} ৳`;
+      netEl.style.color = net > 0 && check.valid ? '#059669' : '#dc2626';
+    }
+    const warnEl = row.querySelector('.quick-price-profit-warn');
+    if (warnEl) {
+      warnEl.textContent = check.valid ? '' : check.error;
+      warnEl.hidden = check.valid;
+    }
+    const saveBtn = row.querySelector('.btn-quick-save-row');
+    if (saveBtn) saveBtn.disabled = !dirty || !check.valid;
+    const resetBtn = row.querySelector('.btn-quick-reset-row');
+    if (resetBtn) resetBtn.disabled = !dirty;
+  }
+  syncQuickPriceToolbarState();
+}
+
+async function persistQuickPriceUpdate(product, draft) {
+  const check = validateQuickPriceDraft(product, draft);
+  if (!check.valid) throw new Error(check.error);
+
+  const patchPayload = {
+    stock: check.stock,
+    regular_price: check.regular_price,
+    wholesale_price: check.wholesale_price,
+    reseller_commission: check.reseller_commission
+  };
+
+  const patchRes = await fetch(api(`/api/admin/products/${product.id}/quick-update`), {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${adminToken}`
+    },
+    body: JSON.stringify(patchPayload)
+  });
+  const patchData = await patchRes.json();
+  if (!patchRes.ok || !patchData.success) {
+    throw new Error(patchData.message || 'প্রাইস আপডেট ব্যর্থ হয়েছে');
+  }
+
+  const serverProd = patchData.product || {};
+  const wholesaleMismatch = Math.abs((Number(serverProd.wholesale_price) || 0) - check.wholesale_price) > 0.001;
+  const commissionMismatch = Math.abs((Number(serverProd.reseller_commission) || 0) - check.reseller_commission) > 0.001;
+
+  // Older servers only persist stock & regular_price on PATCH quick-update; fall back to full PUT so wholesale/commission never get dropped.
+  if (wholesaleMismatch || commissionMismatch) {
+    const putPayload = {
+      title: product.title,
+      sku: product.sku,
+      brand: product.brand,
+      category: product.category,
+      regular_price: check.regular_price,
+      wholesale_price: check.wholesale_price,
+      reseller_commission: check.reseller_commission,
+      commission_tab: resolveAdminCommissionTab(check.reseller_commission),
+      stock: check.stock,
+      is_active: Number(product.is_active) === 0 ? 0 : 1,
+      shop_id: product.shop_id || null,
+      shop_name: product.shop_name || product.brand,
+      vendor_phone: product.vendor_phone || '',
+      vendor_badge: product.vendor_badge || '',
+      vendor_address: product.vendor_address || '',
+      image_url: product.image_url || '',
+      caption: product.caption || '',
+      description: product.description || '',
+      materials: product.materials || '',
+      finish: product.finish || '',
+      furniture_cutlist: product.furniture_cutlist || null
+    };
+    const putRes = await fetch(api(`/api/admin/products/${product.id}`), {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`
+      },
+      body: JSON.stringify(putPayload)
+    });
+    const putData = await putRes.json();
+    if (!putRes.ok || !putData.success) {
+      throw new Error(putData.message || 'সম্পূর্ণ প্রাইস আপডেট ব্যর্থ হয়েছে');
+    }
+  }
+
+  product.regular_price = check.regular_price;
+  product.wholesale_price = check.wholesale_price;
+  product.reseller_commission = check.reseller_commission;
+  product.commission_tab = resolveAdminCommissionTab(check.reseller_commission);
+  product.stock = check.stock;
+  product.platform_net_profit = check.netProfit;
+  return product;
+}
+
+async function saveSingleQuickPrice(productId) {
+  const product = adminProductsList.find((item) => item.id === productId);
+  if (!product) return;
+  const draft = getQuickPriceDraft(product);
+  const rowBtn = document.querySelector(`#adminProductsTableBody tr[data-product-id="${productId}"] .btn-quick-save-row`);
+  if (rowBtn) {
+    rowBtn.disabled = true;
+    rowBtn.textContent = '⏳...';
+  }
+  try {
+    await persistQuickPriceUpdate(product, draft);
+    quickPriceDrafts.delete(productId);
+    renderAdminProducts();
+    showToast(`✅ ${product.sku}: মূল্য ও স্টক সংরক্ষণ হয়েছে!`);
+  } catch (err) {
+    showToast(err.message || 'সেভ করা যায়নি', 'error');
+    if (rowBtn) {
+      rowBtn.disabled = false;
+      rowBtn.textContent = '💾 সেভ';
+    }
+  }
+}
+
+function resetQuickPriceRow(productId) {
+  quickPriceDrafts.delete(productId);
+  renderAdminProducts();
+}
+
+async function saveAllQuickPriceChanges() {
+  const dirtyEntries = [];
+  for (const [id, draft] of quickPriceDrafts.entries()) {
+    const product = adminProductsList.find((item) => item.id === id);
+    if (!product || !isQuickPriceRowDirty(product, draft)) continue;
+    const check = validateQuickPriceDraft(product, draft);
+    if (!check.valid) {
+      showToast(check.error, 'error');
+      return;
+    }
+    dirtyEntries.push({ product, draft });
+  }
+  if (dirtyEntries.length === 0) return;
+
+  const btn = document.getElementById('btnSaveAllQuickPrices');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = `⏳ সেভ হচ্ছে (${formatAdminProductCount(dirtyEntries.length)}টি)...`;
+  }
+
+  let savedCount = 0;
+  let firstError = '';
+  for (const { product, draft } of dirtyEntries) {
+    try {
+      await persistQuickPriceUpdate(product, draft);
+      quickPriceDrafts.delete(product.id);
+      savedCount += 1;
+    } catch (err) {
+      if (!firstError) firstError = err.message || 'সেভ ব্যর্থ হয়েছে';
+    }
+  }
+
+  renderAdminProducts();
+  if (firstError) {
+    showToast(`${formatAdminProductCount(savedCount)}টি সেভ হয়েছে, বাকিগুলোতে সমস্যা: ${firstError}`, 'error');
+  } else {
+    showToast(`✅ মোট ${formatAdminProductCount(savedCount)}টি পণ্যের মূল্য সফলভাবে সংরক্ষণ হয়েছে!`);
+  }
+}
+
 function renderAdminProducts() {
   const tbody = document.getElementById('adminProductsTableBody');
   if (!tbody) return;
+
+  const brandTabsEl = document.getElementById('adminProductBrandTabs');
+  if (brandTabsEl) {
+    const brandCounts = {};
+    ADMIN_BRAND_TABS.forEach(({ key }) => {
+      brandCounts[key] = key === 'all'
+        ? adminProductsList.length
+        : adminProductsList.filter((product) => matchesAdminBrandFilter(product, key)).length;
+    });
+    brandTabsEl.innerHTML = ADMIN_BRAND_TABS.map(({ key, label }) => `
+      <button type="button" role="tab" class="product-brand-tab${adminProductBrandFilter === key ? ' is-selected' : ''}"
+        data-brand-tab="${escapeAdminHtml(key)}" aria-selected="${adminProductBrandFilter === key}"
+        onclick="setAdminProductBrandTab('${escapeAdminHtml(key)}')">
+        ${label}<span>${formatAdminProductCount(brandCounts[key])}</span>
+      </button>
+    `).join('');
+  }
 
   const search = (document.getElementById('adminProductSearch')?.value || '').trim().toLocaleLowerCase();
   const category = document.getElementById('adminProductCategoryFilter')?.value || 'all';
   const shop = document.getElementById('adminProductShopFilter')?.value || 'all';
   const sort = document.getElementById('adminProductSort')?.value || 'newest';
-  const pageSize = Math.max(1, parseInt(document.getElementById('adminProductPageSize')?.value, 10) || 25);
-  const activeProducts = adminProductsList.filter((product) => Number(product.is_active) === 1);
+  const rawPageSize = document.getElementById('adminProductPageSize')?.value || '25';
+
+  const brandScopedProducts = adminProductsList.filter((product) => matchesAdminBrandFilter(product, adminProductBrandFilter));
+  const activeProducts = brandScopedProducts.filter((product) => Number(product.is_active) === 1);
   const quickCounts = {
-    all: adminProductsList.length,
+    all: brandScopedProducts.length,
     active: activeProducts.length,
-    inactive: adminProductsList.length - activeProducts.length,
+    inactive: brandScopedProducts.length - activeProducts.length,
     low: activeProducts.filter((product) => Number(product.stock) > 0 && Number(product.stock) <= 5).length,
     out: activeProducts.filter((product) => Number(product.stock) <= 0).length
   };
@@ -1085,7 +1459,7 @@ function renderAdminProducts() {
     `).join('');
   }
 
-  let filtered = adminProductsList.filter((product) => {
+  let filtered = brandScopedProducts.filter((product) => {
     const isActive = Number(product.is_active) === 1;
     const stock = Number(product.stock) || 0;
     if (adminProductStatusFilter === 'active' && !isActive) return false;
@@ -1094,7 +1468,7 @@ function renderAdminProducts() {
     if (adminProductStatusFilter === 'out' && (!isActive || stock > 0)) return false;
     if (category !== 'all' && product.category !== category) return false;
     const shopName = String(product.shop_name || product.brand || '');
-    const isPartner = product.shop_type === 'partner' || (shopName && !['SB Furniture', 'SB POWER', 'SB Lifestyle & Tools'].includes(shopName));
+    const isPartner = isPartnerProduct(product);
     if (shop === 'partner' && !isPartner) return false;
     if (shop !== 'all' && shop !== 'partner' && shopName !== shop) return false;
     if (search) {
@@ -1119,6 +1493,9 @@ function renderAdminProducts() {
     return sort === 'newest' ? Number(b.id) - Number(a.id) : Number(a.id) - Number(b.id);
   });
 
+  const pageSize = rawPageSize === 'all'
+    ? Math.max(1, filtered.length)
+    : Math.max(1, parseInt(rawPageSize, 10) || 25);
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   adminProductsPage = Math.min(Math.max(1, adminProductsPage), totalPages);
   const start = (adminProductsPage - 1) * pageSize;
@@ -1137,6 +1514,8 @@ function renderAdminProducts() {
   if (prevButton) prevButton.disabled = adminProductsPage <= 1 || filtered.length === 0;
   if (nextButton) nextButton.disabled = adminProductsPage >= totalPages || filtered.length === 0;
 
+  syncQuickPriceToolbarState();
+
   if (!adminProductsList.length) {
     tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; padding: 20px;">কোনো পণ্য নেই। নতুন পণ্য যোগ করে শুরু করুন।</td></tr>';
     return;
@@ -1148,24 +1527,64 @@ function renderAdminProducts() {
 
   tbody.innerHTML = pageProducts.map((p) => {
     const isActive = Number(p.is_active) === 1;
-    const isPartner = p.shop_type === 'partner' || (p.shop_name && !['SB Furniture', 'SB POWER', 'SB Lifestyle & Tools'].includes(p.shop_name));
+    const isPartner = isPartnerProduct(p);
     const wholesale = p.wholesale_price || 0;
     const commission = p.reseller_commission || 0;
     const netProfit = p.regular_price - wholesale - commission;
     const safeThumb = safeAdminImageUrl(p.image_url);
     const imgCors = imageCorsAttrAdmin(safeThumb);
 
-    return `
-      <tr style="${isActive ? '' : 'opacity: 0.65; background: rgba(239, 68, 68, 0.05);'}">
-        <td data-label="ছবি"><img class="admin-product-thumb" src="${escapeAdminHtml(safeThumb)}" ${imgCors} alt="${escapeAdminHtml(p.title)}" onerror="window.sbHandleImageError && window.sbHandleImageError(this)"></td>
-        <td data-label="SKU"><strong>${escapeAdminHtml(p.sku)}</strong>${isActive ? '' : '<br><span class="admin-inactive-badge">নিষ্ক্রিয়</span>'}</td>
-        <td data-label="পণ্যের নাম"><strong>${escapeAdminHtml(p.title)}</strong></td>
-        <td data-label="দোকান ও ক্যাটাগরি">
-          <span style="color: ${p.brand === 'SB Furniture' ? '#ea580c' : (p.brand === 'SB Lifestyle & Tools' ? '#0f766e' : '#0284c7')}; font-weight: 700;">${escapeAdminHtml(p.shop_name || p.brand)}</span>
-          ${isPartner ? '<br><span style="font-size: 0.72rem; color: #16a34a; font-weight: 600;">🏪 পার্টনার শপ</span>' : '<br><span style="font-size: 0.72rem; color: #2563eb; font-weight: 600;">🏢 নিজস্ব ব্র্যান্ড</span>'}
-          ${p.vendor_phone ? `<br><span style="font-size: 0.72rem; color: #64748b;">📞 ${escapeAdminHtml(p.vendor_phone)}</span>` : ''}
-          <br><span style="font-size: 0.72rem; color: #64748b;">${escapeAdminHtml(p.category)}</span>
+    const draft = adminQuickPriceEditMode ? getQuickPriceDraft(p) : null;
+    const dirty = adminQuickPriceEditMode ? isQuickPriceRowDirty(p, draft) : false;
+    const check = adminQuickPriceEditMode ? validateQuickPriceDraft(p, draft) : null;
+    const rowClasses = [
+      dirty && check?.valid ? 'quick-price-row-dirty' : '',
+      dirty && !check?.valid ? 'quick-price-row-invalid' : ''
+    ].filter(Boolean).join(' ');
+
+    const priceCellsHtml = adminQuickPriceEditMode
+      ? `
+        <td data-label="মূল্য ও পাইকারি">
+          <div class="quick-price-field-stack">
+            <label class="quick-price-field">বিক্রয় (৳)
+              <input type="number" class="quick-price-input" min="1" step="any" value="${Number.isFinite(draft.regular_price) ? draft.regular_price : ''}"
+                oninput="onQuickPriceFieldInput(${p.id}, 'regular_price', this.value)" aria-label="${escapeAdminHtml(p.sku)} বিক্রয় মূল্য">
+            </label>
+            <label class="quick-price-field">পাইকারি (৳)
+              <input type="number" class="quick-price-input" min="0" step="any" value="${Number.isFinite(draft.wholesale_price) ? draft.wholesale_price : ''}"
+                oninput="onQuickPriceFieldInput(${p.id}, 'wholesale_price', this.value)" aria-label="${escapeAdminHtml(p.sku)} পাইকারি মূল্য">
+            </label>
+          </div>
         </td>
+        <td data-label="রিসেলার কমিশন">
+          <div class="quick-price-field-stack">
+            <label class="quick-price-field">কমিশন (৳)
+              <input type="number" class="quick-price-input" min="0" step="any" value="${Number.isFinite(draft.reseller_commission) ? draft.reseller_commission : ''}"
+                oninput="onQuickPriceFieldInput(${p.id}, 'reseller_commission', this.value)" aria-label="${escapeAdminHtml(p.sku)} রিসেলার কমিশন">
+            </label>
+            <span class="quick-comm-tier admin-cell-muted">ট্যাব: ${escapeAdminHtml(resolveAdminCommissionTab(Number.isFinite(draft.reseller_commission) ? draft.reseller_commission : 0))}</span>
+          </div>
+        </td>
+        <td data-label="নিট লাভ">
+          <strong class="quick-net-profit" style="color: ${check.netProfit > 0 && check.valid ? '#059669' : '#dc2626'}; font-size: 0.95rem;">
+            ${check.netProfit > 0 ? '+' : ''}${escapeAdminHtml(check.netProfit)} ৳
+          </strong>
+          <span class="quick-price-profit-warn" ${check.valid ? 'hidden' : ''}>${check.valid ? '' : escapeAdminHtml(check.error)}</span>
+        </td>
+        <td data-label="স্টক">
+          <label class="quick-price-field">স্টক
+            <input type="number" class="quick-price-input" min="0" step="1" style="min-width: 66px;" value="${Number.isFinite(draft.stock) ? draft.stock : ''}"
+              oninput="onQuickPriceFieldInput(${p.id}, 'stock', this.value)" aria-label="${escapeAdminHtml(p.sku)} স্টক">
+          </label>
+        </td>
+        <td data-label="করণীয়">
+          <div class="product-row-actions">
+            <button type="button" class="action-btn-sm btn-deliver btn-quick-save-row" onclick="saveSingleQuickPrice(${p.id})" ${(!dirty || !check.valid) ? 'disabled' : ''}>💾 সেভ</button>
+            <button type="button" class="action-btn-sm adm-btn-neutral btn-quick-reset-row" onclick="resetQuickPriceRow(${p.id})" ${!dirty ? 'disabled' : ''}>↩️ রিসেট</button>
+            <button type="button" class="action-btn-sm btn-edit-product" onclick="editProductModal(${p.id})">✏️ পূর্ণ এডিট</button>
+          </div>
+        </td>`
+      : `
         <td data-label="মূল্য ও পাইকারি">
           <strong>${escapeAdminHtml(p.regular_price)} ৳</strong>
           <br><span style="font-size: 0.72rem; color: #6546a5;">পাইকারি: ${escapeAdminHtml(wholesale)}৳</span>
@@ -1187,7 +1606,20 @@ function renderAdminProducts() {
               : `<button class="action-btn-sm adm-btn-soft-success" onclick="toggleProductActiveStatus(${p.id}, 1)">✅ সক্রিয়</button>
                  <button class="action-btn-sm btn-cancel" onclick="permanentDeleteProduct(${p.id})">🗑️ স্থায়ী মুছুন</button>`}
           </div>
+        </td>`;
+
+    return `
+      <tr data-product-id="${p.id}" class="${rowClasses}" style="${isActive ? '' : 'opacity: 0.65; background: rgba(239, 68, 68, 0.05);'}">
+        <td data-label="ছবি"><img class="admin-product-thumb" src="${escapeAdminHtml(safeThumb)}" ${imgCors} alt="${escapeAdminHtml(p.title)}" onerror="window.sbHandleImageError && window.sbHandleImageError(this)"></td>
+        <td data-label="SKU"><strong>${escapeAdminHtml(p.sku)}</strong>${isActive ? '' : '<br><span class="admin-inactive-badge">নিষ্ক্রিয়</span>'}</td>
+        <td data-label="পণ্যের নাম"><strong>${escapeAdminHtml(p.title)}</strong></td>
+        <td data-label="দোকান ও ক্যাটাগরি">
+          <span style="color: ${p.brand === 'SB Furniture' ? '#ea580c' : (p.brand === 'SB Lifestyle & Tools' ? '#0f766e' : '#0284c7')}; font-weight: 700;">${escapeAdminHtml(p.shop_name || p.brand)}</span>
+          ${isPartner ? '<br><span style="font-size: 0.72rem; color: #16a34a; font-weight: 600;">🏪 পার্টনার শপ</span>' : '<br><span style="font-size: 0.72rem; color: #2563eb; font-weight: 600;">🏢 নিজস্ব ব্র্যান্ড</span>'}
+          ${p.vendor_phone ? `<br><span style="font-size: 0.72rem; color: #64748b;">📞 ${escapeAdminHtml(p.vendor_phone)}</span>` : ''}
+          <br><span style="font-size: 0.72rem; color: #64748b;">${escapeAdminHtml(p.category)}</span>
         </td>
+        ${priceCellsHtml}
       </tr>
     `;
   }).join('');
@@ -1310,12 +1742,7 @@ function syncCommissionTabFromAmount() {
   const comm = parseFloat(document.getElementById('prodCommission')?.value) || 0;
   const commTab = document.getElementById('prodCommTab');
   if (!commTab) return;
-  if (comm >= 1500) commTab.value = '1500tk';
-  else if (comm >= 1000) commTab.value = '1000tk';
-  else if (comm >= 500) commTab.value = '500tk';
-  else if (comm >= 200) commTab.value = '200tk';
-  else if (comm >= 100) commTab.value = '100tk';
-  else commTab.value = '50tk';
+  commTab.value = resolveAdminCommissionTab(comm);
 }
 
 function onProdRetailPriceInput() {
@@ -1620,8 +2047,33 @@ async function openAddProductModal(preferredShopId = null) {
   document.getElementById('prodDesc').value = '';
   const capInput = document.getElementById('prodCaption');
   if (capInput) capInput.value = '';
-  await loadAdminShopOptions(preferredShopId || 2);
-  if (preferredShopId) onProdShopChange(preferredShopId);
+  await loadAdminShopOptions(preferredShopId);
+  let effectiveShopId = preferredShopId;
+  if (!effectiveShopId && OWN_BRAND_NAMES.includes(adminProductBrandFilter)) {
+    const tabShop = adminShopsList.find((s) => s.shop_type === 'own' && s.name === adminProductBrandFilter);
+    if (tabShop) effectiveShopId = tabShop.id;
+  }
+  if (!effectiveShopId) {
+    const defaultShop = adminShopsList.find((s) => s.shop_type === 'own' && s.name === 'SB POWER');
+    effectiveShopId = defaultShop ? defaultShop.id : 2;
+  }
+  const shopSelectEl = document.getElementById('prodShopId');
+  if (shopSelectEl && [...shopSelectEl.options].some((o) => String(o.value) === String(effectiveShopId))) {
+    shopSelectEl.value = String(effectiveShopId);
+  }
+  onProdShopChange(effectiveShopId);
+  if (OWN_BRAND_NAMES.includes(adminProductBrandFilter)) {
+    const defaultCatByBrand = {
+      'SB Furniture': 'হোম ও অফিস ফার্নিচার',
+      'SB POWER': 'ওয়্যারলেস অডিও ও গ্যাজেটস',
+      'SB Lifestyle & Tools': 'ওয়াচ ও ফ্যাশন'
+    };
+    const catEl = document.getElementById('prodCategory');
+    if (catEl && defaultCatByBrand[adminProductBrandFilter]) {
+      catEl.value = defaultCatByBrand[adminProductBrandFilter];
+      checkFurnitureCutlistVisibility();
+    }
+  }
   updateLiveProfitCalculator();
 
   const aiBox = document.getElementById('aiImageInspectActionBox');
@@ -3015,20 +3467,22 @@ async function copyMarketingText() {
 }
 
 async function promptQuickStockPrice(productId, currentStock, currentPrice) {
+  const existing = adminProductsList.find((item) => item.id === productId);
+  const baseProduct = existing || {
+    id: productId,
+    stock: currentStock,
+    regular_price: currentPrice,
+    wholesale_price: 0,
+    reseller_commission: 0
+  };
+  const currentWholesale = Number(baseProduct.wholesale_price) || 0;
+  const currentCommission = Number(baseProduct.reseller_commission) || 0;
+
   openAdminPromptModal({
     title: '⚡ দ্রুত স্টক ও মূল্য আপডেট',
-    description: `পণ্য #${productId}-এর নতুন স্টক ও বিক্রয় মূল্য নির্ধারণ করুন:`,
+    description: `${baseProduct.sku ? `${baseProduct.sku} · ` : `পণ্য #${productId}-এর `}নতুন মূল্য ও স্টক নির্ধারণ করুন:`,
     submitText: '💾 আপডেট সংরক্ষণ করুন',
     fields: [
-      {
-        name: 'stock',
-        label: `নতুন স্টক সংখ্যা (বর্তমান: ${currentStock} টি) *`,
-        type: 'number',
-        value: currentStock,
-        min: 0,
-        step: 1,
-        required: true
-      },
       {
         name: 'regular_price',
         label: `নতুন বিক্রয় মূল্য (বর্তমান: ${currentPrice} ৳) *`,
@@ -3037,39 +3491,49 @@ async function promptQuickStockPrice(productId, currentStock, currentPrice) {
         min: 1,
         step: 'any',
         required: true
+      },
+      {
+        name: 'wholesale_price',
+        label: `পাইকারি / খরচ (বর্তমান: ${currentWholesale} ৳)`,
+        type: 'number',
+        value: currentWholesale,
+        min: 0,
+        step: 'any',
+        required: true
+      },
+      {
+        name: 'reseller_commission',
+        label: `রিসেলার কমিশন (বর্তমান: ${currentCommission} ৳)`,
+        type: 'number',
+        value: currentCommission,
+        min: 0,
+        step: 'any',
+        required: true
+      },
+      {
+        name: 'stock',
+        label: `নতুন স্টক সংখ্যা (বর্তমান: ${currentStock} টি) *`,
+        type: 'number',
+        value: currentStock,
+        min: 0,
+        step: 1,
+        required: true
       }
     ],
     onSubmit: async (values, showError) => {
-      const newStock = parseInt(values.stock, 10);
-      if (!Number.isSafeInteger(newStock) || newStock < 0) {
-        showError('অনুগ্রহ করে সঠিক পূর্ণসংখ্যা স্টক দিন (০ বা বেশি)');
-        return false;
-      }
-      const newPrice = parseFloat(values.regular_price);
-      if (!Number.isFinite(newPrice) || newPrice < 1) {
-        showError('অনুগ্রহ করে সঠিক বিক্রয় মূল্য দিন (কমপক্ষে ১ ৳)');
-        return false;
-      }
       try {
-        const res = await fetch(api(`/api/admin/products/${productId}/quick-update`), {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${adminToken}`
-          },
-          body: JSON.stringify({ stock: newStock, regular_price: newPrice })
+        await persistQuickPriceUpdate(baseProduct, {
+          stock: parseInt(values.stock, 10),
+          regular_price: parseFloat(values.regular_price),
+          wholesale_price: parseFloat(values.wholesale_price),
+          reseller_commission: parseFloat(values.reseller_commission)
         });
-        const data = await res.json();
-        if (data.success) {
-          showToast('✅ স্টক ও মূল্য সফলভাবে আপডেট হয়েছে!');
-          loadAdminProducts();
-          return true;
-        }
-        showError(data.message || 'আপডেট ব্যর্থ হয়েছে');
-        return false;
+        showToast('✅ স্টক ও মূল্য সফলভাবে আপডেট হয়েছে!');
+        loadAdminProducts();
+        return true;
       } catch (err) {
         console.error(err);
-        showError('সার্ভারে যোগাযোগ করতে ব্যর্থ হয়েছে');
+        showError(err.message || 'আপডেট ব্যর্থ হয়েছে');
         return false;
       }
     }
@@ -3097,6 +3561,13 @@ window.loadAdminPayouts = loadAdminPayouts;
 window.approvePayoutPrompt = approvePayoutPrompt;
 window.rejectPayoutPrompt = rejectPayoutPrompt;
 window.loadAdminProducts = loadAdminProducts;
+window.setAdminProductBrandTab = setAdminProductBrandTab;
+window.onAdminShopFilterChange = onAdminShopFilterChange;
+window.toggleAdminQuickPriceMode = toggleAdminQuickPriceMode;
+window.onQuickPriceFieldInput = onQuickPriceFieldInput;
+window.saveSingleQuickPrice = saveSingleQuickPrice;
+window.resetQuickPriceRow = resetQuickPriceRow;
+window.saveAllQuickPriceChanges = saveAllQuickPriceChanges;
 window.openAddProductModal = openAddProductModal;
 window.editProductModal = editProductModal;
 window.submitProductForm = submitProductForm;
