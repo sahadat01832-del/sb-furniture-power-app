@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { AsyncLocalStorage } = require('async_hooks');
 const config = require('./config');
+const { DEFAULT_BOARD_PRICE } = require('./services/cutlistCalculator');
 
 if (process.platform !== 'win32') {
   process.umask(0o077);
@@ -232,6 +233,21 @@ const initializeSchema = async () => {
   await run(
     `INSERT OR IGNORE INTO referral_settings (id, is_enabled, customer_reward_bps, reseller_commission_bps)
      VALUES (1, 0, 0, 200)`
+  );
+
+  // Shop-wide 4ft x 8ft board rate used by every cut-list calculation.
+  await run(`
+    CREATE TABLE IF NOT EXISTS shop_settings (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      board_price_paisa INTEGER NOT NULL,
+      updated_by_admin_id INTEGER REFERENCES users(id),
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  await run(
+    'INSERT OR IGNORE INTO shop_settings (id, board_price_paisa) VALUES (1, ?)',
+    [Math.round(DEFAULT_BOARD_PRICE * 100)]
   );
 
   // Existing databases predate token_version; adding it revokes nothing yet.

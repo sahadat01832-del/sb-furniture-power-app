@@ -4,12 +4,16 @@ const { calculateCutlist, generateParametricCutlist } = require('./cutlistCalcul
 // Without a total budget, seven candidates × 60s could block an admin for minutes.
 const OMNIROUTE_TIMEOUT_MS = Number(process.env.OMNIROUTE_TIMEOUT_MS) || 15000;
 const OMNIROUTE_TOTAL_BUDGET_MS = Number(process.env.OMNIROUTE_TOTAL_BUDGET_MS) || 30000;
+// A live-but-broken OmniRoute (answers /v1/models, then hangs) would spend the
+// whole budget on every run, so tests never resolve a live endpoint at all.
+const OMNIROUTE_OFFLINE = process.env.NODE_ENV === 'test' || process.env.OMNIROUTE_OFFLINE === '1';
 
 /**
  * Fetch active PC OmniRoute endpoint from Firestore or environment
  * @returns {Promise<string|null>}
  */
 async function discoverPCOmniRouteEndpoint() {
+  if (OMNIROUTE_OFFLINE) return null;
   if (process.env.PC_OMNIROUTE_URL) {
     return process.env.PC_OMNIROUTE_URL.replace(/\/+$/, '');
   }
@@ -38,6 +42,7 @@ async function discoverPCOmniRouteEndpoint() {
  * @returns {string|null}
  */
 function getPhoneOmniRouteEndpoint() {
+  if (OMNIROUTE_OFFLINE) return null;
   if (process.env.PHONE_OMNIROUTE_URL) {
     return process.env.PHONE_OMNIROUTE_URL.replace(/\/+$/, '');
   }

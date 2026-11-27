@@ -7,17 +7,24 @@ const config = require('../config');
 const { toPaisa, fromPaisa, takaFields } = require('../money');
 
 const ORDER_MONEY_FIELDS = ['subtotal_amount', 'delivery_fee', 'total_amount', 'advance_paid', 'discount_amount', 'reseller_commission'];
-const ITEM_MONEY_FIELDS = ['unit_price', 'commission_per_unit', 'total_price'];
+const ITEM_MONEY_FIELDS = ['unit_price', 'commission_per_unit', 'total_price', 'unit_selling_price'];
+
+// Internal accounting snapshots that customer/reseller responses must never expose.
+const ORDER_PRIVATE_FIELDS = [
+  'total_wholesale_amount',
+  'total_reseller_commission',
+  'platform_net_profit',
+  'referral_commission_amount',
+  'referral_credit_amount',
+  'partner_settled',
+  'reseller_id'
+];
 
 // Money lives in the database as INTEGER paisa and is returned as taka.
-// Strictly strips out wholesale prices and platform net profit for customer/reseller security.
 const orderToClient = (order, includeCommission = false) => {
   if (!order) return order;
   const converted = takaFields(order, ORDER_MONEY_FIELDS);
-  delete converted.total_wholesale_amount;
-  delete converted.platform_net_profit;
-  delete converted.partner_settled;
-  delete converted.reseller_id;
+  for (const field of ORDER_PRIVATE_FIELDS) delete converted[field];
   if (!includeCommission) delete converted.reseller_commission;
   if (Array.isArray(order.items)) {
     converted.items = order.items.map((item) => {

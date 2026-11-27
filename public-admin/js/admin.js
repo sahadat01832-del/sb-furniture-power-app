@@ -66,6 +66,7 @@ function showDashboardView() {
   document.getElementById('adminDashboardSection').style.display = 'block';
   loadAdminStats();
   switchAdminSection(currentAdminSection);
+  loadShopSettings();
 }
 
 // Admin Login
@@ -134,7 +135,7 @@ function switchAdminSection(section) {
   currentAdminSection = section;
   const select = document.getElementById('adminSectionSelect');
   if (select) select.value = section;
-  const sections = ['orders', 'profit', 'shops', 'referrals', 'payouts', 'products', 'analytics', 'announcements', 'backups', 'users', 'guide'];
+  const sections = ['orders', 'profit', 'shops', 'referrals', 'payouts', 'products', 'cutlists', 'analytics', 'announcements', 'backups', 'users', 'guide'];
   sections.forEach((s) => {
     const capitalized = s.charAt(0).toUpperCase() + s.slice(1);
     const secEl = document.getElementById(`admin${capitalized}Section`);
@@ -157,6 +158,7 @@ function switchAdminSection(section) {
     referrals: () => window.loadAdminReferrals && window.loadAdminReferrals(),
     payouts: loadAdminPayouts,
     products: loadAdminProducts,
+    cutlists: loadAdminCutlistDatabase,
     analytics: loadAdminAnalytics,
     announcements: loadAdminAnnouncements,
     backups: loadAdminBackupsList,
@@ -1222,8 +1224,10 @@ function syncCommissionTabFromAmount() {
   const comm = parseFloat(document.getElementById('prodCommission')?.value) || 0;
   const commTab = document.getElementById('prodCommTab');
   if (!commTab) return;
-  if (comm >= 1000) commTab.value = '1000tk';
+  if (comm >= 1500) commTab.value = '1500tk';
+  else if (comm >= 1000) commTab.value = '1000tk';
   else if (comm >= 500) commTab.value = '500tk';
+  else if (comm >= 200) commTab.value = '200tk';
   else if (comm >= 100) commTab.value = '100tk';
   else commTab.value = '50tk';
 }
@@ -1233,8 +1237,10 @@ function onProdRetailPriceInput() {
   const isNew = !document.getElementById('editProductId')?.value;
   if (isNew && price > 0) {
     let suggestedComm = 50;
-    if (price >= 10000) suggestedComm = 1000;
+    if (price >= 20000) suggestedComm = 1500;
+    else if (price >= 10000) suggestedComm = 1000;
     else if (price >= 2000) suggestedComm = 500;
+    else if (price >= 800) suggestedComm = 200;
     else if (price >= 500) suggestedComm = 100;
     if (suggestedComm >= price) suggestedComm = Math.max(0, Math.floor(price * 0.1));
 
@@ -2238,31 +2244,77 @@ function getCollectedFurnitureParts() {
   return parts;
 }
 
+let shopBoardPrice = window.SBCutlistCalculator.DEFAULT_BOARD_PRICE;
+const BOARD_PRICE_INPUTS = ['furnBoardPrice', 'cutDbBoardPrice'];
+
+// One place that turns the shop rate into both panels' board-price inputs.
+function applyShopBoardPrice(price, overwriteInputs) {
+  shopBoardPrice = price;
+  BOARD_PRICE_INPUTS.forEach((id) => {
+    const input = document.getElementById(id);
+    if (input && (overwriteInputs || !input.value)) input.value = shopBoardPrice;
+  });
+  recalculateFurnitureCutlist();
+}
+
+async function loadShopSettings() {
+  try {
+    const res = await fetch(api('/api/admin/shop-settings'), {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    const data = await res.json();
+    if (!data.success) return;
+    applyShopBoardPrice(data.settings.board_price, false);
+  } catch (err) {
+    console.error('Shop settings load error:', err);
+  }
+}
+
+async function saveShopBoardPrice(value) {
+  const price = parseFloat(value);
+  if (!(price > 0)) return;
+  try {
+    const res = await fetch(api('/api/admin/shop-settings'), {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`
+      },
+      body: JSON.stringify({ board_price: price })
+    });
+    const data = await res.json();
+    if (!data.success) {
+      showToast(data.message || 'বোর্ডের দর সেভ করা যায়নি', 'error');
+      return;
+    }
+    applyShopBoardPrice(data.settings.board_price, true);
+    recalcCutlistDbEditor();
+    showToast(`✅ শপ বোর্ড দর ${shopBoardPrice}৳ সেভ হয়েছে`);
+  } catch (err) {
+    console.error('Shop settings save error:', err);
+    showToast('বোর্ডের দর সেভ করা যায়নি', 'error');
+  }
+}
+
 function recalculateFurnitureCutlist() {
   const parts = getCollectedFurnitureParts();
-  const boardPrice = parseFloat(document.getElementById('furnBoardPrice')?.value) || 1800;
-
-  let totalAreaSqIn = 0;
-  parts.forEach(p => {
-    totalAreaSqIn += (p.length * p.width * p.qty);
-  });
-
-  const totalAreaSqFt = (totalAreaSqIn / 144).toFixed(1);
-  const totalBoards = parts.length > 0 ? Math.max(1, Math.ceil((totalAreaSqIn * 1.12) / (48 * 96))) : 0;
-  const boardCapacity = totalBoards * 48 * 96;
-  const efficiency = totalBoards > 0 ? Math.min(100, Math.round((totalAreaSqIn / boardCapacity) * 100)) : 0;
-  const wastage = totalBoards > 0 ? (100 - efficiency) : 0;
-  const totalCost = totalBoards * boardPrice;
+  const boardPrice = parseFloat(document.getElementById('furnBoardPrice')?.value) || shopBoardPrice;
+  const calc = window.SBCutlistCalculator.calculateCutlist(parts, { boardPrice });
 
   const boardsBadge = document.getElementById('furnTotalBoardsBadge');
   const wastageBadge = document.getElementById('furnWastageBadge');
   const costText = document.getElementById('furnBoardCostText');
+  const warningsEl = document.getElementById('furnCutlistWarnings');
 
-  if (boardsBadge) boardsBadge.textContent = `${totalBoards} টি`;
-  if (wastageBadge) wastageBadge.textContent = `(মোট: ${totalAreaSqFt} sq.ft, অপচয়: ${wastage}%)`;
-  if (costText) costText.textContent = `${totalCost} ৳`;
+  if (boardsBadge) boardsBadge.textContent = `${calc.total_boards} টি`;
+  if (wastageBadge) wastageBadge.textContent = `(মোট: ${calc.total_area_sqft} sq.ft, অপচয়: ${calc.wastage_pct}%)`;
+  if (costText) costText.textContent = `${calc.estimated_board_cost} ৳`;
+  if (warningsEl) {
+    warningsEl.textContent = calc.warnings.join(' ');
+    warningsEl.style.display = calc.warnings.length > 0 ? 'block' : 'none';
+  }
 
-  return { parts, total_boards: totalBoards, board_price: boardPrice, estimated_board_cost: totalCost, total_area_sqft: totalAreaSqFt, wastage_pct: wastage };
+  return calc;
 }
 
 function applyFurnitureBoardCostToWholesale() {
@@ -2285,7 +2337,7 @@ async function runFurnitureAiEstimate() {
   const height = parseFloat(document.getElementById('furnDimHeight')?.value) || 72;
   const width = parseFloat(document.getElementById('furnDimWidth')?.value) || 36;
   const depth = parseFloat(document.getElementById('furnDimDepth')?.value) || 18;
-  const boardPrice = parseFloat(document.getElementById('furnBoardPrice')?.value) || 1800;
+  const boardPrice = parseFloat(document.getElementById('furnBoardPrice')?.value) || shopBoardPrice;
 
   if (btn) {
     btn.disabled = true;
@@ -2300,7 +2352,7 @@ async function runFurnitureAiEstimate() {
         Authorization: `Bearer ${adminToken}`
       },
       body: JSON.stringify({
-        furniture_type: title,
+        furniture_type: window.SBCutlistCalculator.detectFurnitureType(title),
         height,
         width,
         depth,
@@ -2505,7 +2557,7 @@ async function runAiProductImageInspection() {
   const statusText = document.getElementById('aiVisionStatusText');
   const imageUrl = document.getElementById('prodImageUrl')?.value?.trim();
   const preview = document.getElementById('prodImagePreview');
-  const boardPrice = parseFloat(document.getElementById('furnBoardPrice')?.value) || 1800;
+  const boardPrice = parseFloat(document.getElementById('furnBoardPrice')?.value) || shopBoardPrice;
 
   let imagePayload = null;
   if (preview && preview.src && preview.src.startsWith('data:image')) {
@@ -2559,7 +2611,7 @@ async function runAiCopyFromTitleOrKeywords() {
   const btn = document.getElementById('btnAiGenCopy');
   const statusText = document.getElementById('aiTextGenStatus');
   const catVal = document.getElementById('prodCategory')?.value || '';
-  const boardPrice = parseFloat(document.getElementById('furnBoardPrice')?.value) || 1800;
+  const boardPrice = parseFloat(document.getElementById('furnBoardPrice')?.value) || shopBoardPrice;
 
   if (btn) btn.disabled = true;
   if (statusText) {
@@ -2796,3 +2848,283 @@ window.openMarketingCopyModal = openMarketingCopyModal;
 window.copyMarketingText = copyMarketingText;
 window.promptQuickStockPrice = promptQuickStockPrice;
 window.initImageDragAndDropAndPaste = initImageDragAndDropAndPaste;
+
+// ================= FURNITURE CUTLIST & BOARD DATABASE =================
+async function loadAdminCutlistDatabase() {
+  const tbody = document.getElementById('cutlistDbTableBody');
+  if (tbody) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 20px;">ফার্নিচার বোর্ড ডাটাবেস লোড হচ্ছে...</td></tr>';
+  }
+  if (!adminProductsList || adminProductsList.length === 0) {
+    await loadAdminProducts();
+  }
+  renderCutlistDbTable();
+}
+
+function renderCutlistDbTable() {
+  const tbody = document.getElementById('cutlistDbTableBody');
+  if (!tbody) return;
+  const search = (document.getElementById('cutlistDbSearch')?.value || '').trim().toLowerCase();
+  const filter = document.getElementById('cutlistDbFilter')?.value || 'furniture';
+
+  const filtered = (adminProductsList || []).filter((p) => {
+    const hasCutlist = p.furniture_cutlist && Array.isArray(p.furniture_cutlist.parts) && p.furniture_cutlist.parts.length > 0;
+    const isFurn = isFurnitureCategory(p.category) || p.brand === 'SB Furniture' || hasCutlist;
+    if (filter === 'furniture' && !isFurn) return false;
+    if (filter === 'saved' && !hasCutlist) return false;
+    if (filter === 'missing' && (!isFurn || hasCutlist)) return false;
+    if (search) {
+      const hay = `${p.title || ''} ${p.sku || ''} ${p.category || ''}`.toLowerCase();
+      if (!hay.includes(search)) return false;
+    }
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 20px; color: #64748b;">কোনো ফার্নিচার পণ্য পাওয়া যায়নি।</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = filtered.map((p) => {
+    const cut = p.furniture_cutlist;
+    const partsCount = cut && Array.isArray(cut.parts) ? cut.parts.length : 0;
+    const boards = cut && cut.total_boards ? cut.total_boards : 0;
+    const cost = cut && cut.estimated_board_cost ? cut.estimated_board_cost : 0;
+    const safeThumb = safeAdminImageUrl(p.image_url);
+    const imgCors = imageCorsAttrAdmin(safeThumb);
+    const statusBadge = partsCount > 0
+      ? '<span class="status-badge status-delivered">সেভ করা আছে</span>'
+      : '<span class="status-badge status-pending">তৈরি হয়নি</span>';
+    return `
+      <tr>
+        <td data-label="ছবি"><img class="admin-product-thumb" src="${escapeAdminHtml(safeThumb)}" ${imgCors} alt="" onerror="window.sbHandleImageError && window.sbHandleImageError(this)" style="width: 44px; height: 44px; object-fit: cover; border-radius: 6px;"></td>
+        <td data-label="SKU"><strong>${escapeAdminHtml(p.sku || '')}</strong></td>
+        <td data-label="পণ্যের নাম">${escapeAdminHtml(p.title || '')}</td>
+        <td data-label="পার্টস সংখ্যা">${partsCount} টি</td>
+        <td data-label="মোট ৪×৮ বোর্ড"><strong>${boards} টি</strong></td>
+        <td data-label="বোর্ড খরচ">${cost} ৳</td>
+        <td data-label="স্ট্যাটাস">${statusBadge}</td>
+        <td data-label="অ্যাকশন">
+          <button type="button" class="action-btn-sm btn-confirm" onclick="openCutlistDbEditor(${p.id})">✏️ দেখুন / এডিট</button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function openCutlistDbEditor(productId) {
+  const p = (adminProductsList || []).find((item) => String(item.id) === String(productId));
+  if (!p) return;
+  const card = document.getElementById('cutlistDbEditorCard');
+  if (!card) return;
+  card.style.display = 'block';
+  document.getElementById('cutDbProductId').value = p.id;
+  document.getElementById('cutlistDbEditorTitle').textContent = `📐 ${p.title}`;
+  document.getElementById('cutlistDbEditorMeta').textContent = `SKU: ${p.sku} · ক্যাটাগরি: ${p.category} · বর্তমান পাইকারি: ${p.wholesale_price || 0} ৳`;
+
+  const cut = p.furniture_cutlist || {};
+  document.getElementById('cutDbBoardPrice').value = cut.board_price || shopBoardPrice;
+
+  const tbody = document.getElementById('cutDbPartsBody');
+  if (tbody) tbody.replaceChildren();
+  if (Array.isArray(cut.parts) && cut.parts.length > 0) {
+    cut.parts.forEach((part) => addCutlistDbPartRow(part));
+  }
+  recalcCutlistDbEditor();
+  card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function closeCutlistDbEditor() {
+  const card = document.getElementById('cutlistDbEditorCard');
+  if (card) card.style.display = 'none';
+}
+
+function addCutlistDbPartRow(part = null) {
+  const tbody = document.getElementById('cutDbPartsBody');
+  if (!tbody) return;
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td style="padding: 4px;">
+      <input type="text" class="form-control cutdb-part-name" style="padding: 4px 6px; font-size: 0.8rem;" placeholder="পার্টসের নাম (যেমন: সাইড প্যানেল)" value="${part ? escapeAdminHtml(part.name || '') : ''}">
+    </td>
+    <td style="padding: 4px;">
+      <input type="number" class="form-control cutdb-part-length" style="padding: 4px 6px; font-size: 0.8rem;" placeholder="দৈর্ঘ্য" value="${part ? (part.length || '') : ''}" step="0.1" min="1" oninput="recalcCutlistDbEditor()">
+    </td>
+    <td style="padding: 4px;">
+      <input type="number" class="form-control cutdb-part-width" style="padding: 4px 6px; font-size: 0.8rem;" placeholder="প্রস্থ" value="${part ? (part.width || '') : ''}" step="0.1" min="1" oninput="recalcCutlistDbEditor()">
+    </td>
+    <td style="padding: 4px;">
+      <input type="number" class="form-control cutdb-part-qty" style="padding: 4px 6px; font-size: 0.8rem;" placeholder="১" value="${part ? (part.qty || 1) : 1}" min="1" oninput="recalcCutlistDbEditor()">
+    </td>
+    <td style="padding: 4px; font-size: 0.78rem; color: #78350f;" class="cutdb-part-sqft">0.0</td>
+    <td style="padding: 4px; text-align: center;">
+      <button type="button" class="action-btn-sm btn-reject" style="padding: 2px 7px;" onclick="removeCutlistDbPartRow(this)">✕</button>
+    </td>
+  `;
+  tbody.appendChild(tr);
+  recalcCutlistDbEditor();
+}
+
+function removeCutlistDbPartRow(btn) {
+  const tr = btn.closest('tr');
+  if (tr) {
+    tr.remove();
+    recalcCutlistDbEditor();
+  }
+}
+
+function getCutlistDbEditorData() {
+  const rows = document.querySelectorAll('#cutDbPartsBody tr');
+  const parts = [];
+  rows.forEach((r, idx) => {
+    const name = r.querySelector('.cutdb-part-name')?.value.trim() || `পার্ট #${idx + 1}`;
+    const length = parseFloat(r.querySelector('.cutdb-part-length')?.value) || 0;
+    const width = parseFloat(r.querySelector('.cutdb-part-width')?.value) || 0;
+    const qty = parseInt(r.querySelector('.cutdb-part-qty')?.value, 10) || 1;
+    const area = length * width * qty;
+    const sqftCell = r.querySelector('.cutdb-part-sqft');
+    if (sqftCell) sqftCell.textContent = (area / 144).toFixed(2);
+    if (length > 0 && width > 0) {
+      parts.push({ name, length, width, qty });
+    }
+  });
+  const boardPrice = parseFloat(document.getElementById('cutDbBoardPrice')?.value) || shopBoardPrice;
+  const calc = window.SBCutlistCalculator.calculateCutlist(parts, { boardPrice });
+  return calc;
+}
+
+function recalcCutlistDbEditor() {
+  const data = getCutlistDbEditorData();
+  const countEl = document.getElementById('cutDbTotalPartsCount');
+  const boardsEl = document.getElementById('cutDbTotalBoards');
+  const wasteEl = document.getElementById('cutDbWastage');
+  const costEl = document.getElementById('cutDbTotalCost');
+  const warningsEl = document.getElementById('cutDbWarnings');
+  if (countEl) countEl.textContent = data.parts.length;
+  if (boardsEl) boardsEl.textContent = `${data.total_boards} টি`;
+  if (wasteEl) wasteEl.textContent = `(মোট: ${data.total_area_sqft} sq.ft, অপচয়: ${data.wastage_pct}%)`;
+  if (costEl) costEl.textContent = `${data.estimated_board_cost} ৳`;
+  if (warningsEl) {
+    warningsEl.textContent = data.warnings.join(' ');
+    warningsEl.style.display = data.warnings.length > 0 ? 'block' : 'none';
+  }
+  return data;
+}
+
+async function runCutlistDbAiEstimate() {
+  const productId = document.getElementById('cutDbProductId')?.value;
+  const p = (adminProductsList || []).find((item) => String(item.id) === String(productId));
+  const btn = document.getElementById('btnCutDbAi');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '⏳ হিসাব হচ্ছে...';
+  }
+  try {
+    const res = await fetch(api('/api/admin/furniture/estimate'), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`
+      },
+      body: JSON.stringify({
+        furniture_type: window.SBCutlistCalculator.detectFurnitureType(p ? p.title : ''),
+        height: parseFloat(document.getElementById('cutDbHeight')?.value) || 72,
+        width: parseFloat(document.getElementById('cutDbWidth')?.value) || 36,
+        depth: parseFloat(document.getElementById('cutDbDepth')?.value) || 18,
+        board_price: parseFloat(document.getElementById('cutDbBoardPrice')?.value) || shopBoardPrice
+      })
+    });
+    const data = await res.json();
+    if (data.success && Array.isArray(data.parts)) {
+      const tbody = document.getElementById('cutDbPartsBody');
+      if (tbody) tbody.replaceChildren();
+      data.parts.forEach((part) => addCutlistDbPartRow(part));
+      recalcCutlistDbEditor();
+      showToast('✅ AI দিয়ে পার্টস ও বোর্ডের হিসাব তৈরি হয়েছে!');
+    } else {
+      showToast(data.message || 'হিসাব করা যায়নি', 'error');
+    }
+  } catch (err) {
+    console.error('Cutlist DB AI Error:', err);
+    showToast('AI হিসাব করতে সমস্যা হয়েছে', 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '⚡ AI দিয়ে পার্টস হিসাব ও টেস্ট করুন';
+    }
+  }
+}
+
+async function saveCutlistDbEditor() {
+  const productId = document.getElementById('cutDbProductId')?.value;
+  const p = (adminProductsList || []).find((item) => String(item.id) === String(productId));
+  if (!p) return;
+
+  const cutlistData = recalcCutlistDbEditor();
+  const btn = document.getElementById('btnCutDbSave');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '⏳ সেভ হচ্ছে...';
+  }
+
+  try {
+    const payload = {
+      title: p.title,
+      sku: p.sku,
+      brand: p.brand,
+      category: p.category,
+      regular_price: p.regular_price,
+      wholesale_price: p.wholesale_price || 0,
+      reseller_commission: p.reseller_commission,
+      commission_tab: p.commission_tab || '50tk',
+      stock: p.stock ?? 50,
+      materials: p.materials || '',
+      finish: p.finish || '',
+      shop_id: p.shop_id || null,
+      shop_name: p.shop_name || p.brand,
+      vendor_phone: p.vendor_phone || '',
+      vendor_badge: p.vendor_badge || '',
+      vendor_address: p.vendor_address || '',
+      image_url: p.image_url || '',
+      caption: p.caption || '',
+      description: p.description || '',
+      is_active: p.is_active !== undefined ? Boolean(p.is_active) : true,
+      furniture_cutlist: cutlistData.parts.length > 0 ? cutlistData : null
+    };
+
+    const res = await fetch(api(`/api/admin/products/${p.id}`), {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`
+      },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (data.success) {
+      p.furniture_cutlist = payload.furniture_cutlist;
+      renderCutlistDbTable();
+      showToast('✅ ফার্নিচার বোর্ড ও পার্টস ডাটাবেজে সেভ হয়েছে!');
+    } else {
+      showToast(data.message || 'সেভ করা যায়নি', 'error');
+    }
+  } catch (err) {
+    console.error('Save Cutlist DB Error:', err);
+    showToast('ডাটাবেজে সেভ করতে সমস্যা হয়েছে', 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '💾 ডাটাবেজে সেভ করুন';
+    }
+  }
+}
+
+window.loadAdminCutlistDatabase = loadAdminCutlistDatabase;
+window.renderCutlistDbTable = renderCutlistDbTable;
+window.openCutlistDbEditor = openCutlistDbEditor;
+window.closeCutlistDbEditor = closeCutlistDbEditor;
+window.addCutlistDbPartRow = addCutlistDbPartRow;
+window.removeCutlistDbPartRow = removeCutlistDbPartRow;
+window.recalcCutlistDbEditor = recalcCutlistDbEditor;
+window.runCutlistDbAiEstimate = runCutlistDbAiEstimate;
+window.saveCutlistDbEditor = saveCutlistDbEditor;

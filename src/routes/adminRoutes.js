@@ -13,6 +13,8 @@ const {
   generateProductCopyFromKeywords,
   generateMultiChannelMarketingCopy
 } = require('../services/aiRouter');
+const { calculateCutlist, DEFAULT_BOARD_PRICE } = require('../services/cutlistCalculator');
+const { getBoardPriceTaka, setBoardPriceTaka } = require('../services/shopSettings');
 
 const PRODUCT_MONEY_FIELDS = ['regular_price', 'reseller_commission', 'wholesale_price'];
 const ORDER_MONEY_FIELDS = ['subtotal_amount', 'delivery_fee', 'total_amount', 'advance_paid', 'discount_amount', 'reseller_commission', 'total_wholesale_amount', 'total_reseller_commission', 'referral_commission_amount', 'referral_credit_amount', 'platform_net_profit'];
@@ -42,9 +44,36 @@ const orderToClient = (order) => {
 
 const PRODUCT_DEFAULT_IMAGE = 'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?auto=format&fit=crop&w=800&q=80';
 const PRODUCT_BRANDS = new Set(['SB Furniture', 'SB POWER', 'SB Lifestyle & Tools']);
-const COMMISSION_TABS = new Set(['50tk', '100tk', '500tk', '1000tk']);
+const COMMISSION_TABS = new Set(['50tk', '100tk', '200tk', '500tk', '1000tk', '1500tk']);
 
-function validateProductPayload(input) {
+const MAX_CUTLIST_PARTS = 200;
+
+// The board count and board cost are money, so they are always rebuilt from the
+// parts on save: a stale or hand-edited total from the browser must not become
+// the product's cost basis. Returns the JSON string stored in the database.
+function recomputeFurnitureCutlist(input, shopBoardPrice) {
+  if (input === undefined || input === null) return null;
+
+  let cutlist = input;
+  if (typeof cutlist === 'string') {
+    try {
+      cutlist = JSON.parse(cutlist);
+    } catch (e) {
+      return null;
+    }
+  }
+  if (!cutlist || typeof cutlist !== 'object' || !Array.isArray(cutlist.parts)) return null;
+
+  const parts = cutlist.parts
+    .slice(0, MAX_CUTLIST_PARTS)
+    .filter((part) => part && typeof part === 'object');
+  const boardPrice = Number(cutlist.board_price) > 0 ? Number(cutlist.board_price) : shopBoardPrice;
+  const recomputed = calculateCutlist(parts, { boardPrice });
+
+  return recomputed.parts.length > 0 ? JSON.stringify(recomputed) : null;
+}
+
+function validateProductPayload(input, shopBoardPrice = DEFAULT_BOARD_PRICE) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
     return { error: 'প্রোডাক্টের তথ্য সঠিকভাবে পাঠান' };
   }
@@ -198,19 +227,7 @@ function validateProductPayload(input) {
   data.materials = data.materials || '';
   data.finish = data.finish || '';
 
-  if (input.furniture_cutlist !== undefined && input.furniture_cutlist !== null) {
-    if (typeof input.furniture_cutlist === 'object') {
-      try {
-        data.furniture_cutlist = JSON.stringify(input.furniture_cutlist);
-      } catch (e) {
-        data.furniture_cutlist = null;
-      }
-    } else if (typeof input.furniture_cutlist === 'string') {
-      data.furniture_cutlist = input.furniture_cutlist.slice(0, 30000);
-    }
-  } else {
-    data.furniture_cutlist = null;
-  }
+  data.furniture_cutlist = recomputeFurnitureCutlist(input.furniture_cutlist, shopBoardPrice);
 
   return { data };
 }
@@ -1050,7 +1067,7 @@ router.get('/products', async (req, res) => {
 // Product Management: Create Product
 router.post('/products', async (req, res) => {
   try {
-    const validation = validateProductPayload(req.body);
+    const validation = validateProductPayload(req.body, await getBoardPriceTaka());
     if (validation.error) return res.status(400).json({ success: false, message: validation.error });
     const product = validation.data;
 
@@ -1140,7 +1157,7 @@ router.put('/products/:id', async (req, res) => {
       return res.status(400).json({ success: false, message: 'প্রোডাক্টের তথ্য সঠিকভাবে পাঠান' });
     }
     // The stored row is paisa; the validator and the admin form work in taka.
-    const validation = validateProductPayload({ ...productToClient(product), ...req.body });
+    const validation = validateProductPayload({ ...productToClient(product), ...req.body }, await getBoardPriceTaka());
     if (validation.error) return res.status(400).json({ success: false, message: validation.error });
     const updated = validation.data;
 
@@ -1327,17 +1344,18 @@ router.post('/furniture/estimate', async (req, res) => {
       width = 36,
       depth = 18,
       board_thickness = 0.75,
-      board_price = 1800,
+      board_price,
       notes = ''
     } = req.body || {};
 
+    const shopBoardPrice = await getBoardPriceTaka();
     const estimate = await estimateFurniturePartsAndBoards({
       furniture_type,
       height: Number(height) || 72,
       width: Number(width) || 36,
       depth: Number(depth) || 18,
       board_thickness: Number(board_thickness) || 0.75,
-      board_price: Number(board_price) || 1800,
+      board_price: Number(board_price) || shopBoardPrice,
       notes: typeof notes === 'string' ? notes.slice(0, 500) : ''
     });
 
@@ -1345,6 +1363,30 @@ router.post('/furniture/estimate', async (req, res) => {
   } catch (error) {
     console.error('Furniture Estimation API Error:', error);
     return res.status(500).json({ success: false, message: 'ফার্নিচার বোর্ড ক্যালকুলেশনে সমস্যা হয়েছে' });
+  }
+});
+
+// ================= SHOP SETTINGS (4x8 BOARD RATE) =================
+router.get('/shop-settings', async (req, res) => {
+  try {
+    return res.json({ success: true, settings: { board_price: await getBoardPriceTaka() } });
+  } catch (error) {
+    console.error('Shop Settings Read Error:', error);
+    return res.status(500).json({ success: false, message: 'শপ সেটিংস লোড করা যায়নি' });
+  }
+});
+
+router.put('/shop-settings', async (req, res) => {
+  try {
+    const boardPrice = Number(req.body && req.body.board_price);
+    if (!Number.isFinite(boardPrice) || boardPrice <= 0 || boardPrice > 1000000) {
+      return res.status(400).json({ success: false, message: 'বোর্ডের দর ১ থেকে ১০,০০,০০০ টাকার মধ্যে দিন' });
+    }
+    const saved = await setBoardPriceTaka(boardPrice, req.user.id);
+    return res.json({ success: true, settings: { board_price: saved }, message: 'বোর্ডের দর সংরক্ষণ হয়েছে' });
+  } catch (error) {
+    console.error('Shop Settings Update Error:', error);
+    return res.status(500).json({ success: false, message: 'বোর্ডের দর সংরক্ষণ করা যায়নি' });
   }
 });
 

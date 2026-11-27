@@ -1,4 +1,4 @@
-const CACHE_NAME = 'sb-furniture-v37';
+const CACHE_NAME = 'sb-furniture-v42';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
@@ -11,6 +11,7 @@ const ASSETS_TO_CACHE = [
   '/js/api.js',
   '/js/app-config.js',
   '/js/catalog-algorithm.js',
+  '/js/cutlist-calculator.js',
   '/js/catalog.js',
   '/js/leaderboard.js',
   '/js/app.js',
@@ -116,7 +117,17 @@ self.addEventListener('fetch', (event) => {
           }
           return networkResponse;
         })
-        .catch(() => caches.match(event.request))
+        .catch(async (err) => {
+          const cached = await caches.match(event.request);
+          if (!cached) throw err;
+          const headers = new Headers(cached.headers);
+          headers.set('X-SB-SW-Cache', '1');
+          return new Response(cached.body, {
+            status: cached.status,
+            statusText: cached.statusText,
+            headers
+          });
+        })
     );
     return;
   }
@@ -136,7 +147,11 @@ self.addEventListener('fetch', (event) => {
           }
           return networkResponse;
         })
-        .catch(() => caches.match(event.request))
+        .catch(async (err) => {
+          const cached = (await caches.match(event.request)) || (await caches.match(event.request, { ignoreSearch: true }));
+          if (cached) return cached;
+          throw err;
+        })
     );
     return;
   }

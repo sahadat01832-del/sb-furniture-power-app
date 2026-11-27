@@ -305,11 +305,17 @@ router.get('/session', async (req, res) => {
     }
 
     const user = await get(
-      'SELECT id, name, phone, role, referral_code, referred_by_id, token_version, created_at FROM users WHERE id = ?',
+      'SELECT id, name, phone, role, status, referral_code, referred_by_id, token_version, created_at FROM users WHERE id = ?',
       [decoded.id]
     );
 
-    if (!user || (Number(decoded.token_version) || 0) !== (Number(user.token_version) || 0)) {
+    // Report the same session state verifyToken enforces: a suspended account
+    // is never authenticated, even while its JWT is still valid.
+    if (
+      !user ||
+      user.status === 'suspended' ||
+      (Number(decoded.token_version) || 0) !== (Number(user.token_version) || 0)
+    ) {
       return res.json({ success: true, authenticated: false, user: null });
     }
     delete user.token_version;

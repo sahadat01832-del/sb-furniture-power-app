@@ -7,6 +7,7 @@ const app = require('../src/server');
 const { initDb, run, get, query, closeDb } = require('../src/db');
 const { seedData } = require('../src/seed');
 const config = require('../src/config');
+const { fromPaisa } = require('../src/money');
 const { promoteToReseller, registerReseller } = require('./resellerTestHelpers');
 
 let server;
@@ -789,5 +790,173 @@ test('14. SB Lifestyle & Tools brand is supported across admin creation and stor
   assert.ok(filterRes.body.products.some((p) => p.sku === 'SBL-TEST-01'));
 
   await run('DELETE FROM products WHERE id = ?', [createdId]);
+});
+
+test('15. Order tracking and my-orders hide internal commission snapshots and return money in taka', async () => {
+  const adminLogin = await request('/api/auth/login', {
+    method: 'POST',
+    body: { phone: config.ADMIN.phone, password: config.ADMIN.password }
+  });
+  const adminToken = adminLogin.body.token;
+
+  // A reseller whose referral link earns referral commission on this order.
+  const resellerRegistration = await registerReseller(request, {
+    name: 'লিক টেস্ট রিসেলার',
+    phone: '01755001122',
+    password: 'password123'
+  });
+  assert.equal(resellerRegistration.status, 201);
+  const resellerCode = resellerRegistration.body.user.referral_code;
+
+  // Enable the referral program so referral_commission_amount is non-zero in storage.
+  const settingsRes = await request('/api/admin/referrals/settings', {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${adminToken}` },
+    body: { is_enabled: true, customer_reward_percent: 0, reseller_commission_percent: 10 }
+  });
+  assert.equal(settingsRes.status, 200);
+
+  // The buyer registers through that referral code and orders from their own account.
+  const customerRegistration = await request('/api/auth/register', {
+    method: 'POST',
+    body: {
+      name: 'লিক টেস্ট ক্রেতা',
+      phone: '01755003344',
+      password: 'password123',
+      referral_code: resellerCode
+    }
+  });
+  assert.equal(customerRegistration.status, 201);
+  const customerToken = customerRegistration.body.token;
+
+  const product = await get("SELECT * FROM products WHERE sku = 'SBF-101'");
+  const orderRes = await request('/api/orders', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${customerToken}` },
+    body: {
+      customer_name: 'লিক টেস্ট ক্রেতা',
+      customer_phone: '01755003344',
+      delivery_address: 'বাঙাল হাওলা, কালীগঞ্জ, গাজীপুর',
+      delivery_city: 'inside_dhaka',
+      items: [{ product_id: product.id, quantity: 1 }]
+    }
+  });
+  assert.equal(orderRes.status, 201);
+  const orderId = orderRes.body.order.id;
+  const orderNumber = orderRes.body.order.order_number;
+
+  // The hidden values must really exist and be non-zero in storage, otherwise
+  // the absence assertions below would pass for the wrong reason.
+  const dbOrder = await get('SELECT * FROM orders WHERE id = ?', [orderId]);
+  const dbItems = await query('SELECT * FROM order_items WHERE order_id = ? ORDER BY id', [orderId]);
+  assert.ok(dbOrder.total_reseller_commission > 0, 'fixture must store a reseller commission snapshot');
+  assert.ok(dbOrder.referral_commission_amount > 0, 'fixture must store a referral commission snapshot');
+  assert.ok(Number.isInteger(dbOrder.total_amount), 'order money must be stored as integer paisa');
+
+  const hiddenOrderFields = [
+    'total_reseller_commission',
+    'referral_commission_amount',
+    'referral_credit_amount',
+    'total_wholesale_amount',
+    'platform_net_profit'
+  ];
+  const takaOrderFields = ['subtotal_amount', 'delivery_fee', 'total_amount', 'advance_paid', 'discount_amount'];
+  const hiddenItemFields = ['unit_wholesale_price', 'unit_commission', 'platform_net_profit'];
+
+  const assertPublicOrder = (order, label) => {
+    for (const field of hiddenOrderFields) {
+      assert.equal(order[field], undefined, `${label} must not expose ${field}`);
+    }
+    for (const field of takaOrderFields) {
+      assert.equal(order[field], fromPaisa(dbOrder[field]), `${label}.${field} must be returned in taka`);
+    }
+    assert.ok(Array.isArray(order.items) && order.items.length === dbItems.length, `${label} must include its items`);
+    order.items.forEach((item, index) => {
+      for (const field of hiddenItemFields) {
+        assert.equal(item[field], undefined, `${label} item must not expose ${field}`);
+      }
+      assert.equal(item.unit_price, fromPaisa(dbItems[index].unit_price), `${label} item.unit_price must be taka`);
+      assert.equal(item.total_price, fromPaisa(dbItems[index].total_price), `${label} item.total_price must be taka`);
+      if (item.unit_selling_price !== undefined) {
+        assert.equal(item.unit_selling_price, fromPaisa(dbItems[index].unit_selling_price), `${label} item.unit_selling_price must be taka`);
+      }
+    });
+  };
+
+  const myOrdersRes = await request('/api/orders/my-orders', {
+    headers: { Authorization: `Bearer ${customerToken}` }
+  });
+  assert.equal(myOrdersRes.status, 200);
+  const myOrder = myOrdersRes.body.orders.find((order) => order.id === orderId);
+  assert.ok(myOrder, 'my-orders must return the order that was just placed');
+  assertPublicOrder(myOrder, 'my-orders');
+
+  const trackRes = await request('/api/orders/track', {
+    method: 'POST',
+    body: { order_number: orderNumber, phone: '01755003344' }
+  });
+  assert.equal(trackRes.status, 200);
+  assertPublicOrder(trackRes.body.order, 'track');
+});
+
+test('16. Session lookup reports a suspended account as unauthenticated', async () => {
+  const adminLogin = await request('/api/auth/login', {
+    method: 'POST',
+    body: { phone: config.ADMIN.phone, password: config.ADMIN.password }
+  });
+  const adminToken = adminLogin.body.token;
+
+  const registration = await request('/api/auth/register', {
+    method: 'POST',
+    body: { name: 'সেশন টেস্ট ক্রেতা', phone: '01755007788', password: 'password123' }
+  });
+  assert.equal(registration.status, 201);
+  const userToken = registration.body.token;
+  const userId = registration.body.user.id;
+
+  // Active account: the session endpoint reports the account as authenticated.
+  const activeSession = await request('/api/auth/session', {
+    headers: { Authorization: `Bearer ${userToken}` }
+  });
+  assert.equal(activeSession.status, 200);
+  assert.equal(activeSession.body.authenticated, true);
+  assert.equal(activeSession.body.user.id, userId);
+  assert.equal(activeSession.body.user.status, 'active');
+
+  const suspendRes = await request(`/api/admin/users/${userId}/status`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${adminToken}` },
+    body: { status: 'suspended' }
+  });
+  assert.equal(suspendRes.status, 200);
+
+  // The still-valid JWT must no longer count as an authenticated session.
+  const suspendedSession = await request('/api/auth/session', {
+    headers: { Authorization: `Bearer ${userToken}` }
+  });
+  assert.equal(suspendedSession.status, 200);
+  assert.equal(suspendedSession.body.authenticated, false);
+  assert.equal(suspendedSession.body.user, null);
+
+  // Same token, protected route: verifyToken keeps rejecting it with 403.
+  const protectedRes = await request('/api/auth/me', {
+    headers: { Authorization: `Bearer ${userToken}` }
+  });
+  assert.equal(protectedRes.status, 403);
+
+  // Reinstating the account restores the session for that token.
+  const reactivateRes = await request(`/api/admin/users/${userId}/status`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${adminToken}` },
+    body: { status: 'active' }
+  });
+  assert.equal(reactivateRes.status, 200);
+  const restoredSession = await request('/api/auth/session', {
+    headers: { Authorization: `Bearer ${userToken}` }
+  });
+  assert.equal(restoredSession.body.authenticated, true);
+  assert.equal(restoredSession.body.user.id, userId);
+
+  await run('DELETE FROM users WHERE id = ?', [userId]);
 });
 

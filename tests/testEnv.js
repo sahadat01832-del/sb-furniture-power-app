@@ -4,6 +4,8 @@ const path = require('path');
 
 const suiteId = `sb-power-tests-${process.pid}`;
 process.env.NODE_ENV = 'test';
+// Tests serve on ephemeral ports; config only validates this value.
+process.env.PORT = '3000';
 process.env.JWT_SECRET = crypto.randomBytes(32).toString('hex');
 process.env.ADMIN_PHONE = '01999887766';
 process.env.ADMIN_PASSWORD = crypto.randomBytes(24).toString('hex');
