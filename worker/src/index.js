@@ -9,7 +9,7 @@
 // Security notes:
 // - Only https origins under *.trycloudflare.com are accepted, so a tampered
 //   Firestore document cannot turn this into an open proxy.
-// - Only API/upload/health paths are proxied; the storefront HTML stays on
+// - Only API/upload/download paths are proxied; the storefront HTML stays on
 //   Firebase Hosting.
 // - The real client IP is forwarded in a signed header so the phone's rate
 //   limits keep working per customer instead of per Cloudflare edge IP.
@@ -20,10 +20,12 @@ const FIRESTORE_URL =
   '/databases/(default)/documents/system_config/backend_tunnel';
 
 const ORIGIN_CACHE_KEY = 'https://sb-power-proxy.internal/origin';
+const CACHE_KEY_PREFIX = 'https://sb-power-proxy.internal/cache';
 const ORIGIN_TTL_MS = 30_000;
 const CATALOG_FRESH_MS = 60_000;
 const CATALOG_STALE_MS = 24 * 60 * 60 * 1000;
 const ORIGIN_HOST_SUFFIX = '.trycloudflare.com';
+const STORED_AT_HEADER = 'X-SB-At';
 
 const PROXY_HEADER = 'X-SB-Proxy';
 const CACHE_HEADER = 'X-SB-Cache';
@@ -31,6 +33,9 @@ const CLIENT_IP_HEADER = 'X-SB-Client-IP';
 const PROXY_TOKEN_HEADER = 'X-SB-Proxy-Token';
 
 const RETRYABLE_STATUS = new Set([502, 503, 504, 530, 1033]);
+const CACHEABLE_PATHS = new Set(['/api/products', '/api/products/meta/categories']);
+const DIRECT_PATHS = new Set(['/health', '/status']);
+const DIRECT_PATH_PREFIXES = ['/api/', '/uploads/', '/download/', '/dist-apk/'];
 const HOP_BY_HOP_HEADERS = [
   'connection',
   'keep-alive',
@@ -63,21 +68,18 @@ export function isAllowedOrigin(value) {
 
 export function isAllowedPath(pathname) {
   return (
-    pathname.startsWith('/api/') ||
-    pathname.startsWith('/uploads/') ||
-    pathname.startsWith('/download/') ||
-    pathname.startsWith('/dist-apk/') ||
-    pathname === '/health' ||
-    pathname === '/status'
+    DIRECT_PATHS.has(pathname) ||
+    DIRECT_PATH_PREFIXES.some((prefix) => pathname.startsWith(prefix))
   );
 }
 
 export function isCacheableRequest(method, pathname, headers) {
-  if (method !== 'GET') return false;
-  if (headers.get('authorization') || headers.get('cookie')) return false;
-  if (pathname === '/api/products') return true;
-  if (pathname === '/api/products/meta/categories') return true;
-  return false;
+  return (
+    method === 'GET' &&
+    CACHEABLE_PATHS.has(pathname) &&
+    !headers.get('authorization') &&
+    !headers.get('cookie')
+  );
 }
 
 function jsonResponse(body, status = 200, extraHeaders = {}) {
@@ -201,66 +203,69 @@ async function callOrigin(request, origin, env) {
   });
 }
 
-function canRetry(method) {
+function isReplayable(method) {
   return method === 'GET' || method === 'HEAD' || method === 'OPTIONS';
 }
 
 async function proxyWithRetry(request, origin, env) {
+  // The tunnel may have rotated between the Firestore read and now.
+  const replayOnFreshOrigin = async () => {
+    const fresh = await resolveOrigin({ bypassCache: true }).catch(() => null);
+    if (!fresh || fresh.url === origin.url) return null;
+    return callOrigin(request, fresh.url, env);
+  };
+
   try {
     const response = await callOrigin(request, origin.url, env);
-    if (!RETRYABLE_STATUS.has(response.status) || !canRetry(request.method)) return response;
-    // The tunnel may have rotated between the Firestore read and now.
-    const fresh = await resolveOrigin({ bypassCache: true }).catch(() => null);
-    if (fresh && fresh.url !== origin.url) {
-      return callOrigin(request, fresh.url, env);
-    }
-    return response;
+    if (!RETRYABLE_STATUS.has(response.status) || !isReplayable(request.method)) return response;
+    return (await replayOnFreshOrigin()) || response;
   } catch (error) {
-    if (!canRetry(request.method)) throw error;
-    const fresh = await resolveOrigin({ bypassCache: true }).catch(() => null);
-    if (fresh && fresh.url !== origin.url) {
-      return callOrigin(request, fresh.url, env);
-    }
+    if (!isReplayable(request.method)) throw error;
+    const retried = await replayOnFreshOrigin();
+    if (retried) return retried;
     throw error;
   }
 }
 
+function cachedAge(response) {
+  return Date.now() - (Number(response.headers.get(STORED_AT_HEADER)) || 0);
+}
+
+function serveCached(response, { cacheState, maxAge, warning }) {
+  const headers = new Headers(response.headers);
+  headers.set(CACHE_HEADER, cacheState);
+  headers.set('cache-control', `public, max-age=${maxAge}`);
+  if (warning) headers.set('warning', warning);
+  return new Response(response.body, { status: response.status, headers });
+}
+
 async function handleCacheable(request, origin, env, ctx) {
   const url = new URL(request.url);
-  const cacheKey = new URL(`https://sb-power-proxy.internal/cache${url.pathname}${url.search}`);
+  const cacheKey = new URL(`${CACHE_KEY_PREFIX}${url.pathname}${url.search}`);
   const cached = await caches.default.match(cacheKey);
-  if (cached) {
-    const storedAt = Number(cached.headers.get('X-SB-At')) || 0;
-    const age = Date.now() - storedAt;
-    if (age < CATALOG_FRESH_MS) {
-      const headers = new Headers(cached.headers);
-      headers.set(CACHE_HEADER, 'HIT');
-      headers.set('cache-control', 'public, max-age=30');
-      return new Response(cached.body, { status: cached.status, headers });
-    }
+  if (cached && cachedAge(cached) < CATALOG_FRESH_MS) {
+    return serveCached(cached, { cacheState: 'HIT', maxAge: 30 });
   }
 
   try {
     const response = await proxyWithRetry(request, origin, env);
     if (response.status === 200 && !response.headers.get('set-cookie')) {
       const headers = new Headers(response.headers);
-      headers.set('X-SB-At', String(Date.now()));
-      const cacheable = new Response(response.clone().body, { status: 200, headers });
-      ctx.waitUntil(caches.default.put(cacheKey, cacheable).catch(() => {}));
+      headers.set(STORED_AT_HEADER, String(Date.now()));
+      const snapshot = new Response(response.clone().body, { status: 200, headers });
+      ctx.waitUntil(caches.default.put(cacheKey, snapshot).catch(() => {}));
     }
     const headers = new Headers(response.headers);
     headers.set(CACHE_HEADER, 'MISS');
     return new Response(response.body, { status: response.status, headers });
   } catch (error) {
-    if (cached) {
-      const age = Date.now() - (Number(cached.headers.get('X-SB-At')) || 0);
-      if (age < CATALOG_STALE_MS) {
-        const headers = new Headers(cached.headers);
-        headers.set(CACHE_HEADER, 'STALE');
-        headers.set('cache-control', 'public, max-age=15');
-        headers.set('warning', '110 - "Response is stale"');
-        return new Response(cached.body, { status: 200, headers });
-      }
+    // The phone is offline: keep serving the last good catalog for a day.
+    if (cached && cachedAge(cached) < CATALOG_STALE_MS) {
+      return serveCached(cached, {
+        cacheState: 'STALE',
+        maxAge: 15,
+        warning: '110 - "Response is stale"'
+      });
     }
     throw error;
   }
@@ -288,29 +293,16 @@ export default {
       return jsonResponse({ success: false, message: 'Not found' }, 404);
     }
 
-    if (url.pathname === '/health') {
-      try {
-        const origin = await resolveOrigin();
-        const response = await callOrigin(request, origin.url, env);
-        const headers = new Headers(response.headers);
-        headers.set(PROXY_HEADER, '1');
-        return new Response(response.body, { status: response.status, headers });
-      } catch {
-        return jsonResponse({ ok: false, message: 'Phone server unreachable' }, 503);
-      }
-    }
-
     try {
       const origin = await resolveOrigin();
+      if (url.pathname === '/health') return await callOrigin(request, origin.url, env);
       if (isCacheableRequest(request.method, url.pathname, request.headers)) {
         return await handleCacheable(request, origin, env, ctx);
       }
       return await proxyWithRetry(request, origin, env);
     } catch (error) {
-      return jsonResponse(
-        { success: false, message: 'Phone server unreachable', detail: String(error && error.message || error).slice(0, 120) },
-        503
-      );
+      const detail = String((error && error.message) || error).slice(0, 120);
+      return jsonResponse({ success: false, message: 'Phone server unreachable', detail }, 503);
     }
   }
 };

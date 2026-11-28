@@ -104,6 +104,12 @@ prepare_admin_web_assets() {
     fi
 }
 
+# Product photos are served from the API origin at runtime, so the copies that
+# `cap sync` makes of public/uploads/ (18 MB) only bloat the APK.
+drop_bundled_uploads() {
+    rm -rf "android/app/src/main/assets/public/uploads"
+}
+
 # Step 2: Ensure Capacitor CLI is available
 ensure_capacitor() {
     if [ ! -x "node_modules/.bin/cap" ]; then
@@ -200,6 +206,7 @@ build_client() {
 
     echo "🔄 Syncing Client web assets to Android project..."
     npx cap sync android
+    drop_bundled_uploads
     patch_java_version
     if [ -f "scripts/generate_app_icons.py" ]; then
         python3 scripts/generate_app_icons.py

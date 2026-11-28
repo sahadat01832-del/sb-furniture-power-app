@@ -50,6 +50,9 @@
   }
 
   const firebaseProjectId = getFirebaseProjectId();
+  // The stable public entry point (Cloudflare Worker). It finds the phone's
+  // current tunnel on its own, so customers never depend on a rotating URL.
+  const stableApiUrl = normalizeApiOrigin(window.APP_CONFIG && window.APP_CONFIG.apiUrl);
   let activeApiUrl = '';
   let knownApiUrls = [];
   let backendStatus = 'unknown';
@@ -313,7 +316,17 @@
     return configFetchPromise;
   }
 
-  if (activeApiUrl) {
+  if (stableApiUrl) {
+    // Try the stable Worker first on every load. The last working direct tunnel
+    // stays in knownApiUrls, so a Worker outage still fails over to the phone.
+    if (activeApiUrl && activeApiUrl !== stableApiUrl) {
+      knownApiUrls = uniqueOrigins([activeApiUrl, ...knownApiUrls]);
+    }
+    // Persist it so the next boot starts on the stable address too, and so a
+    // later failover can still list it as a candidate origin.
+    saveActiveApiUrl(stableApiUrl);
+    resolveFirstConnection();
+  } else if (activeApiUrl) {
     warmOriginConnection(activeApiUrl);
     resolveFirstConnection();
   } else if (firebaseProjectId) {
@@ -526,12 +539,26 @@
     })[character]);
   };
 
+  // Product photos are published with the storefront on Firebase Hosting, so the
+  // web app loads them from its own origin (fast CDN, works even if the phone is
+  // briefly offline). Native APKs and local dev still read them from the phone.
+  function shouldUseSiteOriginForUploads() {
+    if (typeof window.Capacitor !== 'undefined') return false;
+    const protocol = window.location.protocol;
+    if (protocol === 'capacitor:' || protocol === 'file:') return false;
+    const host = window.location.hostname;
+    return host !== 'localhost' && host !== '127.0.0.1';
+  }
+
   window.sbSafeImageUrl = function (value) {
     try {
       const raw = String(value || '').trim();
       if (!raw) return '/icons/icon-512.png';
       if (raw.startsWith('/uploads/')) {
-        const parsedUpload = new URL(apiUrl(raw), window.location.origin);
+        const uploadUrl = shouldUseSiteOriginForUploads()
+          ? new URL(raw, window.location.origin).href
+          : apiUrl(raw);
+        const parsedUpload = new URL(uploadUrl, window.location.origin);
         if (
           parsedUpload.protocol === 'https:' ||
           parsedUpload.origin === window.location.origin ||
@@ -581,6 +608,24 @@
 
   window.sbHandleImageError = function (imgEl) {
     if (!imgEl || imgEl.dataset.sbFallbackApplied === '1') return;
+    // A freshly uploaded photo is on the phone but not yet on Firebase Hosting.
+    // Retry it once against the API origin before showing the placeholder icon.
+    const rawSrc = imgEl.getAttribute('src') || '';
+    const siteUploadPrefix = `${window.location.origin}/uploads/`;
+    if (
+      imgEl.dataset.sbPhoneRetry !== '1' &&
+      rawSrc.startsWith(siteUploadPrefix) &&
+      shouldUseSiteOriginForUploads()
+    ) {
+      try {
+        imgEl.dataset.sbPhoneRetry = '1';
+        imgEl.removeAttribute('crossorigin');
+        imgEl.src = apiUrl(new URL(rawSrc).pathname);
+        return;
+      } catch {
+        // Fall through to the placeholder icon.
+      }
+    }
     imgEl.dataset.sbFallbackApplied = '1';
     imgEl.onerror = null;
     imgEl.removeAttribute('crossorigin');
