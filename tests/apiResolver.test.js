@@ -17,6 +17,7 @@ function loadResolver({
   firestoreDocuments = null,
   firestoreStatus = 200,
   cachedApiUrl = '',
+  capacitor = false,
   apiResponder = async () => ({ ok: true, status: 200 })
 } = {}) {
   const storage = new Map();
@@ -54,6 +55,7 @@ function loadResolver({
     removeItem(key) { storage.delete(key); }
   };
   const window = {
+    Capacitor: capacitor ? {} : undefined,
     APP_CONFIG: { apiUrl: configuredApiUrl, firebaseProjectId: projectId },
     location,
     localStorage,
@@ -205,13 +207,15 @@ test('an app without Firebase project config uses its same-origin API without Fi
   assert.deepEqual(calls.map((call) => call.url), ['https://shop.example/api/config']);
 });
 
-test('sbSafeImageUrl resolves /uploads/ via active API origin and rejects unsafe schemes', async () => {
+test('sbSafeImageUrl loads web uploads from the site origin and rejects unsafe schemes', async () => {
   const { window } = loadResolver();
   await window.SB_API.connectionReady;
 
+  // Product photos ship with Firebase Hosting, so the browser keeps them on the
+  // same origin instead of pulling every image through the phone tunnel.
   assert.equal(
     window.sbSafeImageUrl('/uploads/bikroy/SBP-B01.jpg'),
-    'https://phone-tunnel.example/uploads/bikroy/SBP-B01.jpg'
+    'https://sb-power-demo.web.app/uploads/bikroy/SBP-B01.jpg'
   );
   assert.equal(
     window.sbSafeImageUrl('https://sb-power-marketplace.web.app/uploads/bikroy/SBP-B01.jpg'),
@@ -231,6 +235,16 @@ test('sbSafeImageUrl resolves /uploads/ via active API origin and rejects unsafe
     ''
   );
   assert.equal(window.sbImageCrossOrigin('/icons/icon-512.png'), '');
+});
+
+test('native builds still load /uploads/ from the phone API', async () => {
+  const { window } = loadResolver({ capacitor: true });
+  await window.SB_API.connectionReady;
+
+  assert.equal(
+    window.sbSafeImageUrl('/uploads/bikroy/SBP-B01.jpg'),
+    'https://phone-tunnel.example/uploads/bikroy/SBP-B01.jpg'
+  );
 });
 
 test('concurrent read requests both switch when a stale cached tunnel fails', async () => {

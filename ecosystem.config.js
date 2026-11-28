@@ -21,6 +21,10 @@ function processConfig(name, script, logName) {
     env: {
       NODE_ENV: 'production',
       PORT: 3000,
+      // Free rotating tunnels (localhost.run / serveo) throttle and change their
+      // URL every few minutes. Cloudflare is the only provider that stayed fast
+      // and stable on this phone, so it is the single published tunnel.
+      TUNNEL_PROVIDERS: 'cloudflare',
       PATH: process.env.PATH && process.env.PATH.includes('/data/data/com.termux/files/usr/bin')
         ? process.env.PATH
         : `/data/data/com.termux/files/usr/bin:${process.env.PATH || '/usr/bin:/bin'}`

@@ -93,12 +93,15 @@ test('customer accounts see only product prices until an admin grants reseller p
   for (const field of ['reseller_commission', 'commission_tab', 'wholesale_price', 'shop_id', 'shop_name', 'shop_type', 'vendor_phone', 'vendor_badge', 'vendor_address']) {
     assert.equal(publicProduct[field], undefined, `${field} must stay private on the customer catalog`);
   }
-  assert.match(publicList.headers['cache-control'], /no-store/);
+  // Anonymous catalog responses are safe to cache briefly; signed-in responses
+  // can carry reseller-only fields and must never be shared.
+  assert.match(publicList.headers['cache-control'], /public, max-age=60/);
 
   const customerList = await request('/api/products?search=PERM-SB-01', {
     headers: { Authorization: `Bearer ${customerToken}` }
   });
   assert.equal(customerList.status, 200);
+  assert.match(customerList.headers['cache-control'], /no-store/);
   assert.equal(customerList.body.account_role, 'customer');
   assert.equal(customerList.body.products[0].reseller_commission, undefined);
 

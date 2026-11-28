@@ -2,6 +2,7 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const helmet = require('helmet');
+const compression = require('compression');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
@@ -53,6 +54,10 @@ app.use(
     crossOriginResourcePolicy: { policy: 'cross-origin' }
   })
 );
+// The product catalog is ~130KB of JSON. Gzip keeps it near ~20KB, which matters
+// a lot when the phone is publishing through a free tunnel.
+app.use(compression());
+
 const allowedCorsOrigins = new Set(config.CORS_ORIGINS);
 // Trust only this project's own Hosting domains, never every *.web.app site.
 // This keeps the live Firebase frontend working even if CORS_ORIGIN(S) is missing
@@ -201,7 +206,8 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 app.use('/uploads', express.static(uploadsDir, {
-  maxAge: '7d',
+  maxAge: '365d',
+  immutable: true,
   etag: true
 }));
 

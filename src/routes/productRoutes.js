@@ -36,8 +36,17 @@ const productToClient = (product, includeCommission = false) => {
 
 const canViewCommission = (req) => Boolean(req.user && ['reseller', 'admin'].includes(req.user.role));
 const preventProductCaching = (req, res, next) => {
-  res.set('Cache-Control', 'private, no-store');
+  // Guest catalog responses are identical for every visitor, so browsers may keep
+  // them for a short window (and reuse them instantly on the next page view).
+  // Signed-in responses can contain reseller-only fields and must stay private.
+  const hasAuth = Boolean(req.headers.authorization) || Boolean(req.cookies && req.cookies.token);
+  if (req.method === 'GET' && !hasAuth) {
+    res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+  } else {
+    res.set('Cache-Control', 'private, no-store');
+  }
   res.vary('Authorization');
+  res.vary('Accept-Encoding');
   next();
 };
 
