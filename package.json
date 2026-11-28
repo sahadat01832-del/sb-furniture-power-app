@@ -21,6 +21,8 @@
     "phone:publish-api": "node scripts/publish-phone-api-url.js",
     "phone:configure-client": "node scripts/configure-firebase-client.js",
     "phone:package": "node scripts/package-phone-server.js",
+    "phone:status": "node scripts/deploy-phone.js",
+    "phone:deploy": "node scripts/deploy-phone.js --deploy",
     "build:apks": "node scripts/run-apk-build.js all",
     "build:apk:client": "node scripts/run-apk-build.js client",
     "build:apk:admin": "node scripts/run-apk-build.js admin",

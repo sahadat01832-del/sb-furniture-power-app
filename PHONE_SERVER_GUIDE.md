@@ -173,6 +173,17 @@ cd /root/sb-power-app
 
 Script Termux-এ `--tun=userspace-networking` ব্যবহার করে; Linux-এ `TAILSCALE_MODE=kernel` বা `userspace` বেছে নেয়। Termux userspace setup-এ Funnel কাজ করবে—এটি deployment-এর আগে `tailscale funnel status` ও অন্য নেটওয়ার্ক থেকে `/health` দিয়ে যাচাই করুন। Funnel-এ পৌঁছাতে Tailscale account এবং tailnet লাগে। Personal free plan non-commercial ব্যবহারের জন্য; ব্যবসায়িক ব্যবহার হলে plan-এর শর্ত আগে যাচাই করুন।
 
+## ৭. নতুন commit ফোনে পাঠানো
+
+হাতে adb দিয়ে ফাইল কপি না করে:
+
+```bash
+npm run phone:status   # শুধু দেখায় ফোনে কোন ফাইল আলাদা, কিছু বদলায় না
+npm run phone:deploy   # আলাদা ফাইলগুলো পাঠিয়ে PM2 server restart করে
+```
+
+`phone:deploy` কেবল git-এ track করা ফাইল পাঠায়; ফোনের নিজের `.env`, `data/` database, `logs/` ও `public/uploads/` কখনো ছোঁয় না। `-- --no-restart` দিলে ফাইল আপডেট হয় কিন্তু চলমান process পুরোনো কোডেই চলে। ডিফল্ট device `192.168.0.103:5555`, বদলাতে `PHONE_ADB_DEVICE=ip:port` সেট করুন।
+
 ## চালু অবস্থার সীমা
 
 Quick Tunnel-এর URL প্রতিটি নতুন tunnel-এ বদলায়। Watchdog Firestore আপডেট করে, কিন্তু Frontend চলতে Firestore read অনুমতি ও Firebase Web App config দরকার। ফোনের বিদ্যুৎ/নেটওয়ার্ক, Android background process policy, Firebase quota, tunnel provider-এর সীমা বা phone storage-এর ওপর এই ব্যবস্থার control নেই।
