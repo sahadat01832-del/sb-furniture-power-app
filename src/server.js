@@ -13,6 +13,7 @@ const { get, query, closeDb } = require('./db');
 const { seedData } = require('./seed');
 const { performBackup, waitForActiveBackup } = require('./backup');
 const { closeFirebaseBackup, getFirebaseBackupStatus } = require('./firebaseBackup');
+const { syncUploadsBackup, closeUploadsBackup, getUploadsBackupStatus } = require('./uploadsBackup');
 
 const authRoutes = require('./routes/authRoutes');
 const productRoutes = require('./routes/productRoutes');
@@ -33,10 +34,28 @@ function startScheduledBackups() {
   }
   console.log(`🗄️ Database backup schedule: every ${config.BACKUP_INTERVAL_MINUTES} minutes.`);
 
+  const uploadsStatus = getUploadsBackupStatus();
+  if (!uploadsStatus.configured) {
+    console.warn(`⚠️ Product photo backup is OFF. Missing: ${uploadsStatus.missing.join(', ')}.`);
+  }
+
   const runBackup = () => {
     performBackup().catch((error) => {
       console.error('Scheduled database backup failed:', error.message);
     });
+    // Product photos live only on this phone, so they are backed up off-device
+    // on the same schedule; the sync uploads only files that changed.
+    syncUploadsBackup()
+      .then((result) => {
+        if (result.success && result.uploaded > 0) {
+          console.log(`🖼️ Product photo backup: ${result.uploaded} uploaded, ${result.removed} removed.`);
+        } else if (!result.success) {
+          console.warn(`⚠️ Product photo backup failed (${result.errorCode}); photos are still on this phone.`);
+        }
+      })
+      .catch((error) => {
+        console.error('Scheduled product photo backup failed:', error.message);
+      });
   };
 
   runBackup();
@@ -301,6 +320,7 @@ if (require.main === module) {
               await waitForActiveBackup();
               await closeDb();
               await closeFirebaseBackup();
+              await closeUploadsBackup();
               if (error) throw error;
               console.log('SQLite closed cleanly.');
             } catch (closeError) {

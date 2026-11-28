@@ -73,7 +73,7 @@ Test suite আলাদা temporary SQLite database ব্যবহার ক�
 
 ফোনে Node.js server, Cloudflare Quick Tunnel, Firestore live URL এবং encrypted snapshot সেটআপের ধাপ [PHONE_SERVER_GUIDE.md](PHONE_SERVER_GUIDE.md)-এ আছে। Firebase Hosting-এর app link স্থায়ী থাকে; ফোন চালু হলে watchdog বর্তমান tunnel URL Firestore-এ প্রকাশ করে, app সেই ঠিকানা পড়ে। Admin login, orders, commissions, wallet ও product data পেতে ফোনের Node.js server এবং tunnel চালু থাকতে হবে।
 
-Firebase Firestore-এ সর্বোচ্চ ৭টি encrypted snapshot রাখা হবে; server চালু হলে এবং প্রতি ৬ ঘণ্টায় নতুন snapshot হবে। Firebase credentials, backup key, `.env`, SQLite database, APK signing key Git-এ দেবেন না। Snapshot size 32 MiB-এর বেশি হলে local backup থাকবে, Firebase upload হবে না।
+Firebase Firestore-এ সর্বোচ্চ ৭টি encrypted snapshot রাখা হবে; server চালু হলে এবং প্রতি ৬ ঘণ্টায় নতুন snapshot হবে। Firebase credentials, backup key, `.env`, SQLite database, APK signing key Git-এ দেবেন না। Snapshot size 32 MiB-এর বেশি হলে local backup থাকবে, Firebase upload হবে না। একই সময়সূচিতে প্রোডাক্টের ছবিগুলো (`public/uploads/`) ফোনের বাইরে Firestore-এ ব্যাকআপ হয় — শুধু নতুন বা বদলানো ছবি আপলোড হয়। ফোন বদলালে `npm run restore:uploads -- --output public/uploads` চালিয়ে ছবি ফিরিয়ে আনা যায়; প্রতিটি ফাইলের checksum মিলিয়ে দেখা হয়।
 
 ফোন বন্ধ, network বিচ্ছিন্ন, Android battery management, Firebase quota শেষ, বা tunnel outage হলে ১০০% online থাকা সম্ভব নয়। Firestore backup failover server নয়; এটি API চালায় না। সফল backup-এর পরের ডেটা হারালে শেষ snapshot সর্বোচ্চ ৬ ঘণ্টা পিছিয়ে থাকতে পারে।
 

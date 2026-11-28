@@ -18,5 +18,15 @@ service cloud.firestore {
         allow read, write: if false;
       }
     }
+
+    // Product photo backups are uploaded by the phone's server and restored
+    // only with Admin SDK credentials; clients must never read them.
+    match /sb_power_upload_backups/{fileId} {
+      allow read, write: if false;
+
+      match /upload_chunks/{chunkId} {
+        allow read, write: if false;
+      }
+    }
   }
 }
