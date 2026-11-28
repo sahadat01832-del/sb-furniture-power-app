@@ -1,7 +1,7 @@
 {
-  "appId": "com.sbfurniture.powerapp",
-  "appName": "SB Furniture & SB POWER",
-  "webDir": "public",
+  "appId": "com.sbfurniture.admin",
+  "appName": "SB Furniture Admin Panel",
+  "webDir": "public-admin",
   "bundledWebRuntime": false,
   "server": {
     "androidScheme": "https",

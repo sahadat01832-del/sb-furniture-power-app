@@ -303,3 +303,42 @@ test('stale service worker cache fallback refreshes Firestore and retries live t
   assert.equal(getFirestoreReads(), 1);
   assert.equal(calls.some((call) => call.url === 'https://new-phone.example/api/products'), true);
 });
+
+test('multi-tunnel apiUrls failover switches silently from broken DNS primary to working backup', async () => {
+  const events = [];
+  const { window, calls, storage } = loadResolver({
+    firestoreDocument: {
+      fields: {
+        apiUrl: { stringValue: 'https://blocked-dns.trycloudflare.com' },
+        apiUrls: {
+          arrayValue: {
+            values: [
+              { stringValue: 'https://blocked-dns.trycloudflare.com' },
+              { stringValue: 'https://working-backup.lhr.life' }
+            ]
+          }
+        },
+        status: { stringValue: 'online' }
+      }
+    },
+    apiResponder: async (url) => {
+      if (url.startsWith('https://blocked-dns.trycloudflare.com')) {
+        throw new TypeError('Failed to fetch');
+      }
+      return { ok: true, status: 200 };
+    }
+  });
+  window.CustomEvent = function CustomEvent(name, init) {
+    return { type: name, detail: init && init.detail };
+  };
+  window.dispatchEvent = (evt) => events.push(evt.detail.status);
+  await window.SB_API.connectionReady;
+
+  const response = await window.fetch(window.apiUrl('/api/products'));
+  assert.equal(response.status, 200);
+  assert.equal(response.url, 'https://working-backup.lhr.life/api/products');
+  assert.equal(window.SB_API.getBaseUrl(), 'https://working-backup.lhr.life');
+  assert.equal(storage.get('sb_active_phone_api_url:sb-power-demo'), 'https://working-backup.lhr.life');
+  assert.equal(events.includes('offline'), false);
+  assert.equal(calls.some((c) => c.url === 'https://working-backup.lhr.life/api/products'), true);
+});

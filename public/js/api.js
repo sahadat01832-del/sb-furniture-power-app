@@ -1,13 +1,14 @@
-// Resolves the phone API origin from Firestore and retries safe reads while the
-// phone or its tunnel is reconnecting. Mutating requests are never replayed.
+// Resolves the phone API origin(s) from Firestore and silently fails over across
+// redundant tunnels while the phone or a tunnel is reconnecting. Mutating requests are never replayed.
 (function (window) {
   const FIRESTORE_COLLECTION = 'system_config';
   const FIRESTORE_DOCUMENT = 'backend_tunnel';
   const API_CACHE_PREFIX = 'sb_active_phone_api_url:';
+  const API_LIST_CACHE_PREFIX = 'sb_active_phone_api_urls:';
   const FIRESTORE_REQUEST_TIMEOUT_MS = 4000;
   const FIRESTORE_REFRESH_COOLDOWN_MS = 15_000;
   const CONNECTION_READY_TIMEOUT_MS = 5000;
-  const READ_REQUEST_TIMEOUT_MS = 10_000;
+  const READ_REQUEST_TIMEOUT_MS = 7000;
   const nativeFetch = window.fetch.bind(window);
 
   function getFirebaseProjectId() {
@@ -34,18 +35,41 @@
     }
   }
 
+  function uniqueOrigins(values) {
+    const list = [];
+    const seen = new Set();
+    if (!Array.isArray(values)) return list;
+    for (const value of values) {
+      const normalized = normalizeApiOrigin(value);
+      if (normalized && !seen.has(normalized)) {
+        seen.add(normalized);
+        list.push(normalized);
+      }
+    }
+    return list;
+  }
+
   const firebaseProjectId = getFirebaseProjectId();
   let activeApiUrl = '';
+  let knownApiUrls = [];
   let backendStatus = 'unknown';
   let configFetchPromise = null;
   let lastConfigFetchAt = 0;
   let lastFailureRefreshAt = 0;
+  let recoveryTimer = null;
   const { promise: firstConnection, resolve: firstConnectionResolve } = Promise.withResolvers();
   let firstConnectionResolved = false;
 
   if (firebaseProjectId) {
     try {
       activeApiUrl = normalizeApiOrigin(localStorage.getItem(`${API_CACHE_PREFIX}${firebaseProjectId}`));
+      const cachedListRaw = localStorage.getItem(`${API_LIST_CACHE_PREFIX}${firebaseProjectId}`);
+      if (cachedListRaw) {
+        knownApiUrls = uniqueOrigins(JSON.parse(cachedListRaw));
+      }
+      if (activeApiUrl && !knownApiUrls.includes(activeApiUrl)) {
+        knownApiUrls = [activeApiUrl, ...knownApiUrls];
+      }
     } catch {
       // Storage can be unavailable in restricted WebViews.
     }
@@ -83,20 +107,57 @@
     return banner;
   }
 
+  function scheduleOfflineRecovery() {
+    if (recoveryTimer || (getCandidateOrigins().length === 0 && !firebaseProjectId)) return;
+    recoveryTimer = setTimeout(async () => {
+      recoveryTimer = null;
+      if (backendStatus !== 'offline') return;
+      try {
+        if (firebaseProjectId) await readFirestoreRestDocument({ afterFailure: true });
+        const candidates = getCandidateOrigins();
+        for (const origin of candidates) {
+          try {
+            const res = await nativeFetch(`${origin}/health`, { method: 'GET', cache: 'no-store' });
+            if (res && res.status < 500) {
+              saveActiveApiUrl(origin);
+              setConnectionState('online');
+              return;
+            }
+          } catch {
+            // Try next candidate
+          }
+        }
+      } catch {
+        // Retry on next cycle
+      }
+      if (backendStatus === 'offline') scheduleOfflineRecovery();
+    }, 15_000);
+    if (recoveryTimer && typeof recoveryTimer.unref === 'function') recoveryTimer.unref();
+  }
+
+  function clearOfflineRecovery() {
+    if (recoveryTimer) {
+      clearTimeout(recoveryTimer);
+      recoveryTimer = null;
+    }
+  }
+
   function setConnectionState(state, message) {
     backendStatus = state;
     const banner = makeConnectionBanner();
     if (banner) {
-      if (state === 'online') {
+      // Never show an alarming banner while silently failing over between backup tunnels.
+      if (state === 'offline') {
+        banner.textContent = message || 'ফোনের সার্ভারের সাথে সংযোগ বিচ্ছিন্ন হয়েছে। স্বয়ংক্রিয়ভাবে সংযোগের চেষ্টা চলছে…';
+        banner.style.display = 'block';
+      } else {
         banner.style.display = 'none';
         banner.textContent = '';
-      } else {
-        banner.textContent = message || (state === 'offline'
-          ? 'ফোনের সার্ভার এই মুহূর্তে বন্ধ আছে। আবার সংযোগের চেষ্টা চলছে…'
-          : 'ফোনের সার্ভারে সংযোগ ফিরিয়ে আনার চেষ্টা চলছে…');
-        banner.style.display = 'block';
       }
     }
+    if (state === 'offline') scheduleOfflineRecovery();
+    else if (state === 'online') clearOfflineRecovery();
+
     if (typeof window.CustomEvent === 'function') {
       window.dispatchEvent(new window.CustomEvent('sb-api-connection', { detail: { status: state } }));
     }
@@ -120,13 +181,30 @@
     } catch {}
   }
 
+  function saveApiUrlList(urls) {
+    const normalizedList = uniqueOrigins(urls);
+    knownApiUrls = normalizedList;
+    try {
+      if (firebaseProjectId) {
+        localStorage.setItem(`${API_LIST_CACHE_PREFIX}${firebaseProjectId}`, JSON.stringify(normalizedList));
+      }
+    } catch {
+      // Storage can be unavailable in restricted WebViews.
+    }
+    return normalizedList;
+  }
+
   function saveActiveApiUrl(apiUrl) {
     const normalized = normalizeApiOrigin(apiUrl);
     if (!normalized) return false;
     activeApiUrl = normalized;
+    knownApiUrls = uniqueOrigins([normalized, ...knownApiUrls]);
     warmOriginConnection(normalized);
     try {
-      if (firebaseProjectId) localStorage.setItem(`${API_CACHE_PREFIX}${firebaseProjectId}`, activeApiUrl);
+      if (firebaseProjectId) {
+        localStorage.setItem(`${API_CACHE_PREFIX}${firebaseProjectId}`, activeApiUrl);
+        localStorage.setItem(`${API_LIST_CACHE_PREFIX}${firebaseProjectId}`, JSON.stringify(knownApiUrls));
+      }
     } catch {
       // The current page can still use the freshly received value.
     }
@@ -142,9 +220,24 @@
     }
   }
 
-  function getConfiguredFallbackOrigin() {
+  function getConfiguredFallbackOrigins() {
     const appConfig = window.APP_CONFIG || {};
-    return normalizeApiOrigin(appConfig.apiUrl);
+    const list = [];
+    if (Array.isArray(appConfig.apiUrls)) list.push(...appConfig.apiUrls);
+    if (appConfig.apiUrl) list.push(appConfig.apiUrl);
+    return uniqueOrigins(list);
+  }
+
+  function getConfiguredFallbackOrigin() {
+    return getConfiguredFallbackOrigins()[0] || '';
+  }
+
+  function getCandidateOrigins() {
+    return uniqueOrigins([
+      activeApiUrl,
+      ...knownApiUrls,
+      ...getConfiguredFallbackOrigins()
+    ]);
   }
 
   function isSwCachedResponse(response) {
@@ -162,13 +255,17 @@
 
   function applyFirestoreData(data) {
     if (!data || typeof data !== 'object') return;
-    if (data.apiUrl) saveActiveApiUrl(data.apiUrl);
-    const status = data.status === 'online' || data.status === 'offline' || data.status === 'reconnecting'
-      ? data.status
-      : 'unknown';
-    if (status === 'online') setConnectionState('online');
-    else if (status === 'offline') setConnectionState('offline');
-    else if (status === 'reconnecting') setConnectionState('reconnecting');
+    const incomingList = uniqueOrigins([
+      data.apiUrl,
+      ...(Array.isArray(data.apiUrls) ? data.apiUrls : [])
+    ]);
+    if (incomingList.length > 0) {
+      saveApiUrlList(incomingList);
+      saveActiveApiUrl(incomingList[0]);
+    } else if (data.apiUrl) {
+      saveActiveApiUrl(data.apiUrl);
+    }
+    if (data.status === 'online') setConnectionState('online');
     resolveFirstConnection();
   }
 
@@ -197,8 +294,12 @@
         if (!response.ok) return activeApiUrl;
         const document = await response.json();
         const fields = document && document.fields;
+        const apiUrlsField = fields && fields.apiUrls && fields.apiUrls.arrayValue && Array.isArray(fields.apiUrls.arrayValue.values)
+          ? fields.apiUrls.arrayValue.values.map((entry) => entry && entry.stringValue).filter(Boolean)
+          : [];
         applyFirestoreData({
           apiUrl: fields && fields.apiUrl && fields.apiUrl.stringValue,
+          apiUrls: apiUrlsField,
           status: fields && fields.status && fields.status.stringValue
         });
         return activeApiUrl;
@@ -266,40 +367,39 @@
   }
 
   function retryDelay(attempt) {
-    return new Promise((resolve) => setTimeout(resolve, attempt === 1 ? 500 : 1500));
+    return new Promise((resolve) => setTimeout(resolve, attempt === 1 ? 400 : 1200));
   }
 
   async function fetchApiWithRetry(input, init, destination) {
     const requestMethod = String((init && init.method) || (input instanceof Request && input.method) || 'GET').toUpperCase();
     const canRetry = ['GET', 'HEAD', 'OPTIONS'].includes(requestMethod);
-    const maxAttempts = canRetry ? 3 : 1;
+    const maxSameOriginRetries = canRetry ? 2 : 0;
+    const maxTotalAttempts = canRetry ? 7 : 1;
     const requestInit = init || {};
     const callerSignal = requestInit.signal || (input instanceof Request ? input.signal : undefined);
     const triedOrigins = new Set([destination.origin]);
     let refreshedAfterFailure = false;
     let swFallbackResponse = null;
+    let sameOriginFailures = 0;
 
     async function resolveNextDestination(currentDestination) {
       const requestUrl = getRequestUrl(input);
       if (!refreshedAfterFailure && firebaseProjectId) {
         refreshedAfterFailure = true;
         await readFirestoreRestDocument({ afterFailure: true });
-        if (activeApiUrl && activeApiUrl !== currentDestination.origin && !triedOrigins.has(activeApiUrl)) {
-          triedOrigins.add(activeApiUrl);
-          return new URL(`${requestUrl.pathname}${requestUrl.search}`, `${activeApiUrl}/`);
-        }
       }
       if (canRetry) {
-        const fallbackOrigin = getConfiguredFallbackOrigin();
-        if (fallbackOrigin && fallbackOrigin !== currentDestination.origin && !triedOrigins.has(fallbackOrigin)) {
-          triedOrigins.add(fallbackOrigin);
-          return new URL(`${requestUrl.pathname}${requestUrl.search}`, `${fallbackOrigin}/`);
+        for (const candidateOrigin of getCandidateOrigins()) {
+          if (candidateOrigin && candidateOrigin !== currentDestination.origin && !triedOrigins.has(candidateOrigin)) {
+            triedOrigins.add(candidateOrigin);
+            return new URL(`${requestUrl.pathname}${requestUrl.search}`, `${candidateOrigin}/`);
+          }
         }
       }
       return currentDestination;
     }
 
-    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    for (let attempt = 1; attempt <= maxTotalAttempts; attempt += 1) {
       let attemptController = null;
       let attemptTimeout = null;
       let attemptInit = init;
@@ -316,9 +416,10 @@
 
         if (isSwCachedResponse(response)) {
           swFallbackResponse = response;
-          setConnectionState('reconnecting');
+          backendStatus = 'reconnecting';
           const nextDestination = await resolveNextDestination(destination);
           if (nextDestination.origin !== destination.origin) {
+            sameOriginFailures = 0;
             destination = nextDestination;
             continue;
           }
@@ -334,22 +435,33 @@
           return response;
         }
 
-        setConnectionState('reconnecting');
+        backendStatus = 'reconnecting';
         const nextDestination = await resolveNextDestination(destination);
         const switched = nextDestination.origin !== destination.origin;
-        destination = nextDestination;
-        if (!canRetry || attempt === maxAttempts) return swFallbackResponse || response;
-        if (switched) continue;
+        if (switched) {
+          sameOriginFailures = 0;
+          destination = nextDestination;
+          continue;
+        }
+        sameOriginFailures += 1;
+        if (!canRetry || sameOriginFailures > maxSameOriginRetries || attempt === maxTotalAttempts) {
+          return swFallbackResponse || response;
+        }
       } catch (error) {
         if (callerSignal && callerSignal.aborted) {
           setConnectionState('offline');
           throw error;
         }
-        setConnectionState('reconnecting');
+        backendStatus = 'reconnecting';
         const nextDestination = await resolveNextDestination(destination);
         const switched = nextDestination.origin !== destination.origin;
-        destination = nextDestination;
-        if (!canRetry || attempt === maxAttempts) {
+        if (switched) {
+          sameOriginFailures = 0;
+          destination = nextDestination;
+          continue;
+        }
+        sameOriginFailures += 1;
+        if (!canRetry || sameOriginFailures > maxSameOriginRetries || attempt === maxTotalAttempts) {
           if (swFallbackResponse) {
             setConnectionState('offline');
             return swFallbackResponse;
@@ -360,11 +472,10 @@
           setConnectionState('offline');
           throw error;
         }
-        if (switched) continue;
       } finally {
         if (attemptTimeout) clearTimeout(attemptTimeout);
       }
-      await retryDelay(attempt);
+      await retryDelay(sameOriginFailures);
     }
     return swFallbackResponse || nativeFetch(destination.href, init);
   }
@@ -390,6 +501,7 @@
 
   window.SB_API = {
     getBaseUrl: getApiBaseUrl,
+    getCandidateUrls: getCandidateOrigins,
     url: apiUrl,
     connectionReady,
     getConnectionStatus: () => backendStatus,
@@ -446,7 +558,17 @@
       if (parsed.origin === window.location.origin) return '';
       const apiOrigin = normalizeApiOrigin(getApiBaseUrl()) || '';
       if (apiOrigin && parsed.origin === apiOrigin) return 'anonymous';
-      if (parsed.hostname.endsWith('.trycloudflare.com') && parsed.pathname.startsWith('/uploads/')) return 'anonymous';
+      if (knownApiUrls.includes(parsed.origin)) return 'anonymous';
+      if (
+        (
+          parsed.hostname.endsWith('.trycloudflare.com') ||
+          parsed.hostname.endsWith('.lhr.life') ||
+          parsed.hostname.endsWith('.serveousercontent.com')
+        ) &&
+        parsed.pathname.startsWith('/uploads/')
+      ) {
+        return 'anonymous';
+      }
     } catch {
       // Ignore malformed image URLs
     }

@@ -5,7 +5,9 @@ const {
   CONFIG_DOCUMENT,
   createConnectionPublisher,
   extractQuickTunnelUrl,
-  normalizePublicApiUrl
+  extractTunnelUrl,
+  normalizePublicApiUrl,
+  normalizePublicApiUrls
 } = require('../src/firebaseConnection');
 
 test('phone connection publisher stores a validated online URL in the public config document', async () => {
@@ -63,4 +65,42 @@ test('watchdog status updates retain the last public URL while offline', async (
   assert.equal(writtenData.status, 'offline');
   assert.equal(writtenData.apiUrl, 'https://phone-tunnel.example');
   assert.equal(typeof writtenData.updatedAt, 'string');
+});
+
+test('extractTunnelUrl parses localhost.run, Serveo, and Quick Tunnel URLs while ignoring api.trycloudflare.com', () => {
+  assert.equal(
+    extractTunnelUrl('{"data":{"address":"abc123.app.lhr.life"},"message":"https://abc123.app.lhr.life"}'),
+    'https://abc123.app.lhr.life'
+  );
+  assert.equal(
+    extractTunnelUrl('Forwarding HTTP traffic from https://feed1234-210-1.serveousercontent.com'),
+    'https://feed1234-210-1.serveousercontent.com'
+  );
+  assert.equal(
+    extractTunnelUrl('failed to request quick Tunnel: Post "https://api.trycloudflare.com/tunnel": no such host'),
+    ''
+  );
+  assert.equal(extractQuickTunnelUrl('https://api.trycloudflare.com/tunnel'), '');
+});
+
+test('publisher stores deduplicated apiUrls array when multiple healthy tunnels are active', async () => {
+  let writtenData;
+  const firestore = {
+    collection() {
+      return { doc() { return { async set(data) { writtenData = data; } }; } };
+    }
+  };
+  const publisher = createConnectionPublisher({ firestore });
+  await publisher.publish('https://primary.lhr.life/', [
+    'https://primary.lhr.life',
+    'https://backup.trycloudflare.com/',
+    'http://insecure.invalid'
+  ]);
+
+  assert.equal(writtenData.apiUrl, 'https://primary.lhr.life');
+  assert.deepEqual(writtenData.apiUrls, [
+    'https://primary.lhr.life',
+    'https://backup.trycloudflare.com'
+  ]);
+  assert.deepEqual(normalizePublicApiUrls(['https://a.example/', 'https://a.example']), ['https://a.example']);
 });
