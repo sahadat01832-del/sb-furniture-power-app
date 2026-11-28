@@ -9,7 +9,9 @@ const resolverSource = fs.readFileSync(path.join(__dirname, '..', 'public', 'js'
 function loadResolver({
   hostname = 'sb-power-demo.web.app',
   projectId = '',
-  configuredApiUrl = 'https://fallback.example',
+  // Production sets APP_CONFIG.apiUrl to the stable Worker. Tests that cover
+  // Firestore discovery leave it empty; fallback tests set it explicitly.
+  configuredApiUrl = '',
   firestoreDocument = { fields: {
     apiUrl: { stringValue: 'https://phone-tunnel.example/' },
     status: { stringValue: 'online' }
@@ -176,23 +178,28 @@ test('a failed mutation is never replayed but refreshes the address for the next
   ]);
 });
 
-test('invalid Firebase endpoint values cannot replace the configured fallback', async () => {
+test('invalid Firebase endpoint values cannot become the API base', async () => {
   const { window, calls } = loadResolver({
     firestoreDocument: { fields: { apiUrl: { stringValue: 'http://unsafe.example' } } }
   });
   await window.SB_API.connectionReady;
 
-  assert.equal(window.SB_API.getBaseUrl(), 'https://fallback.example');
+  // No stable URL and no valid tunnel: stay on the site's own origin instead of
+  // adopting the unsafe value from Firestore.
+  assert.equal(window.SB_API.getBaseUrl(), 'https://sb-power-demo.web.app');
   await window.fetch(window.apiUrl('/api/config'));
-  assert.equal(calls.at(-1).url, 'https://fallback.example/api/config');
+  assert.equal(calls.at(-1).url, 'https://sb-power-demo.web.app/api/config');
 });
 
-test('Firestore lookup failure keeps the app usable with its configured fallback', async () => {
-  const { window, calls } = loadResolver({ firestoreStatus: 503 });
+test('a Firestore lookup failure keeps the app usable on the configured origin', async () => {
+  const { window, calls } = loadResolver({
+    configuredApiUrl: 'https://stable-api.example',
+    firestoreStatus: 503
+  });
   await window.SB_API.connectionReady;
 
   await window.fetch(window.apiUrl('/api/health'));
-  assert.equal(calls.at(-1).url, 'https://fallback.example/api/health');
+  assert.equal(calls.at(-1).url, 'https://stable-api.example/api/health');
 });
 
 test('an app without Firebase project config uses its same-origin API without Firestore requests', async () => {
@@ -321,6 +328,8 @@ test('stale service worker cache fallback refreshes Firestore and retries live t
 test('multi-tunnel apiUrls failover switches silently from broken DNS primary to working backup', async () => {
   const events = [];
   const { window, calls, storage } = loadResolver({
+    // No stable Worker here: this test covers the direct-tunnel failover path.
+    configuredApiUrl: '',
     firestoreDocument: {
       fields: {
         apiUrl: { stringValue: 'https://blocked-dns.trycloudflare.com' },
@@ -355,4 +364,46 @@ test('multi-tunnel apiUrls failover switches silently from broken DNS primary to
   assert.equal(storage.get('sb_active_phone_api_url:sb-power-demo'), 'https://working-backup.lhr.life');
   assert.equal(events.includes('offline'), false);
   assert.equal(calls.some((c) => c.url === 'https://working-backup.lhr.life/api/products'), true);
+});
+
+test('a configured stable Worker URL is used without a Firestore lookup', async () => {
+  const { window, getFirestoreReads } = loadResolver({
+    configuredApiUrl: 'https://stable-api.example',
+    firestoreDocument: {
+      fields: {
+        apiUrl: { stringValue: 'https://phone-tunnel.example/' },
+        status: { stringValue: 'online' }
+      }
+    }
+  });
+  await window.SB_API.connectionReady;
+
+  const response = await window.fetch(window.apiUrl('/api/products'));
+  assert.equal(response.status, 200);
+  assert.equal(response.url, 'https://stable-api.example/api/products');
+  assert.equal(getFirestoreReads(), 0);
+});
+
+test('a dead stable Worker URL fails over to the published tunnel', async () => {
+  const { window } = loadResolver({
+    configuredApiUrl: 'https://stable-api.example',
+    firestoreDocument: {
+      fields: {
+        apiUrl: { stringValue: 'https://phone-tunnel.example/' },
+        status: { stringValue: 'online' }
+      }
+    },
+    apiResponder: async (url) => {
+      if (url.startsWith('https://stable-api.example')) {
+        throw new TypeError('Failed to fetch');
+      }
+      return { ok: true, status: 200 };
+    }
+  });
+  await window.SB_API.connectionReady;
+
+  const response = await window.fetch(window.apiUrl('/api/products'));
+  assert.equal(response.status, 200);
+  assert.equal(response.url, 'https://phone-tunnel.example/api/products');
+  assert.equal(window.SB_API.getBaseUrl(), 'https://phone-tunnel.example');
 });

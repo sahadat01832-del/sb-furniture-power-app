@@ -50,6 +50,9 @@
   }
 
   const firebaseProjectId = getFirebaseProjectId();
+  // The stable public entry point (Cloudflare Worker). It finds the phone's
+  // current tunnel on its own, so customers never depend on a rotating URL.
+  const stableApiUrl = normalizeApiOrigin(window.APP_CONFIG && window.APP_CONFIG.apiUrl);
   let activeApiUrl = '';
   let knownApiUrls = [];
   let backendStatus = 'unknown';
@@ -313,7 +316,17 @@
     return configFetchPromise;
   }
 
-  if (activeApiUrl) {
+  if (stableApiUrl) {
+    // Try the stable Worker first on every load. The last working direct tunnel
+    // stays in knownApiUrls, so a Worker outage still fails over to the phone.
+    if (activeApiUrl && activeApiUrl !== stableApiUrl) {
+      knownApiUrls = uniqueOrigins([activeApiUrl, ...knownApiUrls]);
+    }
+    // Persist it so the next boot starts on the stable address too, and so a
+    // later failover can still list it as a candidate origin.
+    saveActiveApiUrl(stableApiUrl);
+    resolveFirstConnection();
+  } else if (activeApiUrl) {
     warmOriginConnection(activeApiUrl);
     resolveFirstConnection();
   } else if (firebaseProjectId) {

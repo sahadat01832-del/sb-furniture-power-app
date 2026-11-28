@@ -32,3 +32,5 @@ logs/*
 !logs/.gitkeep
 public/uploads/*
 !public/uploads/.gitkeep
+worker/.wrangler/
+worker/.dev.vars

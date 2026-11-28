@@ -1,5 +1,7 @@
 const express = require('express');
+const crypto = require('crypto');
 const fs = require('fs');
+const net = require('net');
 const path = require('path');
 const helmet = require('helmet');
 const compression = require('compression');
@@ -44,6 +46,27 @@ function startScheduledBackups() {
 
 if (config.NODE_ENV === 'production') {
   app.set('trust proxy', 1);
+}
+
+// Requests arrive through the Cloudflare Worker, so every TCP peer looks like a
+// Cloudflare edge IP. The Worker forwards the real customer IP in a signed
+// header; trust it only when the shared secret matches. Without that check,
+// either every customer shares one rate-limit bucket or anyone can spoof an IP.
+if (config.PROXY_SHARED_SECRET) {
+  const expectedToken = Buffer.from(config.PROXY_SHARED_SECRET);
+  app.use((req, res, next) => {
+    const providedToken = Buffer.from(req.get('x-sb-proxy-token') || '');
+    const clientIp = req.get('x-sb-client-ip') || '';
+    if (
+      providedToken.length === expectedToken.length &&
+      net.isIP(clientIp) &&
+      crypto.timingSafeEqual(providedToken, expectedToken)
+    ) {
+      req.ip = clientIp;
+      req.ips = [clientIp];
+    }
+    next();
+  });
 }
 
 // Security Middlewares

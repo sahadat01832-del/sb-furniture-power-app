@@ -1,0 +1,8 @@
+name = "sb-power-api"
+main = "src/index.js"
+compatibility_date = "2026-11-28"
+workers_dev = true
+
+# The stable public API entry point for the SB Power storefront.
+# The phone's current quick-tunnel URL is read from Firestore at request time,
+# so the tunnel can rotate without customers noticing.

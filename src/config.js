@@ -71,6 +71,9 @@ module.exports = {
   JWT_SECRET: configuredJwtSecret,
   CORS_ORIGINS: [...corsOrigins],
   FIREBASE_PROJECT_ID: configuredFirebaseProjectId,
+  // Shared secret with the Cloudflare Worker proxy. When set, the server trusts
+  // the Worker's X-SB-Client-IP header so per-customer rate limits keep working.
+  PROXY_SHARED_SECRET: (process.env.PROXY_SHARED_SECRET || '').trim(),
   DATABASE_FILE: process.env.DATABASE_FILE || path.join(__dirname, '..', 'data', 'database.sqlite'),
   
   // Brand Contacts & Info

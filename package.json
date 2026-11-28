@@ -12,7 +12,7 @@
     "seed": "node src/seed.js",
     "seed:demo": "node src/seed.js --demo",
     "backup": "node src/backup.js",
-    "test": "node --test --test-concurrency=1 tests/api.test.js tests/features.test.js tests/marketplaceBusiness.test.js tests/adminUsers.test.js tests/apkPwa.test.js tests/firebaseBackup.test.js tests/firebaseConnection.test.js tests/apiResolver.test.js tests/configureFirebaseClient.test.js tests/resellerPermissions.test.js tests/furnitureAiCutlist.test.js tests/aiVisionAutolist.test.js tests/catalogAlgorithm.test.js tests/dbTransaction.test.js tests/frontendAssets.test.js",
+    "test": "node --test --test-concurrency=1 tests/api.test.js tests/features.test.js tests/marketplaceBusiness.test.js tests/adminUsers.test.js tests/apkPwa.test.js tests/firebaseBackup.test.js tests/firebaseConnection.test.js tests/apiResolver.test.js tests/configureFirebaseClient.test.js tests/resellerPermissions.test.js tests/furnitureAiCutlist.test.js tests/aiVisionAutolist.test.js tests/catalogAlgorithm.test.js tests/dbTransaction.test.js tests/frontendAssets.test.js tests/workerProxy.test.js",
     "restore:firebase": "node scripts/restore-firebase-backup.js",
     "firebase:make-backup-key": "node scripts/generate-firebase-backup-key.js",
     "phone:set-api": "node scripts/set-phone-api-url.js",

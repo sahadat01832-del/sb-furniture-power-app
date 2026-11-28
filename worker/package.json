@@ -1,0 +1,5 @@
+{
+  "name": "sb-power-api-worker",
+  "private": true,
+  "type": "module"
+}
