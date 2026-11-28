@@ -4,6 +4,8 @@ const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
 const crypto = require('node:crypto');
+const fs = require('node:fs');
+const path = require('node:path');
 const app = require('../src/server');
 const { initDb, run, get, closeDb } = require('../src/db');
 const { hashPassword } = require('../src/auth');
@@ -205,19 +207,31 @@ test('AI Vision 3: PATCH /api/admin/products/:id/quick-update updates stock and 
 });
 
 test('AI Vision 4: POST /api/admin/ai/inspect-image resolves local /uploads/products path safely', async () => {
-  const res = await request('/api/admin/ai/inspect-image', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${adminToken}` },
-    body: {
-      image_url: '/uploads/products/SBP-101.jpg',
-      board_price: 1800
-    }
-  });
+  // public/uploads/ is gitignored, so the test writes its own photo from a
+  // committed icon instead of relying on a real product image being present.
+  const uploadsDir = path.join(__dirname, '..', 'public', 'uploads', 'products');
+  const fixtureName = 'sb-vision-fixture.png';
+  const fixturePath = path.join(uploadsDir, fixtureName);
+  fs.mkdirSync(uploadsDir, { recursive: true });
+  fs.copyFileSync(path.join(__dirname, '..', 'public', 'icons', 'icon-192.png'), fixturePath);
 
-  assert.equal(res.status, 200);
-  assert.equal(res.body.success, true);
-  assert.ok(res.body.analysis);
-  assert.ok(res.body.analysis.title);
-  assert.ok(res.body.analysis.category);
-  assert.ok(['SB Furniture', 'SB POWER', 'SB Lifestyle & Tools'].includes(res.body.analysis.brand));
+  try {
+    const res = await request('/api/admin/ai/inspect-image', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: {
+        image_url: `/uploads/products/${fixtureName}`,
+        board_price: 1800
+      }
+    });
+
+    assert.equal(res.status, 200);
+    assert.equal(res.body.success, true);
+    assert.ok(res.body.analysis);
+    assert.ok(res.body.analysis.title);
+    assert.ok(res.body.analysis.category);
+    assert.ok(['SB Furniture', 'SB POWER', 'SB Lifestyle & Tools'].includes(res.body.analysis.brand));
+  } finally {
+    fs.rmSync(fixturePath, { force: true });
+  }
 });
