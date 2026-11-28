@@ -110,6 +110,20 @@ drop_bundled_uploads() {
     rm -rf "android/app/src/main/assets/public/uploads"
 }
 
+# `npx cap add android` generates app/build.gradle without release signing, so
+# apply the committed env-based signing fragment to the generated project.
+apply_release_signing_config() {
+    local app_dir="android/app"
+    if [ ! -f "$app_dir/build.gradle" ]; then
+        echo "❌ android/app/build.gradle is missing; cannot apply release signing." >&2
+        return 1
+    fi
+    cp scripts/gradle/release-signing.gradle "$app_dir/release-signing.gradle"
+    if ! grep -q "apply from: 'release-signing.gradle'" "$app_dir/build.gradle"; then
+        printf "\napply from: 'release-signing.gradle'\n" >> "$app_dir/build.gradle"
+    fi
+}
+
 # Step 2: Ensure Capacitor CLI is available
 ensure_capacitor() {
     if [ ! -x "node_modules/.bin/cap" ]; then
@@ -203,6 +217,7 @@ build_client() {
         npx cap add android
     fi
     echo "client" > android/.sb_target
+    apply_release_signing_config
 
     echo "🔄 Syncing Client web assets to Android project..."
     npx cap sync android
@@ -260,6 +275,7 @@ build_admin() {
         npx cap add android
     fi
     echo "admin" > android/.sb_target
+    apply_release_signing_config
 
     echo "🔄 Syncing Admin web assets to Android project..."
     npx cap sync android

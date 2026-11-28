@@ -1,0 +1,36 @@
+// Release signing material comes from the environment, so no keystore or
+// password is ever stored in the repository.
+//
+// `npx cap add android` generates android/app/build.gradle without any release
+// signing setup. scripts/build-apks.sh copies this file into the generated app
+// module and applies it from android/app/build.gradle, which keeps a fresh
+// clone buildable and lets the test suite assert this config has not regressed.
+
+def sbKeystorePath = System.getenv('ANDROID_KEYSTORE_PATH')
+def sbKeystoreAlias = System.getenv('ANDROID_KEYSTORE_ALIAS')
+def sbKeystorePassword = System.getenv('ANDROID_KEYSTORE_PASSWORD')
+def sbKeyPassword = System.getenv('ANDROID_KEY_PASSWORD')
+def sbKeystoreFile = sbKeystorePath ? new File(sbKeystorePath) : null
+def sbHasReleaseSigning = sbKeystoreFile?.isFile() && sbKeystoreAlias && sbKeystorePassword && sbKeyPassword
+
+android {
+    signingConfigs {
+        release {
+            if (sbHasReleaseSigning) {
+                storeFile sbKeystoreFile
+                storePassword sbKeystorePassword
+                keyAlias sbKeystoreAlias
+                keyPassword sbKeyPassword
+                v1SigningEnabled true
+                v2SigningEnabled true
+            }
+        }
+    }
+    buildTypes {
+        release {
+            if (sbHasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+}
