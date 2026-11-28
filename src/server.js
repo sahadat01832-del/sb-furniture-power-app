@@ -11,9 +11,10 @@ const rateLimit = require('express-rate-limit');
 const config = require('./config');
 const { get, query, closeDb } = require('./db');
 const { seedData } = require('./seed');
-const { performBackup, waitForActiveBackup } = require('./backup');
-const { closeFirebaseBackup, getFirebaseBackupStatus } = require('./firebaseBackup');
-const { syncUploadsBackup, closeUploadsBackup, getUploadsBackupStatus } = require('./uploadsBackup');
+const { waitForActiveBackup } = require('./backup');
+const { closeFirebaseBackup } = require('./firebaseBackup');
+const { closeUploadsBackup } = require('./uploadsBackup');
+const { startScheduledBackups } = require('./scheduledBackups');
 
 const authRoutes = require('./routes/authRoutes');
 const productRoutes = require('./routes/productRoutes');
@@ -24,44 +25,7 @@ const leaderboardRoutes = require('./routes/leaderboardRoutes');
 const referralRoutes = require('./routes/referralRoutes');
 
 const app = express();
-const BACKUP_INTERVAL_MS = config.BACKUP_INTERVAL_MINUTES * 60 * 1000;
-let scheduledBackupTimer = null;
-
-function startScheduledBackups() {
-  const cloudStatus = getFirebaseBackupStatus();
-  if (!cloudStatus.configured) {
-    console.warn(`⚠️ Encrypted cloud backup is OFF. Missing: ${cloudStatus.missing.join(', ')}. Only local backups will be kept.`);
-  }
-  console.log(`🗄️ Database backup schedule: every ${config.BACKUP_INTERVAL_MINUTES} minutes.`);
-
-  const uploadsStatus = getUploadsBackupStatus();
-  if (!uploadsStatus.configured) {
-    console.warn(`⚠️ Product photo backup is OFF. Missing: ${uploadsStatus.missing.join(', ')}.`);
-  }
-
-  const runBackup = () => {
-    performBackup().catch((error) => {
-      console.error('Scheduled database backup failed:', error.message);
-    });
-    // Product photos live only on this phone, so they are backed up off-device
-    // on the same schedule; the sync uploads only files that changed.
-    syncUploadsBackup()
-      .then((result) => {
-        if (result.success && result.uploaded > 0) {
-          console.log(`🖼️ Product photo backup: ${result.uploaded} uploaded, ${result.removed} removed.`);
-        } else if (!result.success) {
-          console.warn(`⚠️ Product photo backup failed (${result.errorCode}); photos are still on this phone.`);
-        }
-      })
-      .catch((error) => {
-        console.error('Scheduled product photo backup failed:', error.message);
-      });
-  };
-
-  runBackup();
-  scheduledBackupTimer = setInterval(runBackup, BACKUP_INTERVAL_MS);
-  scheduledBackupTimer.unref();
-}
+let scheduledBackup = null;
 
 if (config.NODE_ENV === 'production') {
   app.set('trust proxy', 1);
@@ -302,7 +266,7 @@ if (require.main === module) {
   seedData()
     .then(() => {
       const httpServer = app.listen(config.PORT, config.HOST, () => {
-        if (config.NODE_ENV === 'production') startScheduledBackups();
+        if (config.NODE_ENV === 'production') scheduledBackup = startScheduledBackups();
         console.log(`===============================================`);
         console.log(`SB Furniture & SB POWER server listening on ${config.HOST}:${config.PORT}`);
         console.log(`⚙️ Mode: ${config.NODE_ENV}`);
@@ -313,7 +277,7 @@ if (require.main === module) {
       const shutdown = (signal) => {
         if (shutdownPromise) return shutdownPromise;
         console.log(`Received ${signal}; stopping HTTP server and closing SQLite cleanly.`);
-        if (scheduledBackupTimer) clearInterval(scheduledBackupTimer);
+        if (scheduledBackup) scheduledBackup.stop();
         shutdownPromise = new Promise((resolve) => {
           httpServer.close(async (error) => {
             try {
